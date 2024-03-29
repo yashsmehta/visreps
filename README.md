@@ -1,21 +1,5 @@
-# ArchVision
+<p align="center"> <img width="300" src="imgs/archi-vision-logo.jpg" alt="ArchVision Logo"> </p> <h1 align="center">ArchVision</h1> <p align="center"> <a href="https://www.python.org/downloads/release/python-3100/"> <img src="https://img.shields.io/badge/Python-3.10-blue?style=for-the-badge&logo=python" alt="Python Version"> </a> <a href="https://www.pytorch.com/"> <img src="https://img.shields.io/badge/PyTorch-2.2-blue?style=for-the-badge&logo=pytorch&labelColor=gray&color=orange" alt="PyTorch Version"> </a> <a href="https://opensource.org/license/mit/"> <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge&logo=open-source-initiative" alt="License"> </a> </p>
 
-<p align="center">
-  <img width="300" src="imgs/arch-vision-logo.png">
-</p>
-
-<p align="center">
- <a href="https://www.python.org/downloads/release/python-3100/">
-    <img src="https://img.shields.io/badge/Python-3.10-blue?style=for-the-badge&logo=python" />
-  </a>&nbsp;
-  <a href="https://www.pytorch.com/">
-    <img src="https://img.shields.io/badge/PyTorch-2.2-blue?style=for-the-badge&logo=pytorch&labelColor=gray&color=orange" alt="PyTorch Version" />
-  </a>&nbsp;
-  <a href="https://opensource.org/license/mit/">
-    <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge&logo=open-source-initiative" alt="Open Source" />
-  </a>
-  
-</p>
 
 ## Introduction
 How far can you model biological vision solely with architecture and local learning? Here we provide code that performs neural architecture search, and local learning to optimize the brain similarity score of deep neural network models of vision.
