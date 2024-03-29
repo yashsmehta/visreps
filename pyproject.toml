@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "arch-vision"
+version = "0.1.0"
+description = "Architecture search and local learning for high brain score alignment"
+authors = ["Yash Mehta <yashsmehta95@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+torch = "^2.2.2"
+pandas = "^2.2.1"
+numpy = "^1.26.4"
+torchvision = "^0.17.2"
+torchaudio = "^2.2.2"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
