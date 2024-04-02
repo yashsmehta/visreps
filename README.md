@@ -1,16 +1,4 @@
-<p align="center"> <img height="300" src="imgs/arch-vision.png" alt="ArchVision Logo"> </p>
-
-<p align="center">
-  <a href="https://docs.python.org/3/whatsnew/3.11.html">
-    <img src="https://img.shields.io/badge/python-3.11-blue.svg?style=for-the-badge&logo=python" alt="Python 3.11"/>
-  </a>
-  <a href="https://www.pytorch.com/">
-    <img src="https://img.shields.io/badge/PyTorch-2.2-blue?style=for-the-badge&logo=pytorch&labelColor=gray&color=orange" alt="PyTorch"/>
-  </a>
-  <a href="https://github.com/yourusername/yourrepository/edit/master/LICENSE">
-    <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge&logo=open-source-initiative" alt="License: MIT"/>
-  </a>
-</p>
+<p align="center"> <img width="300" src="imgs/archi-vision-logo.jpg" alt="ArchVision Logo"> </p> <h1 align="center">ArchVision</h1> <p align="center"> <a href="https://www.python.org/downloads/release/python-3100/"> <img src="https://img.shields.io/badge/Python-3.10-blue?style=for-the-badge&logo=python" alt="Python Version"> </a> <a href="https://www.pytorch.com/"> <img src="https://img.shields.io/badge/PyTorch-2.2-blue?style=for-the-badge&logo=pytorch&labelColor=gray&color=orange" alt="PyTorch Version"> </a> <a href="https://opensource.org/license/mit/"> <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge&logo=open-source-initiative" alt="License"> </a> </p>
 
 
 ## Introduction
@@ -21,7 +9,7 @@ How far can you model biological vision solely with architecture and local learn
    - Ensure Poetry is installed on your system. If not, install it from [Poetry's website](https://python-poetry.org/docs/#installation). 
    - In the arch-vision directory, install project dependencies via Poetry:
      ```bash
-     git clone git@github.com:yashsmehta/arch-vision.git
+     git clone git@github.com:yashsmehta/archvision.git
      cd archvision
      poetry install
      ```
