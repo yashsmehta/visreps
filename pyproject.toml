@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "arch-vision"
+name = "archvision"
 version = "0.1.0"
 description = "Architecture search and local learning for high brain score alignment"
 authors = ["Yash Mehta <yashsmehta95@gmail.com>"]
@@ -13,6 +13,7 @@ pandas = "^2.2.1"
 numpy = "^1.26.4"
 torchvision = "^0.17.2"
 torchaudio = "^2.2.2"
+omegaconf = "^2.3.0"
 
 
 [build-system]
