@@ -14,14 +14,19 @@ if __name__ == "__main__":
         "layers": 1,
         "type": "gabor",
     },
+        
     "conv": {
         "layers": 4,
-        "layer_sizes": [64, 128, 256, 256],
+        "layer_sizes": [None, 128, 256, 256],
         "kernel_sizes": [7, 5, 3, 3],
+        "kernel_types":['bior','random','random','random'],
+        "pool_type":'max',
+        "pool_kernel_size":[2,2,2,None],
         "init": "kaiming",
         "norm": "layer",
         "nonlin": "relu",
         },
+        
     "voxel_set": "OTC",
     "eval_metric": "srpr",
     "benchmark_data_type": "fMRI",
