@@ -50,8 +50,7 @@ class WaveletConvolution(nn.Module):
                     convolved_tensor.append(channel_convolved)
                     
         elif self.filter_type in discrete_wavelets:
-            weights= generate_discrete_wavelet_family(wavelet_family=self.filter_type)
-            print('test')
+            weights= generate_discrete_wavelet_family(wavelet_family=self.filter_type).to(self.device)
             for weights in weights:
                 for i in range(in_channels):
                     channel_image = x[:, i:i+1, :, :]
