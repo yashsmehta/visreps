@@ -1,4 +1,4 @@
-from layer_operations.preset_filters import filters, generate_discrete_wavelet_family
+from models.custom_operations.preset_filters import filters, generate_discrete_wavelet_family
 from torch.nn import functional as F
 import math
 import torch
@@ -14,10 +14,11 @@ class WaveletConvolution(nn.Module):
     
     
     def __init__(self, 
-                 device:str,
                  filter_type:str,
                  filter_params:dict=None,
                  filter_size:int=None,
+                 device:str=None
+
                 ):
                 
         super().__init__()
@@ -173,7 +174,7 @@ def change_weights(module, SVD=False):
 def get_kernel_params(kernel_type):
     
     if kernel_type == 'curvature':
-        return {'n_ories':12,'n_curves':3,'gau_sizes':(5,),'spatial_fre':[1.2]},
+        return {'n_ories':12,'n_curves':3,'gau_sizes':(5,),'spatial_fre':[1.2]}
     
     elif kernel_type == 'gabor':
          return {'n_ories':12,'num_scales':3}
@@ -190,7 +191,7 @@ def get_layer_size(kernel_type, kernel_params):
 
 
         if kernel_type == 'curvature':
-            return skernel_params['n_ories']*kernel_params['n_curves']*len(kernel_params['gau_sizes']*len(kernel_params['spatial_fre']))*3
+            return kernel_params['n_ories']*kernel_params['n_curves']*len(kernel_params['gau_sizes']*len(kernel_params['spatial_fre']))*3
         
         elif kernel_type == 'gabor':
             return kernel_params['n_ories']*kernel_params['num_scales']*3

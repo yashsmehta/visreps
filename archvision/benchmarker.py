@@ -1,5 +1,5 @@
 import pandas as pd
-from benchmarks import NSDBenchmark
+from deepjuice.juicyfruits import NSDBenchmark
 from deepjuice.alignment import compute_pearson_rdm
 from deepjuice.alignment import get_scoring_method
 from deepjuice import *
