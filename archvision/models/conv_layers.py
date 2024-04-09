@@ -4,10 +4,11 @@ from models.custom_operations.convolution import WaveletConvolution
 from models.custom_operations.norm import DivNorm
 
 class ConvolutionLayers(nn.Module):
-    def __init__(self, cfg):
+    def __init__(self, cfg, device):
         super(ConvolutionLayers, self).__init__()
 
         self.conv_layers = nn.ModuleList()
+        self.device = device
         # in_channels = cfg.in_channels
         in_channels = 3
 
@@ -15,12 +16,13 @@ class ConvolutionLayers(nn.Module):
             
             if out_channels == None: #create conv layer with fixed engneered filters
                 conv_layer = WaveletConvolution(filter_size=cfg.conv.kernel_sizes[i], 
-                                                filter_type=cfg.conv.kernel_types[i])
+                                                filter_type=cfg.conv.kernel_types[i],
+                                                device=self.device)
                 out_channels = conv_layer.layer_size
                 
                 
             else:
-                conv_layer = nn.Conv2d(in_channels, out_channels, kernel_size=cfg.conv.kernel_sizes[i], padding=1)
+                conv_layer = nn.Conv2d(in_channels, out_channels, kernel_size=cfg.conv.kernel_sizes[i], padding=1).to(self.device)
 
                 match cfg.conv.init:
                     case "xavier":
