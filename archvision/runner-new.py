@@ -16,8 +16,9 @@ if __name__ == "__main__":
     },
     "conv": {
         "layers": 4,
-        "layer_sizes": [64, 128, 256, 256],
+        "layer_sizes": [None, 128, 256, 256],
         "kernel_sizes": [7, 5, 3, 3],
+        "kernel_types":['bior','random','random','random'],
         "init": "kaiming",
         "norm": "layer",
         "nonlin": "relu",
