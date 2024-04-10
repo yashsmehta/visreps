@@ -1,6 +1,6 @@
 {
 "model": {
-    "norm": "none",
+    "norm": "instance",
     "weights_init": "kaiming",
     "nonlin": "relu",
     "wavelet_type": "bior",

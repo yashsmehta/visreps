@@ -17,7 +17,6 @@ def check_and_update_config(cfg):
     ], "only kaiming, xavier, gaussian, uniform supported!"
     assert cfg.model.norm in [
         "batch",
-        "layer",
         "instance",
         "channel",
         "none",

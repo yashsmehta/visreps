@@ -37,8 +37,6 @@ class ConvolutionLayers(nn.Module):
                 return DivNorm()
             case 'instance':
                 return nn.InstanceNorm2d(out_channels)
-            case 'layer':
-                return nn.LayerNorm(out_channels)
             case 'none':
                 return nn.Identity()
             case _:
