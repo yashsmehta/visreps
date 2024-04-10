@@ -1,22 +1,23 @@
 
-def validate_and_update_config(cfg):
+def check_and_update_config(cfg):
     """
     asserts that the configuration is valid, and adds the default layer values.
     """
-    assert cfg.nonlin in [
-        "linear",
+    assert cfg.model.nonlin in [
+        "none",
         "relu",
         "tanh",
         "sigmoid",
     ], "only linear, relu, tanh, sigmoid supported!"
-    assert cfg.init in [
+    assert cfg.model.weights_init in [
         "kaiming",
         "xavier",
         "gaussian",
         "uniform",
     ], "only kaiming, xavier, gaussian, uniform supported!"
-    assert cfg.norm in [
+    assert cfg.model.norm in [
         "batch",
+        "layer",
         "instance",
         "channel",
         "none",
@@ -25,9 +26,14 @@ def validate_and_update_config(cfg):
         "kernel_size": 3,
         "channels": 64,
         "pooling": "none",
-        "pool_kernel_size": 2,
+        "pool_kernel_size": "none",
     }
     for i, layer in enumerate(cfg.model.layers):
         cfg.model.layers[i] = {**default_layer, **layer}
+        assert cfg.model.layers[i].pooling in [
+            "none",
+            "max",
+            "avg",
+        ], "only None, max, avg supported!"
 
     return cfg

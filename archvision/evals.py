@@ -4,23 +4,26 @@ benchmarking, and logging results.
 """
 from deepjuice import *
 import archvision.benchmarker as benchmarker
+import torch
 import archvision.models.backbone as backbone
+import archvision.utils as utils
 import archvision.transforms
+from pprint import pprint
 
 
-def run(cfg):
+def eval(cfg):
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print("Device: ", device)
+    cfg = utils.check_and_update_config(cfg)
+    model = backbone.VisionModel(cfg, device)
+    preprocess = archvision.transforms.get_preprocess()
+    pprint(cfg)
+    print(model)
 
     benchmark = benchmarker.load_benchmark(cfg)
-
-    model = backbone.VisionModel(cfg)
-    preprocess = archvision.transforms.get_preprocess()
-
-    # model_uid = "torchvision_alexnet_imagenet1k_v1"
-    # model, preprocess = get_deepjuice_model(model_uid)
-
     dataloader = get_data_loader(benchmark.image_paths, preprocess)
 
-    devices = {"device": "cuda:0", "output_device": "cpu"}
+    devices = {"device": device, "output_device": "cpu"}
 
     extractor = FeatureExtractor(
         model, dataloader, flatten=True, batch_progress=True, **devices

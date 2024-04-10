@@ -3,27 +3,33 @@ from models.custom_operations.norm import DivNorm
 
 
 class ConvolutionLayers(nn.Module):
-    def __init__(self, cfg):
+    def __init__(self, cfg, device):
         super(ConvolutionLayers, self).__init__()
 
         self.conv_layers = nn.ModuleList()
-        in_channels = cfg.in_channels
+        in_channels = cfg.model.conv_in_channels
+        self.device = device
 
         for layer in cfg.model.layers:
             conv_layer = nn.Conv2d(in_channels, layer.channels, kernel_size=layer.kernel_size, padding=1)
-            norm_layer = self.get_norm_layer(layer.channels, cfg.model.norm)
-            nonlin_layer = self.get_nonlin_layer(cfg.model.nonlin)
-            pool_layer = self.get_pool_layer(layer.pooling, layer.pool_kernel_size)
+            self.initialize_weights(conv_layer, cfg.model.weights_init)
+
+            nonlinearity = self.get_nonlinearity(cfg.model.nonlin)
+            normalization = self.get_normalization(layer.channels, cfg.model.norm)
+            pooling = self.get_pooling(layer.pooling, layer.pool_kernel_size)
             
-            self.conv_layers.append(nn.Sequential(conv_layer, norm_layer, nonlin_layer, pool_layer))
+            self.conv_layers.append(nn.Sequential(conv_layer, nonlinearity, normalization, pooling))
             in_channels = layer.channels
 
+        self.conv_layers = self.conv_layers.to(self.device)
+
     def forward(self, x):
+        x = x.to(self.device)
         for layer in self.conv_layers:
             x = layer(x)
         return x
 
-    def get_norm_layer(self, out_channels, norm_type):
+    def get_normalization(self, out_channels, norm_type):
         match norm_type:
             case 'batch':
                 return nn.BatchNorm2d(out_channels)
@@ -31,12 +37,14 @@ class ConvolutionLayers(nn.Module):
                 return DivNorm()
             case 'instance':
                 return nn.InstanceNorm2d(out_channels)
+            case 'layer':
+                return nn.LayerNorm(out_channels)
             case 'none':
                 return nn.Identity()
             case _:
                 raise ValueError(f"Unsupported normalization method: {norm_type}")
 
-    def get_nonlin_layer(self, nonlin_type):
+    def get_nonlinearity(self, nonlin_type):
         match nonlin_type:
             case 'relu':
                 return nn.ReLU(inplace=True)
@@ -51,7 +59,7 @@ class ConvolutionLayers(nn.Module):
             case _:
                 raise ValueError(f"Unsupported non-linearity: {nonlin_type}")
 
-    def get_pool_layer(self, pool_type, pool_kernel_size):
+    def get_pooling(self, pool_type, pool_kernel_size):
         match pool_type:
             case 'max':
                 return nn.MaxPool2d(kernel_size=pool_kernel_size)
@@ -62,8 +70,8 @@ class ConvolutionLayers(nn.Module):
             case _:
                 raise ValueError(f"Unsupported pool type: {pool_type}")
 
-    def initialize_weights(self, conv_layer, init_method):
-        match init_method:
+    def initialize_weights(self, conv_layer, initialization):
+        match initialization:
             case "xavier":
                 nn.init.xavier_normal_(conv_layer.weight)
             case "kaiming":
@@ -73,7 +81,7 @@ class ConvolutionLayers(nn.Module):
             case "uniform":
                 nn.init.uniform_(conv_layer.weight, a=-0.02, b=0.02)
             case _:
-                raise ValueError(f"Unsupported initialization method: {init_method}")
+                raise ValueError(f"Unsupported initialization method: {initialization}")
 
 
 
