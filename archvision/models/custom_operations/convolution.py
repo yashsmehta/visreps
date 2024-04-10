@@ -26,7 +26,7 @@ class WaveletConvolution(nn.Module):
         
 
         self.filter_type = filter_type
-        self.filter_size = filter_size
+        self.filter_size = 15
         self.filter_params = get_kernel_params(self.filter_type)
         self.layer_size = get_layer_size(self.filter_type, self.filter_params)
         self.device = device
