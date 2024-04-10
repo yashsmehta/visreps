@@ -5,36 +5,11 @@ this will also append the results to a common file.
 
 from omegaconf import OmegaConf
 import archvision.evals as evals
+import json
 
 
 if __name__ == "__main__":
-
-    cfg_dict = {
-    "wavelet": {
-        "layers": 1,
-        "type": "gabor",
-    },
-        
-    "conv": {
-        "layers": 4,
-        "layer_sizes": [None, 128, 256, 256],
-        "kernel_sizes": [7, 5, 3, 3],
-        "kernel_types":['bior','random','random','random'],
-        "pool_type":'max',
-        "pool_kernel_size":[2,2,2,None],
-        "init": "kaiming",
-        "norm": "layer",
-        "nonlin": "relu",
-        },
-        
-    "voxel_set": "OTC",
-    "eval_metric": "srpr",
-    "benchmark_data_type": "fMRI",
-    "log_expdata": True,  # flag to save the training data
-    "log_dir": "logs/",  # directory to save experimental data
-    "exp_name": "test",  # logs are stored under a directory created under this name
-    }
-
+    cfg_dict = json.load(open("archvision/configs/default.json"))
     cfg = OmegaConf.create(cfg_dict)
 
     config = OmegaConf.from_cli()

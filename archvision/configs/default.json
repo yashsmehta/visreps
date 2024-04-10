@@ -1,0 +1,34 @@
+{
+"model": {
+    "norm": "layer",
+    "init": "kaiming",
+    "nonlin": "relu",
+    "wavelet_type": "bior",
+    "wavelet_layers": 2,
+    "layers": [
+        {
+            "channels": 128,
+            "kernel_size": 5,
+            "pooling": "max",
+            "pool_kernel_size": 2
+        },
+        {
+            "channels": 256,
+            "kernel_size": 3,
+            "pooling": "avg",
+            "pool_kernel_size": 2
+        },
+        {
+            "channels": 256,
+            "kernel_size": 3
+        }
+    ]
+    },
+    
+"voxel_set": "OTC",
+"eval_metric": "srpr",
+"benchmark_data_type": "fMRI",
+"log_expdata": true,
+"log_dir": "logs/",
+"exp_name": "test"
+}
