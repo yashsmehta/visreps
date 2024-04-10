@@ -5,18 +5,18 @@ benchmarking, and logging results.
 from deepjuice import *
 import archvision.benchmarker as benchmarker
 import archvision.models.backbone as backbone
-import archvision.transforms as transforms
+import archvision.transforms
 
 
 def run(cfg):
 
     benchmark = benchmarker.load_benchmark(cfg)
 
-    # model = backbone.VisionModel(cfg)
-    # preprocess = preprocessor.get_preprocess()
+    model = backbone.VisionModel(cfg)
+    preprocess = archvision.transforms.get_preprocess()
 
-    model_uid = 'torchvision_alexnet_imagenet1k_v1'
-    model, preprocess = get_deepjuice_model(model_uid)
+    # model_uid = "torchvision_alexnet_imagenet1k_v1"
+    # model, preprocess = get_deepjuice_model(model_uid)
 
     dataloader = get_data_loader(benchmark.image_paths, preprocess)
 
@@ -29,6 +29,6 @@ def run(cfg):
     results = benchmarker.get_benchmarking_results(benchmark, extractor)
 
     results = results.sort_values(by="model_layer_index")
-    results = results[results['region'] == cfg.voxel_set]
-    results = results[results['metric'] == cfg.eval_metric]
+    results = results[results["region"] == cfg.voxel_set]
+    results = results[results["metric"] == cfg.eval_metric]
     print(results)
