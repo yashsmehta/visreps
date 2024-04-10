@@ -1,107 +1,79 @@
 import torch.nn as nn
-import os
-from models.custom_operations.convolution import WaveletConvolution
 from models.custom_operations.norm import DivNorm
 
+
 class ConvolutionLayers(nn.Module):
-    def __init__(self, cfg, device):
+    def __init__(self, cfg):
         super(ConvolutionLayers, self).__init__()
 
         self.conv_layers = nn.ModuleList()
-        self.device = device
-        # in_channels = cfg.in_channels
-        in_channels = 3
+        in_channels = cfg.in_channels
 
-        for i, out_channels in enumerate(cfg.conv.layer_sizes):
-            
-            if out_channels == None: #create conv layer with fixed engneered filters
-                conv_layer = WaveletConvolution(filter_size=cfg.conv.kernel_sizes[i], 
-                                                filter_type=cfg.conv.kernel_types[i],
-                                                device=self.device)
-                out_channels = conv_layer.layer_size
-                
-                
-            else:
-                conv_layer = nn.Conv2d(in_channels, out_channels, kernel_size=cfg.conv.kernel_sizes[i], padding=1).to(self.device)
-
-                match cfg.conv.init:
-                    case "xavier":
-                        nn.init.xavier_normal_(conv_layer.weight)
-                    case "kaiming":
-                        nn.init.kaiming_normal_(conv_layer.weight)
-                    case "gaussian":
-                        nn.init.normal_(conv_layer.weight, mean=0, std=0.02)
-                    case "uniform":
-                        nn.init.uniform_(conv_layer.weight, a=-0.02, b=0.02)
-                    case _:
-                        raise ValueError(f"Unsupported initialization method: {cfg.conv.init}")
-
-            match cfg.conv.norm:
-                case 'batch':
-                    norm_layer = nn.BatchNorm2d(out_channels)    
-                case 'channel':
-                    norm_layer = DivNorm()
-                # case "layer":
-                #     norm_layer = nn.LayerNorm(out_channels)
-                case "instance":
-                    norm_layer = nn.InstanceNorm2d(out_channels)
-                # case "group":
-                #     norm_layer = nn.GroupNorm(num_groups=32, num_channels=out_channels)
-                # case "weight":
-                #     norm_layer = nn.utils.weight_norm(conv_layer)
-                case "none":
-                    norm_layer = nn.Identity()
-                case _:
-                    raise ValueError(f"Unsupported normalization method: {cfg.conv.norm}")
-
-            match cfg.conv.nonlin:
-                case "relu":
-                    nonlin_layer = nn.ReLU(inplace=True)
-                case "tanh":
-                    nonlin_layer = nn.Tanh()
-                case "sigmoid":
-                    nonlin_layer = nn.Sigmoid()
-                case "elu":
-                    nonlin_layer = nn.ELU(inplace=True)
-                case "none":
-                    nonlin_layer = nn.Identity()
-                case _:
-                    raise ValueError(f"Unsupported non-linearity: {cfg.conv.nonlin}")
-
-            
-            match cfg.conv.pool_type:
-                case 'max':
-                    if cfg.conv.pool_kernel_sizes[i] == None:
-                        pool_layer = nn.Identity()
-                    else:
-                        pool_layer = nn.MaxPool2d(kernel_size=cfg.conv.pool_kernel_sizes[i])
-                
-                case 'avg':
-                    if cfg.conv.pool_kernel_sizes[i] == None:
-                        pool_layer = nn.Identity()
-                    else:
-                        pool_layer = nn.AvgPool2d(kernel_size=cfg.conv.pool_kernel_sizes[i])
-
-                case _:
-                    raise ValueError(f"Unsupported pool type: {cfg.conv.pool_type}")
-            
+        for layer in cfg.model.layers:
+            conv_layer = nn.Conv2d(in_channels, layer.channels, kernel_size=layer.kernel_size, padding=1)
+            norm_layer = self.get_norm_layer(layer.channels, cfg.model.norm)
+            nonlin_layer = self.get_nonlin_layer(cfg.model.nonlin)
+            pool_layer = self.get_pool_layer(layer.pooling, layer.pool_kernel_size)
             
             self.conv_layers.append(nn.Sequential(conv_layer, norm_layer, nonlin_layer, pool_layer))
-            in_channels = out_channels
+            in_channels = layer.channels
 
-    
     def forward(self, x):
-        for conv_layer in self.conv_layers:
-            x = conv_layer(x)
+        for layer in self.conv_layers:
+            x = layer(x)
         return x
 
+    def get_norm_layer(self, out_channels, norm_type):
+        match norm_type:
+            case 'batch':
+                return nn.BatchNorm2d(out_channels)
+            case 'channel':
+                return DivNorm()
+            case 'instance':
+                return nn.InstanceNorm2d(out_channels)
+            case 'none':
+                return nn.Identity()
+            case _:
+                raise ValueError(f"Unsupported normalization method: {norm_type}")
 
+    def get_nonlin_layer(self, nonlin_type):
+        match nonlin_type:
+            case 'relu':
+                return nn.ReLU(inplace=True)
+            case 'tanh':
+                return nn.Tanh()
+            case 'sigmoid':
+                return nn.Sigmoid()
+            case 'elu':
+                return nn.ELU(inplace=True)
+            case 'none':
+                return nn.Identity()
+            case _:
+                raise ValueError(f"Unsupported non-linearity: {nonlin_type}")
 
+    def get_pool_layer(self, pool_type, pool_kernel_size):
+        match pool_type:
+            case 'max':
+                return nn.MaxPool2d(kernel_size=pool_kernel_size)
+            case 'avg':
+                return nn.AvgPool2d(kernel_size=pool_kernel_size)
+            case 'none':
+                return nn.Identity()
+            case _:
+                raise ValueError(f"Unsupported pool type: {pool_type}")
 
-
-
-
-
+    def initialize_weights(self, conv_layer, init_method):
+        match init_method:
+            case "xavier":
+                nn.init.xavier_normal_(conv_layer.weight)
+            case "kaiming":
+                nn.init.kaiming_normal_(conv_layer.weight)
+            case "gaussian":
+                nn.init.normal_(conv_layer.weight, mean=0, std=0.02)
+            case "uniform":
+                nn.init.uniform_(conv_layer.weight, a=-0.02, b=0.02)
+            case _:
+                raise ValueError(f"Unsupported initialization method: {init_method}")
 
 
 
