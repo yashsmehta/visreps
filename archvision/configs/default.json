@@ -1,11 +1,13 @@
-{
+cfg_dict = {
+    
+
 "model": {
     "norm": "instance",
     "weights_init": "kaiming",
     "nonlin": "relu",
     "wavelet_type": "bior",
     "wavelet_layers": 2,
-    "conv_in_channels": 3,
+    "conv_in_channels": "none", # choose none if there are wavelet layers before conv layers, othewise 3
     "layers": [
         {
             "channels": 128,
@@ -21,7 +23,9 @@
         },
         {
             "channels": 256,
-            "kernel_size": 3
+            "kernel_size": 3,
+            "pooling": "none",
+            "pool_kernel_size": "none"
         }
     ]
     },
@@ -29,7 +33,7 @@
 "voxel_set": "OTC",
 "eval_metric": "srpr",
 "benchmark_data_type": "fMRI",
-"log_expdata": true,
+"log_expdata": True,
 "log_dir": "logs/",
 "exp_name": "test"
 }

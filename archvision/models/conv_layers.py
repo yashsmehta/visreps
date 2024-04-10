@@ -3,15 +3,15 @@ from models.custom_operations.norm import DivNorm
 
 
 class ConvolutionLayers(nn.Module):
-    def __init__(self, cfg, device):
+    def __init__(self, cfg, in_channels, device):
         super(ConvolutionLayers, self).__init__()
 
         self.conv_layers = nn.ModuleList()
-        in_channels = cfg.model.conv_in_channels
+        self.n_channels = in_channels if cfg.model.conv_in_channels == "none" else cfg.model.conv_in_channels
         self.device = device
 
         for layer in cfg.model.layers:
-            conv_layer = nn.Conv2d(in_channels, layer.channels, kernel_size=layer.kernel_size, padding=1)
+            conv_layer = nn.Conv2d(in_channels, layer.channels, kernel_size=layer.kernel_size, padding=1).to(self.device)
             self.initialize_weights(conv_layer, cfg.model.weights_init)
 
             nonlinearity = self.get_nonlinearity(cfg.model.nonlin)
@@ -21,7 +21,6 @@ class ConvolutionLayers(nn.Module):
             self.conv_layers.append(nn.Sequential(conv_layer, nonlinearity, normalization, pooling))
             in_channels = layer.channels
 
-        self.conv_layers = self.conv_layers.to(self.device)
 
     def forward(self, x):
         x = x.to(self.device)

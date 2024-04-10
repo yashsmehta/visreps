@@ -178,7 +178,6 @@ def filters(in_channels:int,
 
 # Function to generate biorthogonal wavelet filters
 def generate_discrete_wavelet_family(wavelet_family='bior'):
-    print('test')
     wavelet_list = [i for i in pywt.wavelist() if wavelet_family in i]
     filter_list = []
     for wavelet_name in wavelet_list:
