@@ -14,4 +14,4 @@ if __name__ == "__main__":
 
     config = OmegaConf.from_cli()
     cfg = OmegaConf.merge(cfg, config)
-    evals.run(cfg)
+    evals.eval(cfg)

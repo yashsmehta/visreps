@@ -1,10 +1,11 @@
 {
 "model": {
-    "norm": "layer",
-    "init": "kaiming",
+    "norm": "none",
+    "weights_init": "kaiming",
     "nonlin": "relu",
     "wavelet_type": "bior",
     "wavelet_layers": 2,
+    "conv_in_channels": 3,
     "layers": [
         {
             "channels": 128,

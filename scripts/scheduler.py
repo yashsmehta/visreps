@@ -2,7 +2,7 @@ import subprocess
 import itertools
 import re
 
-exec_file = "runner.py"
+exec_file = "run.py"
 seeds = 1 
 
 # queue, cores, use_gpu = "gpu_rtx", 5, True
