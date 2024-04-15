@@ -1,39 +1,36 @@
-cfg_dict = {
-    
-
-"model": {
+{
+  "model": {
     "norm": "instance",
     "weights_init": "kaiming",
     "nonlin": "relu",
     "wavelet_type": "bior",
     "wavelet_layers": 2,
-    "conv_in_channels": "none", # choose none if there are wavelet layers before conv layers, othewise 3
+    "conv_in_channels": "none",
     "layers": [
-        {
-            "channels": 128,
-            "kernel_size": 5,
-            "pooling": "max",
-            "pool_kernel_size": 2
-        },
-        {
-            "channels": 256,
-            "kernel_size": 3,
-            "pooling": "avg",
-            "pool_kernel_size": 2
-        },
-        {
-            "channels": 256,
-            "kernel_size": 3,
-            "pooling": "none",
-            "pool_kernel_size": "none"
-        }
+      {
+        "channels": 128,
+        "kernel_size": 5,
+        "pooling": "max",
+        "pool_kernel_size": 2
+      },
+      {
+        "channels": 256,
+        "kernel_size": 3,
+        "pooling": "avg",
+        "pool_kernel_size": 2
+      },
+      {
+        "channels": 256,
+        "kernel_size": 3,
+        "pooling": "none",
+        "pool_kernel_size": "none"
+      }
     ]
-    },
-    
-"voxel_set": "OTC",
-"eval_metric": "srpr",
-"benchmark_data_type": "fMRI",
-"log_expdata": True,
-"log_dir": "logs/",
-"exp_name": "test"
+  },
+  "voxel_set": "OTC",
+  "eval_metric": "srpr",
+  "benchmark_data_type": "fMRI",
+  "log_expdata": true,
+  "log_dir": "logs/",
+  "exp_name": "test"
 }
