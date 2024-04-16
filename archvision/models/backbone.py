@@ -18,6 +18,22 @@ class VisionModel(nn.Module):
         return x
 
 
-def AlexNet():
-    alexnet = models.alexnet(weights="AlexNet_Weights.IMAGENET1K_V1")
+def AlexNet(pretrained=True):
+    if pretrained:
+        alexnet = models.alexnet(weights="AlexNet_Weights.IMAGENET1K_V1")
+    else:
+        alexnet = models.alexnet(weights=None)
+    last_layer = alexnet.classifier[-1]
+    last_layer.__class__.__name__ = "last_layer"
+
     return alexnet
+
+def VGGNet(pretrained=True):
+    if pretrained:
+        vggnet = models.vgg16(weights="VGG16_Weights.IMAGENET1K_V1")
+    else:
+        vggnet = models.vgg16(weights=None)
+
+    last_layer = vggnet.classifier[-1]
+    last_layer.__class__.__name__ = "last_layer"
+    return vggnet

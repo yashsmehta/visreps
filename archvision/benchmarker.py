@@ -7,7 +7,7 @@ from deepjuice import *
 
 def load_benchmark(cfg):
     if cfg.benchmark_data_type == "fMRI":
-        benchmark = NSDBenchmark(voxel_set=cfg.voxel_set)
+        benchmark = NSDBenchmark(voxel_set=cfg.region)
         benchmark.build_rdms(compute_pearson_rdm)
         return benchmark
     else:
