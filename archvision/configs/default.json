@@ -8,27 +8,27 @@
     "conv_in_channels": "none",
     "layers": [
       {
-        "channels": 128,
+        "channels": 1280,
         "kernel_size": 5,
         "pooling": "max",
         "pool_kernel_size": 2
       },
       {
-        "channels": 256,
+        "channels": 2560,
         "kernel_size": 3,
         "pooling": "avg",
         "pool_kernel_size": 2
       },
       {
-        "channels": 256,
+        "channels": 25000,
         "kernel_size": 3,
         "pooling": "none",
         "pool_kernel_size": "none"
       }
     ]
   },
-  "voxel_set": "OTC",
-  "eval_metric": "srpr",
+  "metric": "srpr",
+  "region": "OTC",
   "benchmark_data_type": "fMRI",
   "log_expdata": true,
   "log_dir": "logs/",
