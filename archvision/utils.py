@@ -6,6 +6,7 @@ def check_and_update_config(cfg):
     asserts that the configuration is valid, and adds the default layer values.
     """
     assert cfg.model.name in [
+        "alexnet",
         "vgg16",
         "vgg19",
         "resnet50",

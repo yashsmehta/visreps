@@ -1,5 +1,6 @@
 import torch.nn as nn
 import torchvision.models as models
+from torchvision.models import ResNet50_Weights, AlexNet_Weights, VGG16_Weights, DenseNet121_Weights
 from .conv_layers import ConvolutionLayers
 from .wavelet_layers import WaveletLayers
 from .last_layer import Last
@@ -27,9 +28,9 @@ class VisionModel(nn.Module):
 
 def AlexNet(pretrained=True):
     if pretrained:
-        alexnet = models.alexnet(weights="AlexNet_Weights.IMAGENET1K_V1")
+        alexnet = models.alexnet(weights=AlexNet_Weights.DEFAULT)
     else:
-        alexnet = models.alexnet(weights=None)
+        alexnet = models.alexnet()
     last_layer = alexnet.classifier[-1]
     last_layer.__class__.__name__ = "last_layer"
 
@@ -38,9 +39,9 @@ def AlexNet(pretrained=True):
 
 def VGG16(pretrained=True):
     if pretrained:
-        vggnet = models.vgg16(weights="VGG16_Weights.IMAGENET1K_V1")
+        vggnet = models.vgg16(weights=VGG16_Weights.DEFAULT)
     else:
-        vggnet = models.vgg16(weights=None)
+        vggnet = models.vgg16()
 
     last_layer = vggnet.classifier[-1]
     last_layer.__class__.__name__ = "last_layer"
@@ -49,9 +50,9 @@ def VGG16(pretrained=True):
 
 def ResNet50(pretrained=True):
     if pretrained:
-        resnet = models.resnet50(weights="ResNet50_Weights.IMAGENET1K_V1")
+        resnet = models.resnet50(weights=ResNet50_Weights.DEFAULT)
     else:
-        resnet = models.resnet50(weights=None)
+        resnet = models.resnet50()
 
     last_layer = resnet.fc
     last_layer.__class__.__name__ = "last_layer"
@@ -60,9 +61,9 @@ def ResNet50(pretrained=True):
 
 def DenseNet121(pretrained=True):
     if pretrained:
-        densenet = models.densenet121(weights="DenseNet121_Weights.IMAGENET1K_V1")
+        densenet = models.densenet121(weights=DenseNet121_Weights.DEFAULT)
     else:
-        densenet = models.densenet121(weights=None)
+        densenet = models.densenet121()
 
     last_layer = densenet.classifier
     last_layer.__class__.__name__ = "last_layer"
