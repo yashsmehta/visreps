@@ -5,6 +5,7 @@
     "deepjuice_keep_layer": "last_layer",
     "norm": "instance",
     "weights_init": "kaiming",
+    "seed":42,
     "nonlin": "relu",
     "wavelet": {
         "n_ories": 12,
