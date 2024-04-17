@@ -1,26 +1,33 @@
 {
   "model": {
+    "name": "densenet121",
+    "pretrained": false,
+    "deepjuice_keep_layer": "last_layer",
     "norm": "instance",
     "weights_init": "kaiming",
     "nonlin": "relu",
-    "wavelet_type": "bior",
-    "wavelet_layers": 2,
+    "wavelet": {
+        "n_ories": 12,
+        "n_curves": 3,
+        "gau_sizes": [5],
+        "spatial_fre": [1.2]
+    },
     "conv_in_channels": "none",
     "layers": [
       {
-        "channels": 1280,
+        "channels": 128,
         "kernel_size": 5,
         "pooling": "max",
         "pool_kernel_size": 2
       },
       {
-        "channels": 2560,
+        "channels": 256,
         "kernel_size": 3,
         "pooling": "avg",
         "pool_kernel_size": 2
       },
       {
-        "channels": 25000,
+        "channels": 2560,
         "kernel_size": 3,
         "pooling": "none",
         "pool_kernel_size": "none"
