@@ -1,6 +1,6 @@
 {
   "model": {
-    "name": "densenet121",
+    "name": "custom",
     "pretrained": false,
     "deepjuice_keep_layer": "last_layer",
     "norm": "instance",
@@ -15,22 +15,28 @@
     "conv_in_channels": "none",
     "layers": [
       {
-        "channels": 128,
-        "kernel_size": 5,
-        "pooling": "max",
+        "channels": 1000,
+        "kernel_size": 7,
+        "pooling": "avg",
         "pool_kernel_size": 2
       },
       {
-        "channels": 256,
+        "channels": 3000,
+        "kernel_size": 5,
+        "pooling": "avg",
+        "pool_kernel_size": 2
+      },
+      {
+        "channels": 5000,
         "kernel_size": 3,
         "pooling": "avg",
         "pool_kernel_size": 2
       },
       {
-        "channels": 2560,
+        "channels": 30000,
         "kernel_size": 3,
-        "pooling": "none",
-        "pool_kernel_size": "none"
+        "pooling": "avg",
+        "pool_kernel_size": 4
       }
     ]
   },
