@@ -9,7 +9,9 @@ class VisionModel(nn.Module):
         super(VisionModel, self).__init__()
         self.device = device
         self.wavelet_layers = WaveletLayers(cfg, self.device)
-        self.conv_layers = ConvolutionLayers(cfg, self.wavelet_layers.out_channels, self.device)
+        self.conv_layers = ConvolutionLayers(
+            cfg, self.wavelet_layers.out_channels, self.device
+        )
 
     def forward(self, x):
         x = x.to(self.device)
@@ -28,7 +30,8 @@ def AlexNet(pretrained=True):
 
     return alexnet
 
-def VGGNet(pretrained=True):
+
+def VGG16(pretrained=True):
     if pretrained:
         vggnet = models.vgg16(weights="VGG16_Weights.IMAGENET1K_V1")
     else:
@@ -37,3 +40,25 @@ def VGGNet(pretrained=True):
     last_layer = vggnet.classifier[-1]
     last_layer.__class__.__name__ = "last_layer"
     return vggnet
+
+
+def ResNet50(pretrained=True):
+    if pretrained:
+        resnet = models.resnet50(weights="ResNet50_Weights.IMAGENET1K_V1")
+    else:
+        resnet = models.resnet50(weights=None)
+
+    last_layer = resnet.fc
+    last_layer.__class__.__name__ = "last_layer"
+    return resnet
+
+
+def DenseNet121(pretrained=True):
+    if pretrained:
+        densenet = models.densenet121(weights="DenseNet121_Weights.IMAGENET1K_V1")
+    else:
+        densenet = models.densenet121(weights=None)
+
+    last_layer = densenet.classifier
+    last_layer.__class__.__name__ = "last_layer"
+    return densenet
