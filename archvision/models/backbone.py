@@ -2,7 +2,7 @@ import torch.nn as nn
 import torchvision.models as models
 from .conv_layers import ConvolutionLayers
 from .wavelet_layers import WaveletLayers
-
+from .last_layer import Last
 
 class VisionModel(nn.Module):
     def __init__(self, cfg, device):
@@ -13,11 +13,15 @@ class VisionModel(nn.Module):
         self.conv_layers = ConvolutionLayers(
             cfg, out_channels, self.device
         )
+        self.last_layer = Last()
+        self.last_layer.__class__.__name__ = 'last_layer'
 
     def forward(self, x):
         x = x.to(self.device)
         x = self.wavelet_layers(x)
         x = self.conv_layers(x)
+        x = self.last_layer(x)
+        
         return x
 
 

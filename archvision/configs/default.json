@@ -16,25 +16,25 @@
     "conv_in_channels": "none",
     "layers": [
       {
-        "channels": 1000,
+        "channels": 10,
         "kernel_size": 7,
         "pooling": "avg",
         "pool_kernel_size": 2
       },
       {
-        "channels": 3000,
+        "channels": 30,
         "kernel_size": 5,
         "pooling": "avg",
         "pool_kernel_size": 2
       },
       {
-        "channels": 5000,
+        "channels": 50,
         "kernel_size": 3,
         "pooling": "avg",
         "pool_kernel_size": 2
       },
       {
-        "channels": 30000,
+        "channels": 30,
         "kernel_size": 3,
         "pooling": "avg",
         "pool_kernel_size": 4
