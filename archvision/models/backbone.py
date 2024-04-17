@@ -9,8 +9,9 @@ class VisionModel(nn.Module):
         super(VisionModel, self).__init__()
         self.device = device
         self.wavelet_layers = WaveletLayers(cfg, self.device)
+        out_channels = self.wavelet_layers.out_channels
         self.conv_layers = ConvolutionLayers(
-            cfg, self.wavelet_layers.out_channels, self.device
+            cfg, out_channels, self.device
         )
 
     def forward(self, x):
