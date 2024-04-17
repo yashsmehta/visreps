@@ -22,9 +22,7 @@ def check_and_update_config(cfg):
     ], "pretrained must be True or False!"
 
     if cfg.model.name == "custom":
-        assert (
-            cfg.model.pretrained == False
-        ), "pretrained is not supported for custom model!"
+        cfg.model.pretrained = False
         assert cfg.model.nonlin in [
             "none",
             "relu",
