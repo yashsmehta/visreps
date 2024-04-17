@@ -18,7 +18,7 @@ class ConvolutionLayers(nn.Module):
             conv_layer = nn.Conv2d(
                 in_channels, layer.channels, kernel_size=layer.kernel_size, padding=1
             ).to(self.device)
-            nn_ops.initialize_weights(conv_layer, cfg.model.weights_init)
+            nn_ops.initialize_weights(conv_layer, cfg.model.weights_init, cfg.model.seed)
 
             nonlinearity = nn_ops.get_nonlinearity(cfg.model.nonlin)
             normalization = nn_ops.get_normalization(layer.channels, cfg.model.norm)

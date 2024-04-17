@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 from models.custom_operations.norm import DivNorm
 
@@ -43,7 +44,8 @@ def get_pooling(pool_type, pool_kernel_size):
         case _:
             raise ValueError(f"Unsupported pool type: {pool_type}")
 
-def initialize_weights(conv_layer, initialization):
+def initialize_weights(conv_layer, initialization, seed):
+    torch.manual_seed(seed)
     match initialization:
         case "xavier":
             nn.init.xavier_normal_(conv_layer.weight)
