@@ -46,15 +46,21 @@ def check_and_update_config(cfg):
             "kernel_size": 3,
             "channels": 64,
             "pooling": "none",
-            "pool_kernel_size": "none",
+            "pool_kernel_size": 2,
         }
         for i, layer in enumerate(cfg.model.layers):
-            cfg.model.layers[i] = {**default_layer, **layer}
+            default_layer.update(layer)
+            cfg.model.layers[i] = default_layer.copy()
+
             assert cfg.model.layers[i].pooling in [
-                "none",
                 "max",
+                "globalmax",
                 "avg",
-            ], "only None, max, avg supported!"
+                "globalavg",
+                "none",
+            ], "only max, avg, globalmax, globalavg and none supported!"
+            if layer.pooling in ["globalmax", "globalavg"]:
+                cfg.model.layers[i].pool_kernel_size = "N/A"
     else:
         cfg.model = OmegaConf.create(
             {

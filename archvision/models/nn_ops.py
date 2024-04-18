@@ -39,6 +39,10 @@ def get_pooling(pool_type, pool_kernel_size):
             return nn.MaxPool2d(kernel_size=pool_kernel_size)
         case "avg":
             return nn.AvgPool2d(kernel_size=pool_kernel_size)
+        case "globalmax":
+            return nn.AdaptiveMaxPool2d((1, 1))
+        case "globalavg":
+            return nn.AdaptiveAvgPool2d((1, 1))
         case "none":
             return nn.Identity()
         case _:
