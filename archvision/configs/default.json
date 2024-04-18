@@ -3,7 +3,7 @@
     "name": "custom",
     "pretrained": false,
     "deepjuice_keep_layer": "last_layer",
-    "norm": "instance",
+    "norm": "none",
     "weights_init": "kaiming",
     "seed":42,
     "nonlin": "relu",
@@ -16,28 +16,27 @@
     "conv_in_channels": "none",
     "layers": [
       {
-        "channels": 10,
+        "channels": 100,
         "kernel_size": 7,
-        "pooling": "avg",
+        "pooling": "max",
         "pool_kernel_size": 2
       },
       {
-        "channels": 30,
+        "channels": 300,
         "kernel_size": 5,
-        "pooling": "avg",
+        "pooling": "max",
         "pool_kernel_size": 2
       },
       {
         "channels": 50,
         "kernel_size": 3,
-        "pooling": "avg",
+        "pooling": "max",
         "pool_kernel_size": 2
       },
       {
-        "channels": 30,
+        "channels": 30000,
         "kernel_size": 3,
-        "pooling": "avg",
-        "pool_kernel_size": 4
+        "pooling": "max"
       }
     ]
   },

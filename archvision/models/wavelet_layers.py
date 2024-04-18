@@ -21,7 +21,7 @@ class WaveletLayers(nn.Module):
         print("wavelet layer size: ", self.out_channels)
 
         nonlinearity = nn_ops.get_nonlinearity(cfg.model.nonlin)
-        pooling = nn_ops.get_pooling("avg", 2)
+        pooling = nn_ops.get_pooling("max", 2)
 
         self.wavelet_layers.append(nn.Sequential(wavelet_layer, nonlinearity, pooling))
 

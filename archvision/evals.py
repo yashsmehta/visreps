@@ -37,7 +37,7 @@ def eval(cfg):
     benchmark = benchmarker.load_benchmark(cfg)
     dataloader = get_data_loader(benchmark.image_paths, preprocess)
 
-    devices = {"device": device, "output_device": "cpu"}
+    devices = {"device": device, "output_device": device}
     print("'Keep' layer for deepjuice: ", cfg.model.deepjuice_keep_layer)
     keep = (
         []
