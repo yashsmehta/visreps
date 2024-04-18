@@ -8,11 +8,10 @@ def check_and_update_config(cfg):
     assert cfg.model.name in [
         "alexnet",
         "vgg16",
-        "vgg19",
         "resnet50",
         "densenet121",
         "custom",
-    ], "only vgg16, vgg19, resnet50, densenet121, custom supported!"
+    ], "only vgg16, resnet50, densenet121, custom supported!"
     assert cfg.model.deepjuice_keep_layer in [
         "last_layer",
         "all",
@@ -32,6 +31,7 @@ def check_and_update_config(cfg):
         ], "only linear, relu, tanh, sigmoid supported!"
         assert cfg.model.weights_init in [
             "kaiming",
+            "kaiming_uniform",
             "xavier",
             "gaussian",
             "uniform",

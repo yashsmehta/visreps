@@ -55,6 +55,8 @@ def initialize_weights(conv_layer, initialization, seed):
             nn.init.xavier_normal_(conv_layer.weight)
         case "kaiming":
             nn.init.kaiming_normal_(conv_layer.weight)
+        case "kaiming_uniform":
+            nn.init.kaiming_uniform_(conv_layer.weight)
         case "gaussian":
             nn.init.normal_(conv_layer.weight, mean=0, std=0.02)
         case "uniform":
