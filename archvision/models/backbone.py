@@ -16,9 +16,9 @@ class EncapsulatedVisionModel:
         return self.model(x)
 
 
-class TestModel(nn.Module):
+class VisionModelHack(nn.Module):
     def __init__(self, cfg, device):
-        super(TestModel, self).__init__()
+        super(VisionModelHack, self).__init__()
         self.cfg = cfg
         self.device = device
         # Encapsulating VisionModel in a non-Module class
@@ -39,8 +39,6 @@ class VisionModel(nn.Module):
         self.conv_layers = ConvolutionLayers(
             cfg, out_channels, self.device
         )
-        self.last_layer = Last()
-        self.last_layer.__class__.__name__ = 'last_layer'
 
     def forward(self, x):
         x = x.to(self.device)
@@ -56,11 +54,10 @@ def AlexNet(pretrained=True):
         alexnet = models.alexnet(weights=AlexNet_Weights.DEFAULT)
     else:
         alexnet = models.alexnet()
-    last_layer = alexnet.classifier[-1]
-    last_layer.__class__.__name__ = "last_layer"
+    last_conv_layer = alexnet.features[-1]
+    last_conv_layer.__class__.__name__ = "last_layer"
 
     return alexnet
-
 
 def VGG16(pretrained=True):
     if pretrained:
@@ -68,8 +65,8 @@ def VGG16(pretrained=True):
     else:
         vggnet = models.vgg16()
 
-    last_layer = vggnet.classifier[-1]
-    last_layer.__class__.__name__ = "last_layer"
+    last_conv_layer = vggnet.features[-1]
+    last_conv_layer.__class__.__name__ = "last_layer"
     return vggnet
 
 
@@ -79,17 +76,17 @@ def ResNet50(pretrained=True):
     else:
         resnet = models.resnet50()
 
-    last_layer = resnet.fc
-    last_layer.__class__.__name__ = "last_layer"
+    last_conv_layer = resnet.layer4[-1]
+    last_conv_layer.__class__.__name__ = "last_layer"
     return resnet
 
-
 def DenseNet121(pretrained=True):
+
     if pretrained:
         densenet = models.densenet121(weights=DenseNet121_Weights.DEFAULT)
     else:
         densenet = models.densenet121()
 
-    last_layer = densenet.classifier
-    last_layer.__class__.__name__ = "last_layer"
+    last_conv_layer = densenet.features[-1]
+    last_conv_layer.__class__.__name__ = "last_layer"
     return densenet
