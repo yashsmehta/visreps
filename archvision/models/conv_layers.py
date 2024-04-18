@@ -1,10 +1,7 @@
 import torch.nn as nn
 import models.nn_ops as nn_ops
-from collections import OrderedDict
 
 
-        
-        
 class ConvolutionLayers(nn.Module):
     def __init__(self, cfg, in_channels, device):
         super(ConvolutionLayers, self).__init__()
@@ -17,18 +14,16 @@ class ConvolutionLayers(nn.Module):
         )
         self.device = device
 
-        
-        for i, layer in enumerate(cfg.model.layers):
+        for layer in cfg.model.layers:
             conv_layer = nn.Conv2d(
                 in_channels, layer.channels, kernel_size=layer.kernel_size, padding=1
             ).to(self.device)
-            nn_ops.initialize_weights(conv_layer, cfg.model.weights_init, cfg.model.seed)
+            nn_ops.initialize_weights(conv_layer, cfg.model.weights_init, cfg.seed)
             
             nonlinearity = nn_ops.get_nonlinearity(cfg.model.nonlin)
             normalization = nn_ops.get_normalization(layer.channels, cfg.model.norm)
             pooling = nn_ops.get_pooling(layer.pooling, layer.pool_kernel_size)
 
-            
             self.conv_layers.append(
                 nn.Sequential(conv_layer, nonlinearity, normalization, pooling)
             )
