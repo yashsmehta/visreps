@@ -1,6 +1,5 @@
 import torch.nn as nn
-from models.custom_operations.convolution import WaveletConvolution
-from models.custom_operations.norm import DivNorm
+from archvision.models.custom_operations.wavelet_conv import WaveletConvolution
 import models.nn_ops as nn_ops
 
 

@@ -21,7 +21,7 @@ def eval(cfg):
     cfg = utils.check_and_update_config(cfg)
     match cfg.model.name:
         case "custom":
-            model = backbone.TestModel(cfg, device)
+            model = backbone.VisionModelHack(cfg, device)
         case "alexnet":
             model = backbone.AlexNet(pretrained=cfg.model.pretrained)
         case "vgg16":
@@ -52,9 +52,10 @@ def eval(cfg):
     all_results = benchmarker.get_benchmarking_results(benchmark, extractor)
     print(all_results["region"].unique())
     filtered_results = all_results[
-        (all_results["metric"] == cfg.metric)
-        & (all_results["region"] == cfg.region)
+        # (all_results["metric"] == cfg.metric)
+        (all_results["region"] == cfg.region)
         & (all_results["cv_split"] == "train")
     ]
-    max_score_result = filtered_results.loc[filtered_results["score"].idxmax()]
-    print(max_score_result)
+
+    max_layer_index_result = filtered_results.loc[filtered_results["model_layer_index"].idxmax()]
+    print(max_layer_index_result)
