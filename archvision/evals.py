@@ -52,17 +52,13 @@ def eval(cfg):
     results = benchmarker.get_benchmarking_results(benchmark, extractor)
     max_index = results["model_layer_index"].max()
     results = results[results["model_layer_index"] == max_index]
-    if cfg.model.name != "custom":
-        results["model"] = cfg.model.name
-        results["pretrained"] = cfg.model.pretrained
-        results["exp_name"] = cfg.exp_name
-        results["seed"] = cfg.seed
-    results = results.drop(columns=["model_layer_index"])
-    utils.save_logs(results, cfg)
+    if cfg.log_expdata:
+        utils.save_logs(results, cfg)
 
-    # results = results[
-    #     (results["metric"] == cfg.metric)
-    #     & (results["region"] == cfg.region)
-    #     & (results["cv_split"] == "train")
-    # ]
+    results = results[
+        (results["metric"] == cfg.metric)
+        & (results["region"] == cfg.region)
+        & (results["cv_split"] == "train")
+    ]
+    print(results)
 

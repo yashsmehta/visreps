@@ -11,8 +11,6 @@ def get_normalization(out_channels, norm_type):
             return DivNorm()
         case "instance":
             return nn.InstanceNorm2d(out_channels)
-        case "layer":
-            return nn.LayerNorm(out_channels)
         case "none":
             return nn.Identity()
         case _:
@@ -53,6 +51,8 @@ def initialize_weights(conv_layer, initialization, seed):
     match initialization:
         case "xavier":
             nn.init.xavier_normal_(conv_layer.weight)
+        case "xavier_uniform":
+            nn.init.xavier_uniform_(conv_layer.weight)
         case "kaiming":
             nn.init.kaiming_normal_(conv_layer.weight)
         case "kaiming_uniform":

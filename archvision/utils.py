@@ -29,16 +29,18 @@ def check_and_update_config(cfg):
         assert cfg.model.nonlin in [
             "none",
             "relu",
+            "elu",
             "tanh",
             "sigmoid",
-        ], "only linear, relu, tanh, sigmoid supported!"
+        ], "only linear, elu, relu, tanh, sigmoid supported!"
         assert cfg.model.weights_init in [
             "kaiming",
             "kaiming_uniform",
             "xavier",
+            "xavier_uniform",
             "gaussian",
             "uniform",
-        ], "only kaiming, xavier, gaussian, uniform supported!"
+        ], "only kaiming, kaiming_uniform, xavier, xavier_uniform, gaussian, uniform supported!"
         assert cfg.model.norm in [
             "batch",
             "instance",
@@ -77,28 +79,38 @@ def check_and_update_config(cfg):
 
 
 def save_logs(df, cfg):
+    df = df.drop(columns=["model_layer_index"])
+    df["exp_name"] = cfg.exp_name
+    df["seed"] = cfg.seed
+    if cfg.model.name != "custom":
+        df["model"] = cfg.model.name
+        df["pretrained"] = cfg.model.pretrained
+    else:
+        df["nonlin"] = cfg.model.nonlin
+        df["weights_init"] = cfg.model.weights_init
+        df["norm"] = cfg.model.norm
+
     logdata_path = Path(cfg.log_dir)
-    if cfg.log_expdata:
-        if cfg.model.name == "custom":
-            logdata_path = logdata_path / "custom_arch" 
-        else:
-            logdata_path = logdata_path / "standard_arch" 
+    if cfg.model.name == "custom":
+        logdata_path = logdata_path / "custom_arch" 
+    else:
+        logdata_path = logdata_path / "standard_arch" 
 
-        logdata_path.mkdir(parents=True, exist_ok=True)
-        csv_file = logdata_path / f"{cfg.exp_name}.csv"
-        write_header = not csv_file.exists()
+    logdata_path.mkdir(parents=True, exist_ok=True)
+    csv_file = logdata_path / f"{cfg.exp_name}.csv"
+    write_header = not csv_file.exists()
 
-        # Use a lock file to synchronize access to the CSV file
-        lock_file = csv_file.with_suffix(".lock")
-        while lock_file.exists():
-            print(f"Waiting for lock on {csv_file}...")
-            time.sleep(random.uniform(1, 5))
+    # Use a lock file to synchronize access to the CSV file
+    lock_file = csv_file.with_suffix(".lock")
+    while lock_file.exists():
+        print(f"Waiting for lock on {csv_file}...")
+        time.sleep(random.uniform(1, 5))
 
-        try:
-            lock_file.touch()
-            df.to_csv(csv_file, mode="a", header=write_header, index=False)
-            print(f"Saved logs to {csv_file}")
-        finally:
-            lock_file.unlink()
+    try:
+        lock_file.touch()
+        df.to_csv(csv_file, mode="a", header=write_header, index=False)
+        print(f"Saved logs to {csv_file}")
+    finally:
+        lock_file.unlink()
 
     return logdata_path
