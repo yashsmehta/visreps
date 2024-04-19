@@ -49,13 +49,20 @@ def eval(cfg):
         model, dataloader, flatten=True, batch_progress=True, keep=keep, **devices
     )
 
-    all_results = benchmarker.get_benchmarking_results(benchmark, extractor)
-    print(all_results["region"].unique())
-    filtered_results = all_results[
-        # (all_results["metric"] == cfg.metric)
-        (all_results["region"] == cfg.region)
-        & (all_results["cv_split"] == "train")
-    ]
+    results = benchmarker.get_benchmarking_results(benchmark, extractor)
+    max_index = results["model_layer_index"].max()
+    results = results[results["model_layer_index"] == max_index]
+    if cfg.model.name != "custom":
+        results["model"] = cfg.model.name
+        results["pretrained"] = cfg.model.pretrained
+        results["exp_name"] = cfg.exp_name
+        results["seed"] = cfg.seed
+    results = results.drop(columns=["model_layer_index"])
+    utils.save_logs(results, cfg)
 
-    max_layer_index_result = filtered_results.loc[filtered_results["model_layer_index"].idxmax()]
-    print(max_layer_index_result)
+    # results = results[
+    #     (results["metric"] == cfg.metric)
+    #     & (results["region"] == cfg.region)
+    #     & (results["cv_split"] == "train")
+    # ]
+
