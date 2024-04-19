@@ -6,4 +6,5 @@ notebooks/
 *.pyc
 *.pkl
 output.out
+logs/
 
