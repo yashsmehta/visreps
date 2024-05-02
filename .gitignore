@@ -7,4 +7,6 @@ notebooks/
 *.pkl
 output.out
 logs/
+model_checkpoints/
+wandb/
 
