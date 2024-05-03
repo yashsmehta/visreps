@@ -6,6 +6,7 @@ import torch.optim as optim
 from torchvision import datasets, models
 from torch.utils.data import DataLoader
 from archvision.transforms import get_transform
+from archvision.models import nn_ops
 import wandb
 
 
@@ -23,30 +24,31 @@ def calculate_accuracy(data_loader, model, device):
 
 
 class CustomAlexNet(nn.Module):
-    def __init__(self, num_classes=200, trainable_layers=None):
+    def __init__(self, num_classes=200, trainable_layers=None, nonlinearity="relu"):
         super(CustomAlexNet, self).__init__()
-        trainable_layers = trainable_layers or {"conv": [1] * 5, "fc": [1] * 3}
+        trainable_layers = trainable_layers or {"conv": "11111", "fc": "111"}
         trainable_layers = {
-            layer_type: [bool(val) for val in layers]
+            layer_type: [val == '1' for val in layers]
             for layer_type, layers in trainable_layers.items()
         }
 
+        nonlin_fn = nn_ops.get_nonlinearity(nonlinearity, inplace=True)
         self.features = nn.Sequential(
             nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=2),
-            nn.ReLU(inplace=True),
+            nonlin_fn,
             nn.Conv2d(64, 64, kernel_size=5, padding=2),
             nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True),
+            nonlin_fn,
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
             nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
+            nonlin_fn,
             nn.Conv2d(128, 256, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
+            nonlin_fn,
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.Conv2d(256, 512, kernel_size=2, padding=1),
             nn.BatchNorm2d(512),
-            nn.ReLU(inplace=True),
+            nonlin_fn,
         )
         self.avgpool = nn.AdaptiveAvgPool2d((3, 3))
         self.classifier = nn.Sequential(
@@ -98,7 +100,7 @@ if __name__ == "__main__":
     seed = 1
     torch.manual_seed(seed)
 
-    trainable_layers = {"conv": [1, 0, 0, 0, 1], "fc": [0, 0, 1]}
+    trainable_layers = {"conv": "10000", "fc": "001"}
 
     data_transform = {
         "train": get_transform(data_augmentation=True, mean=DS_MEAN, std=DS_STD),
