@@ -9,8 +9,6 @@ from archvision.transforms import get_transform
 from archvision.models import nn_ops
 import wandb
 
-#change based on ur tiny-imagenet_dir
-ROOT = "/data/atlas/datasets/tiny-imagenet-200/"
 
 def calculate_accuracy(data_loader, model, device):
     correct = 0
@@ -96,13 +94,13 @@ NUM_CLASSES = 200
 
 if __name__ == "__main__":
     batch_size = 64
-    num_epochs = 10
-    use_wandb = True
+    num_epochs = 50
+    use_wandb = False
     checkpoint_interval = 10
     seed = 1
     torch.manual_seed(seed)
 
-    trainable_layers = {"conv": "00000", "fc": "001"}
+    trainable_layers = {"conv": "10000", "fc": "001"}
 
     data_transform = {
         "train": get_transform(data_augmentation=True, mean=DS_MEAN, std=DS_STD),
@@ -110,10 +108,10 @@ if __name__ == "__main__":
     }
 
     train_dataset = datasets.ImageFolder(
-        root=os.path.join(ROOT,'train'), transform=data_transform["train"]
+        root="data/tiny-imagenet-200/train", transform=data_transform["train"]
     )
     test_dataset = datasets.ImageFolder(
-        root=os.path.join(ROOT,'val'), transform=data_transform["test"]
+        root="data/tiny-imagenet-200/val", transform=data_transform["test"]
     )
 
     data_loader = {
@@ -148,8 +146,7 @@ if __name__ == "__main__":
     print(f"Using {'GPU' if device == 'cuda' else 'CPU'} for training")
 
     if use_wandb:
-        wandb.init(project="alexnet_partial",
-                   name=f'conv_{trainable_layers["conv"]}_fc_{trainable_layers["fc"]}')
+        wandb.init(project="alexnet_partial")
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=0.001)
