@@ -16,16 +16,16 @@ def get_normalization(out_channels, norm_type):
         case _:
             raise ValueError(f"Unsupported normalization method: {norm_type}")
 
-def get_nonlinearity(nonlin_type):
+def get_nonlinearity(nonlin_type, inplace=True):
     match nonlin_type:
         case "relu":
-            return nn.ReLU(inplace=True)
+            return nn.ReLU(inplace=inplace)
         case "tanh":
             return nn.Tanh()
         case "sigmoid":
             return nn.Sigmoid()
         case "elu":
-            return nn.ELU(inplace=True)
+            return nn.ELU(inplace=inplace)
         case "none":
             return nn.Identity()
         case _:
