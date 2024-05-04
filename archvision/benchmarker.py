@@ -6,13 +6,13 @@ from deepjuice import *
 
 
 def load_benchmark(cfg):
-    if cfg.benchmark_data_type == "fMRI":
+    if cfg.benchmark_name.lower() == "nsd":
         benchmark = NSDBenchmark(voxel_set=cfg.region)
         benchmark.build_rdms(compute_pearson_rdm)
         return benchmark
     else:
         raise NotImplementedError(
-            f"Benchmarking for {cfg.benchmark.data_type} is not implemented"
+            f"Benchmarking for {cfg.benchmark_name} is not implemented"
         )
 
 

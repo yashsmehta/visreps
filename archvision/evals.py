@@ -2,9 +2,6 @@
 evals.py will be called by runner.py. It is the main flow of control and will call model builder,
 benchmarking, and logging results.
 """
-
-
-
 from deepjuice import *
 import archvision.benchmarker as benchmarker
 import torch
@@ -14,15 +11,19 @@ import archvision.transforms
 from pprint import pprint
 
 
-
 def eval(cfg):
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print("Device: ", device)
     cfg = utils.check_and_update_config(cfg)
     match cfg.model.name:
+        case "alexnet":
+            weights = torch.load('model_checkpoints/alexnet/model_epoch_1.pth')
+            model = backbone.CustomAlexNet(num_classes=cfg.num_classes)
+            model.load_state_dict(weights)
+            print("Loaded weights for AlexNet")
         case "custom":
             model = backbone.VisionModelHack(cfg, device)
-        case "alexnet":
+        case "alexnet_pretrained":
             model = backbone.AlexNet(pretrained=cfg.model.pretrained)
         case "vgg16":
             model = backbone.VGG16(pretrained=cfg.model.pretrained)
@@ -37,7 +38,7 @@ def eval(cfg):
     benchmark = benchmarker.load_benchmark(cfg)
     dataloader = get_data_loader(benchmark.image_paths, preprocess)
 
-    devices = {"device": device, "output_device": device}
+    devices = {"device": device, "output_device": "cpu"}
     print("'Keep' layer for deepjuice: ", cfg.model.deepjuice_keep_layer)
     keep = (
         []

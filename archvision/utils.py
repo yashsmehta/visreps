@@ -77,6 +77,13 @@ def check_and_update_config(cfg):
 
     return cfg
 
+def check_trainer_config(cfg):
+    assert len(cfg.conv_trainable) == 5, "conv_trainable must have 5 elements!"
+    assert len(cfg.fc_trainable) == 3, "fc_trainable must have 3 elements!"
+    assert all(char in '01' for char in cfg.conv_trainable), "conv_trainable must only contain 0s and 1s!"
+    assert all(char in '01' for char in cfg.fc_trainable), "fc_trainable must only contain 0s and 1s!"
+    return cfg
+
 
 def save_logs(df, cfg):
     df = df.drop(columns=["model_layer_index"])

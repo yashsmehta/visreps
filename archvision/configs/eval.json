@@ -1,11 +1,11 @@
 {
+  "seed":42,
   "model": {
-    "name": "custom",
-    "pretrained": false,
-    "deepjuice_keep_layer": "last_layer",
+    "name": "densenet121",
+    "pretrained": true,
+    "deepjuice_keep_layer": "all",
     "norm": "none",
-    "weights_init": "kaiming",
-    "seed":42,
+    "weights_init": "kaiming_uniform",
     "nonlin": "relu",
     "wavelet": {
         "n_ories": 12,
@@ -16,34 +16,34 @@
     "conv_in_channels": "none",
     "layers": [
       {
-        "channels": 100,
+        "channels": 1000,
         "kernel_size": 7,
-        "pooling": "max",
+        "pooling": "avg",
         "pool_kernel_size": 2
       },
       {
-        "channels": 300,
+        "channels": 1000,
         "kernel_size": 5,
-        "pooling": "max",
+        "pooling": "avg",
         "pool_kernel_size": 2
       },
       {
-        "channels": 50,
+        "channels": 1000,
         "kernel_size": 3,
-        "pooling": "max",
+        "pooling": "avg",
         "pool_kernel_size": 2
       },
       {
-        "channels": 30000,
+        "channels": 1000,
         "kernel_size": 3,
-        "pooling": "max"
+        "pooling": "globalavg"
       }
     ]
   },
   "metric": "srpr",
   "region": "OTC",
-  "benchmark_data_type": "fMRI",
-  "log_expdata": true,
+  "benchmark_name": "nsd",
+  "log_expdata": false,
   "log_dir": "logs/",
   "exp_name": "test"
 }
