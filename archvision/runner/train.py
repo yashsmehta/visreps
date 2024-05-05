@@ -11,14 +11,13 @@ def load_config(file_path):
     for arg in sys.argv[1:]:
         if '=' in arg and '"' not in arg:
             key, value = arg.split('=')
-            if value.isdigit():
+            if key in ['fc_trainable', 'conv_trainable']:
                 cli_args.append(f'{key}="{value}"')
             else:
                 cli_args.append(arg)
         else:
             cli_args.append(arg)
     config = OmegaConf.from_cli(cli_args)
-
     return OmegaConf.merge(OmegaConf.create(cfg_dict), config)
 
 def main():

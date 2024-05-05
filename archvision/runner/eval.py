@@ -1,5 +1,5 @@
 from omegaconf import OmegaConf
-import archvision.temp_eval as evals
+import archvision.evals as evals
 import json
 
 def load_config(file_path):
@@ -9,7 +9,7 @@ def load_config(file_path):
     return OmegaConf.merge(OmegaConf.create(cfg_dict), config)
 
 def main():
-    config_path = "archvision/configs/temp_eval.json"
+    config_path = "archvision/configs/eval.json"
     cfg = load_config(config_path)
     evals.eval(cfg)
 

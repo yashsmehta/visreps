@@ -9,7 +9,6 @@ seeds = 3
 queue, cores, use_gpu = "gpu_rtx8000", 6, True
 # queue, cores, use_gpu = "gpu_rtx", 5, True
 # queue, cores, use_gpu = "gpu_a100", 12, True
-# queue, cores, use_gpu = "gpu_h100", 12, True
 # queue, cores, use_gpu = "local", 4, False
 
 if(queue == "local" and use_gpu == True):
@@ -26,6 +25,7 @@ configs = {
     "fc_trainable": ["111"],
     "use_wandb": [True],
     "data_augment": [False, True],
+    "group": ["data_augmentation"],
     "exp_name": ["across_metrics"]
 }
 
@@ -38,6 +38,8 @@ for combination in combinations:
     for idx, key in enumerate(configs.keys()):
         execstr += " " + key + "=" + str(combination[idx])
     cmd = ["scripts/submit_job.sh", str(cores), str(seeds), queue, execstr, use_gpu]
+    print(cmd)
+    exit()
 
     output = subprocess.check_output(
         cmd, stderr=subprocess.STDOUT, universal_newlines=True

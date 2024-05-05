@@ -2,6 +2,8 @@ from omegaconf import OmegaConf
 import time
 import random
 from pathlib import Path
+import torch
+import os
 
 
 def check_and_update_config(cfg):
@@ -121,3 +123,47 @@ def save_logs(df, cfg):
         lock_file.unlink()
 
     return logdata_path
+
+
+def calculate_accuracy(data_loader, model, device):
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for images, labels in data_loader:
+            images, labels = images.to(device), labels.to(device)
+            outputs = model(images)
+            _, predicted = torch.max(outputs, 1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+    return 100 * correct / total
+
+
+def make_checkpoint_dir(folder, parent_dir='model_checkpoints'):
+    checkpoint_dir = os.path.join(parent_dir, folder)
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    ith_folder = len(os.listdir(checkpoint_dir)) + 1
+    checkpoint_subdir = os.path.join(checkpoint_dir, "cfg"+str(ith_folder))
+    os.makedirs(checkpoint_subdir, exist_ok=True)
+    return checkpoint_subdir
+
+def log_results(results, file_name):
+    logdata_path = Path("logs/")
+    logdata_path.mkdir(parents=True, exist_ok=True)
+    csv_file = logdata_path / f"{file_name}.csv"
+    write_header = not csv_file.exists()
+
+    lock_file = csv_file.with_suffix(".lock")
+    try:
+        while lock_file.exists():
+            print(f"Waiting for lock on {csv_file}...")
+            time.sleep(random.uniform(1, 5))
+        lock_file.touch(exist_ok=False)
+
+        results.to_csv(csv_file, mode="a", header=write_header, index=False)
+        print(f"Saved logs to {csv_file}")
+    except FileExistsError:
+        print(f"Lock file already exists, skipping logging to {csv_file}")
+    finally:
+        if lock_file.exists():
+            lock_file.unlink()
+
