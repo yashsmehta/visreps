@@ -4,11 +4,31 @@ import archvision.models.nn_ops as nn_ops
 
 
 class BaseCNN(nn.Module):
+    """
+    A basic convolutional neural network model for image classification.
+
+    Attributes:
+        features (torch.nn.Sequential): The sequential container of convolutional, batch normalization,
+                                        and non-linear activation layers forming the feature extractor part of the CNN.
+        avgpool (torch.nn.AdaptiveAvgPool2d): Adaptive average pooling layer to reduce the spatial dimensions
+                                              to a fixed size.
+        classifier (torch.nn.Sequential): The sequential container of linear layers and dropout layers
+                                          forming the classifier part of the CNN.
+
+    Args:
+        num_classes (int): Number of output classes for the classifier. Default is 200.
+        trainable_layers (dict): A dictionary specifying which layers are trainable. Each key should be
+                                 either 'conv' or 'fc', and the corresponding value should be a string of
+                                 '1's and '0's indicating the trainability of each layer in the respective
+                                 section of the model. Default is all layers trainable.
+        nonlinearity (str): The type of nonlinearity to use. Default is 'relu'.
+    """
+
     def __init__(self, num_classes=200, trainable_layers=None, nonlinearity="relu"):
         super(BaseCNN, self).__init__()
         trainable_layers = trainable_layers or {"conv": "11111", "fc": "111"}
         trainable_layers = {
-            layer_type: [val == '1' for val in layers]
+            layer_type: [val == "1" for val in layers]
             for layer_type, layers in trainable_layers.items()
         }
 
@@ -61,6 +81,15 @@ class BaseCNN(nn.Module):
                 fc_idx += 1
 
     def forward(self, x):
+        """
+        Defines the forward pass of the model.
+
+        Args:
+            x (torch.Tensor): The input tensor containing the image data.
+
+        Returns:
+            torch.Tensor: The output tensor containing the class probabilities.
+        """
         x = self.features(x)
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
