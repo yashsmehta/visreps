@@ -6,6 +6,20 @@ from deepjuice import *
 
 
 def load_benchmark(cfg):
+    """
+    This function checks the benchmark name in the configuration and loads the corresponding benchmark.
+    If the benchmark name is 'nsd', it loads the NSD benchmark with the specified voxel set.
+    If the benchmark name is not 'nsd', it raises a NotImplementedError.
+
+    Args:
+        cfg (OmegaConf): The configuration object.
+
+    Returns:
+        NSDBenchmark: The loaded NSD benchmark.
+
+    Raises:
+        NotImplementedError: If the benchmark name is not 'nsd'.
+    """
     if cfg.benchmark_name.lower() == "nsd":
         benchmark = NSDBenchmark(voxel_set=cfg.region)
         benchmark.build_rdms(compute_pearson_rdm)
