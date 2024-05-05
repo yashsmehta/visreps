@@ -1,7 +1,7 @@
 {
   "seed": 42,
-  "conv_trainable": "00000",
-  "fc_trainable": "000",
+  "conv_trainable": "11111",
+  "fc_trainable": "111",
   "data_augment": true,
   "data_dir": "data/tiny-imagenet-200",
   "num_classes": 200,
@@ -11,5 +11,5 @@
   "checkpoint_interval": 10,
   "log_dir": "model_checkpoints/",
   "use_wandb": false,
-  "exp_name": "partial_train"
+  "exp_name": "basic"
 }

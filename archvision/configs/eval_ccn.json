@@ -1,0 +1,49 @@
+{
+  "seed":42,
+  "model": {
+    "name": "densenet121",
+    "pretrained": true,
+    "deepjuice_keep_layer": "all",
+    "norm": "none",
+    "weights_init": "kaiming_uniform",
+    "nonlin": "relu",
+    "wavelet": {
+        "n_ories": 12,
+        "n_curves": 3,
+        "gau_sizes": [5],
+        "spatial_fre": [1.2]
+    },
+    "conv_in_channels": "none",
+    "layers": [
+      {
+        "channels": 1000,
+        "kernel_size": 7,
+        "pooling": "avg",
+        "pool_kernel_size": 2
+      },
+      {
+        "channels": 1000,
+        "kernel_size": 5,
+        "pooling": "avg",
+        "pool_kernel_size": 2
+      },
+      {
+        "channels": 1000,
+        "kernel_size": 3,
+        "pooling": "avg",
+        "pool_kernel_size": 2
+      },
+      {
+        "channels": 1000,
+        "kernel_size": 3,
+        "pooling": "globalavg"
+      }
+    ]
+  },
+  "metric": "srpr",
+  "region": "OTC",
+  "benchmark_name": "nsd",
+  "log_expdata": false,
+  "log_dir": "logs/",
+  "exp_name": "test"
+}
