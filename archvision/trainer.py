@@ -61,7 +61,10 @@ def train(cfg):
 
     if cfg.use_wandb:
         wandb.init(
-            project=cfg.exp_name, group=cfg.group, config=cfg, name=f"seed_{cfg.seed}"
+            project=cfg.exp_name, 
+            group=cfg.group, 
+            config=dict(cfg),
+            name=f"seed_{cfg.seed}"
         )
 
     criterion = nn.CrossEntropyLoss()
