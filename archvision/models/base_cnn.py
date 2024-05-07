@@ -24,43 +24,44 @@ class BaseCNN(nn.Module):
         nonlinearity (str): The type of nonlinearity to use. Default is 'relu'.
     """
 
-    def __init__(self, num_classes=200, trainable_layers=None, nonlinearity="relu"):
+    def __init__(self, num_classes=200, trainable_layers=None, nonlinearity="relu", dropout=True, batchnorm=True):
         super(BaseCNN, self).__init__()
         trainable_layers = trainable_layers or {"conv": "11111", "fc": "111"}
-        trainable_layers = {
-            layer_type: [val == "1" for val in layers]
-            for layer_type, layers in trainable_layers.items()
-        }
+        trainable_layers = {layer_type: [val == "1" for val in layers] for layer_type, layers in trainable_layers.items()}
 
         nonlin_fn = nn_ops.get_nonlinearity(nonlinearity, inplace=True)
-        self.features = nn.Sequential(
+        layers = [
             nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=2),
             nonlin_fn,
             nn.Conv2d(64, 64, kernel_size=5, padding=2),
-            nn.BatchNorm2d(64),
+            *(batchnorm and [nn.BatchNorm2d(64)] or []),
             nonlin_fn,
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            nn.BatchNorm2d(128),
+            *(batchnorm and [nn.BatchNorm2d(128)] or []),
             nonlin_fn,
             nn.Conv2d(128, 256, kernel_size=3, padding=1),
             nonlin_fn,
             nn.MaxPool2d(kernel_size=2, stride=2),
             nn.Conv2d(256, 512, kernel_size=2, padding=1),
-            nn.BatchNorm2d(512),
-            nonlin_fn,
-        )
+            *(batchnorm and [nn.BatchNorm2d(512)] or []),
+            nonlin_fn
+        ]
+        
+        self.features = nn.Sequential(*layers)
         self.avgpool = nn.AdaptiveAvgPool2d((3, 3))
-        self.classifier = nn.Sequential(
-            nn.Dropout(),
+        
+        classifier_layers = [
             nn.Linear(512 * 3 * 3, 1024),
-            nn.BatchNorm1d(1024),
-            nn.ReLU(inplace=True),
-            nn.Dropout(),
+            *(dropout and [nn.Dropout(inplace=True)] or []),
+            *(batchnorm and [nn.BatchNorm1d(1024)] or []),
+            nonlin_fn,
             nn.Linear(1024, 1024),
-            nn.ReLU(inplace=True),
-            nn.Linear(1024, num_classes),
-        )
+            *(dropout and [nn.Dropout(inplace=True)] or []),
+            nonlin_fn,
+            nn.Linear(1024, num_classes)
+        ]
+        self.classifier = nn.Sequential(*classifier_layers)
 
         conv_idx = 0
         fc_idx = 0
