@@ -10,7 +10,7 @@ def main():
     a Python script for each configuration combination using a shell script to submit jobs.
     It handles different GPU settings and captures the output of each job submission.
     """
-    exec_file = "archvision/run_eval.py"
+    exec_file = "archvision/runner/eval.py"
     seeds = 1
 
     queue, cores, use_gpu = "gpu_rtx8000", 6, True
@@ -22,8 +22,10 @@ def main():
         raise Exception("No GPUs available on this partition!")
 
     configs = {
-        "cfg_id": list(range(13, 31)),
-        "epoch": [0, 10, 20, 30, 40],
+        "cfg_id": list(range(1, 31)),
+        "epoch": [0, 50],
+        "log_expdata": [True],
+        "exp_name": ["partial_train"],
     }
 
     combinations = list(itertools.product(*configs.values()))

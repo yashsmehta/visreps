@@ -7,7 +7,7 @@
   "num_classes": 200,
   "batchsize": 64,
   "num_epochs": 50,
-  "log_checkpoints": true,
+  "log_checkpoints": false,
   "checkpoint_interval": 10,
   "log_dir": "model_checkpoints/",
   "use_wandb": false,
