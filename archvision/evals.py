@@ -2,7 +2,6 @@ from deepjuice import *
 import archvision.benchmarker as benchmarker
 import archvision.dataloader
 import archvision.utils
-from archvision.models.standard_cnns import AlexNet
 import torch
 import json
 
@@ -43,7 +42,7 @@ def eval(cfg):
     benchmark = benchmarker.load_benchmark(cfg)
 
     dataloader = get_data_loader(
-        benchmark.image_paths, archvision.dataloader.get_transform(image_size=224)
+        benchmark.image_paths, archvision.dataloader.get_transform(image_size=64)
     )
 
     devices = {"device": device, "output_device": "cpu"}
