@@ -10,10 +10,10 @@ def main():
     a Python script for each configuration combination using a shell script to submit jobs.
     It handles different GPU settings and captures the output of each job submission.
     """
-    exec_file = "archvision/run_train.py"
+    exec_file = "archvision/runner/train.py"
     seeds = 3
 
-    queue, cores, use_gpu = "gpu_rtx8000", 6, True
+    queue, cores, use_gpu = "gpu_rtx8000", 5, True
     # queue, cores, use_gpu = "gpu_rtx", 5, True
     # queue, cores, use_gpu = "gpu_a100", 12, True
     # queue, cores, use_gpu = "local", 4, False
@@ -23,11 +23,13 @@ def main():
 
     configs = {
         "conv_trainable": ["11111"],
+        "log_expdata": [True],
         "fc_trainable": ["111"],
         "use_wandb": [True],
-        "data_augment": [False, True],
-        "group": ["data_augmentation"],
-        "exp_name": ["across_metrics"],
+        "data_augment": [True],
+        "checkpoint_interval": [25],
+        "group": ["full_train"],
+        "exp_name": ["full_train"],
     }
 
     combinations = list(itertools.product(*configs.values()))
