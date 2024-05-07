@@ -1,7 +1,7 @@
 import torch.nn as nn
 import torch
 import archvision.models.nn_ops as nn_ops
-
+from archvision.models.custom_operations.last import LastLayer
 
 class BaseCNN(nn.Module):
     """
@@ -62,6 +62,8 @@ class BaseCNN(nn.Module):
             nn.Linear(1024, num_classes)
         ]
         self.classifier = nn.Sequential(*classifier_layers)
+        self.last = LastLayer()
+        self.last.__class__.__name__ = "last_layer"
 
         conv_idx = 0
         fc_idx = 0
@@ -95,4 +97,5 @@ class BaseCNN(nn.Module):
         x = self.avgpool(x)
         x = torch.flatten(x, 1)
         x = self.classifier(x)
+        x = self.last(x)
         return x
