@@ -1,5 +1,6 @@
 import subprocess
 import itertools
+import os
 
 
 def main():
@@ -21,11 +22,16 @@ def main():
     if queue == "local" and use_gpu:
         raise Exception("No GPUs available on this partition!")
 
+    
+    exp_name = "batchnorm"
+    checkpoint_dir = f"model_checkpoints/{exp_name}"
+    num_configs = len([name for name in os.listdir(checkpoint_dir) if os.path.isdir(os.path.join(checkpoint_dir, name))])
+
     configs = {
-        "cfg_id": list(range(1, 31)),
+        "cfg_id": list(range(1, num_configs + 1)),
         "epoch": [0, 50],
         "log_expdata": [True],
-        "exp_name": ["partial_train"],
+        "exp_name": [exp_name],
     }
 
     combinations = list(itertools.product(*configs.values()))
