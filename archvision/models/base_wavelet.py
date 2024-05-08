@@ -4,55 +4,66 @@ import archvision.models.nn_ops as nn_ops
 from archvision.models.custom_operations.wavelet_conv import WaveletConvolution
 
 
-
 class BaseWavelet(nn.Module):
 
-    def __init__(self, num_classes=200, trainable_layers=None, nonlinearity="relu"):
+    def __init__(
+        self,
+        num_classes=200,
+        trainable_layers=None,
+        nonlinearity="relu",
+        dropout=True,
+        batchnorm=True,
+        pooling="max",
+    ):
         super(BaseWavelet, self).__init__()
-        
-        wavelet_layer = WaveletConvolution(filter_type="curvature",device='cuda')
-        
-        trainable_layers = trainable_layers or {"conv": "01111", "fc": "111"}
+
+
+        trainable_layers = trainable_layers or {"conv": "11111", "fc": "111"}
         trainable_layers = {
             layer_type: [val == "1" for val in layers]
             for layer_type, layers in trainable_layers.items()
         }
 
         nonlin_fn = nn_ops.get_nonlinearity(nonlinearity, inplace=True)
-        self.wavelets = nn.Sequential(
-            wavelet_layer,
+        pool_fn = nn_ops.get_pooling_fn(pooling)
+        self.wavelets = WaveletConvolution(filter_type="curvature", device="cuda")
+
+        layers = [
             nonlin_fn,
-            nn.MaxPool2d(kernel_size=2, stride=2), 
-        )
-        self.features = nn.Sequential(
-            nn.Conv2d(wavelet_layer.layer_size, 1024, kernel_size=7, stride=2, padding=2),
+            nn.Conv2d(
+                self.wavelets.layer_size, 1024, kernel_size=7, stride=2, padding=2
+            ),
+            *(batchnorm and [nn.BatchNorm2d(1024)] or []),
             nonlin_fn,
             nn.Conv2d(1024, 2048, kernel_size=5, padding=2),
-            nn.BatchNorm2d(2048),
+            *(batchnorm and [nn.BatchNorm2d(2048)] or []),
             nonlin_fn,
-            nn.MaxPool2d(kernel_size=2, stride=2),
+            pool_fn,
             nn.Conv2d(2048, 4096, kernel_size=3, padding=1),
-            nn.BatchNorm2d(4096),
+            *(batchnorm and [nn.BatchNorm2d(4096)] or []),
             nonlin_fn,
             nn.Conv2d(4096, 1024, kernel_size=3, padding=1),
             nonlin_fn,
-            nn.MaxPool2d(kernel_size=2, stride=2),
+            pool_fn,
             nn.Conv2d(1024, 512, kernel_size=2, padding=1),
-            nn.BatchNorm2d(512),
+            *(batchnorm and [nn.BatchNorm2d(512)] or []),
             nonlin_fn,
-        )
-        self.avgpool = nn.AdaptiveAvgPool2d((3, 3))
-        self.classifier = nn.Sequential(
-            nn.Dropout(),
-            nn.Linear(512 * 3 * 3, 1024),
-            nn.BatchNorm1d(1024),
-            nn.ReLU(inplace=True),
-            nn.Dropout(),
-            nn.Linear(1024, 1024),
-            nn.ReLU(inplace=True),
-            nn.Linear(1024, num_classes),
-        )
+        ]
 
+        self.features = nn.Sequential(*layers)
+        self.adaptive_pool = nn_ops.get_pooling_fn("adaptive" + pooling)
+
+        classifier_layers = [
+            *(dropout and [nn.Dropout()] or []),
+            nn.Linear(512 * 3 * 3, 1024),
+            nonlin_fn,
+            *(batchnorm and [nn.BatchNorm1d(1024)] or []),
+            nn.Linear(1024, 1024),
+            nonlin_fn,
+            *(dropout and [nn.Dropout()] or []),
+            nn.Linear(1024, num_classes),
+        ]
+        self.classifier = nn.Sequential(*classifier_layers)
         conv_idx = 0
         fc_idx = 0
         print("Trainable layers: ", trainable_layers)
@@ -83,7 +94,7 @@ class BaseWavelet(nn.Module):
         """
         x = self.wavelets(x)
         x = self.features(x)
-        x = self.avgpool(x)
+        x = self.adaptive_pool(x)
         x = torch.flatten(x, 1)
         x = self.classifier(x)
         return x

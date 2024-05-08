@@ -1,4 +1,4 @@
-from models.custom_operations.preset_filters import (
+from archvision.models.custom_operations.preset_filters import (
     filters,
     generate_discrete_wavelet_family,
 )

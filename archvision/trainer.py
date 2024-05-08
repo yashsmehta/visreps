@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.optim as optim
 from archvision.dataloader import get_dataloader
 from archvision.models.base_cnn import BaseCNN
+from archvision.models.base_wavelet import BaseWavelet
 import archvision.utils as utils
 import wandb
 from omegaconf import OmegaConf
@@ -48,8 +49,17 @@ def train(cfg):
     trainable_layers = {"conv": cfg.conv_trainable, "fc": cfg.fc_trainable}
     data_loader = get_dataloader(cfg.data_dir, cfg.batchsize, ds_stats="tiny-imagenet")
 
-    model = BaseCNN(num_classes=cfg.num_classes, trainable_layers=trainable_layers)
+    model_class = BaseCNN if cfg.model_class == "base_cnn" else BaseWavelet
+    model = model_class(
+        num_classes=cfg.num_classes,
+        trainable_layers=trainable_layers,
+        nonlinearity=cfg.nonlinearity,
+        dropout=cfg.dropout,
+        batchnorm=cfg.batchnorm,
+        pooling=cfg.pooling,
+    )
     print(model)
+
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print("Total params: ", total_params)
@@ -61,10 +71,10 @@ def train(cfg):
 
     if cfg.use_wandb:
         wandb.init(
-            project=cfg.exp_name, 
-            group=cfg.group, 
+            project=cfg.exp_name,
+            group=cfg.group,
             config=dict(cfg),
-            name=f"seed_{cfg.seed}"
+            name=f"seed_{cfg.seed}",
         )
 
     criterion = nn.CrossEntropyLoss()
