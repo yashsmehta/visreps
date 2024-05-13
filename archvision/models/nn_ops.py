@@ -59,7 +59,7 @@ def get_nonlinearity(nonlin_type, inplace=True):
         case _:
             raise ValueError(f"Unsupported non-linearity: {nonlin_type}")
 
-def get_pooling_fn(pool_type, pool_kernel_size=2):
+def get_pooling_fn(pooling_type, pooling_kernel_size=2):
     """
     Retrieve a pooling layer based on the specified type and kernel size.
 
@@ -74,11 +74,11 @@ def get_pooling_fn(pool_type, pool_kernel_size=2):
     Raises:
         ValueError: If an unsupported pool type is provided.
     """
-    match pool_type:
+    match pooling_type:
         case "max":
-            return nn.MaxPool2d(kernel_size=pool_kernel_size)
+            return nn.MaxPool2d(kernel_size=pooling_kernel_size)
         case "avg":
-            return nn.AvgPool2d(kernel_size=pool_kernel_size)
+            return nn.AvgPool2d(kernel_size=pooling_kernel_size)
         case "adaptivemax":
             return nn.AdaptiveMaxPool2d((3, 3))
         case "adaptiveavg":
@@ -86,7 +86,7 @@ def get_pooling_fn(pool_type, pool_kernel_size=2):
         case "none":
             return nn.Identity()
         case _:
-            raise ValueError(f"Unsupported pool type: {pool_type}")
+            raise ValueError(f"Unsupported pooling type: {pooling_type}")
 
 def initialize_weights(conv_layer, initialization, seed):
     """

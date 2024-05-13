@@ -9,4 +9,5 @@ output.out
 logs/
 model_checkpoints/
 wandb/
+playground/
 

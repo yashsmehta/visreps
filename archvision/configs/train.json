@@ -5,7 +5,7 @@
   "fc_trainable": "111",
   "data_augment": true,
   "nonlinearity": "relu",
-  "pooling": "max",
+  "pooling_type": "max",
   "dropout": true,
   "batchnorm": true,
   "data_dir": "data/tiny-imagenet-200",

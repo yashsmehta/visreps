@@ -4,7 +4,8 @@ import torch.nn as nn
 import torch.optim as optim
 from archvision.dataloader import get_dataloader
 from archvision.models.base_cnn import BaseCNN
-from archvision.models.base_wavelet import BaseWavelet
+from archvision.models.wavelet_front import WaveletNet
+from archvision.models.scat_transform_front import ScatTransformNet
 import archvision.utils as utils
 import wandb
 from omegaconf import OmegaConf
@@ -49,14 +50,19 @@ def train(cfg):
     trainable_layers = {"conv": cfg.conv_trainable, "fc": cfg.fc_trainable}
     data_loader = get_dataloader(cfg.data_dir, cfg.batchsize, ds_stats="tiny-imagenet")
 
-    model_class = BaseCNN if cfg.model_class == "base_cnn" else BaseWavelet
+    model_class = {
+        "base_cnn": BaseCNN,
+        "wavelet_net": WaveletNet,
+        "scattransform_net": ScatTransformNet
+    }[cfg.model_class]
+
     model = model_class(
         num_classes=cfg.num_classes,
         trainable_layers=trainable_layers,
         nonlinearity=cfg.nonlinearity,
         dropout=cfg.dropout,
         batchnorm=cfg.batchnorm,
-        pooling=cfg.pooling,
+        pooling_type=cfg.pooling_type,
     )
     print(model)
 
