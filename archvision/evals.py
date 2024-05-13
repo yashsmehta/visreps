@@ -63,4 +63,4 @@ def eval(cfg):
         results[key] = value
 
     if cfg.log_expdata:
-        archvision.utils.log_results(results, file_name=cfg.exp_name)
+        archvision.utils.log_results(results, folder_name=cfg.exp_name, cfg_id=cfg.cfg_id)

@@ -14,10 +14,9 @@ class ScatTransformNet(nn.Module):
         nonlinearity="relu",
         dropout=True,
         batchnorm=True,
-        pooling="max",
+        pooling_type="max",
     ):
-        super(ScatTransformNet, self).__init__()
-
+        super().__init__()
 
         trainable_layers = trainable_layers or {"fc": "111"}
         trainable_layers = {
@@ -26,18 +25,19 @@ class ScatTransformNet(nn.Module):
         }
 
         nonlin_fn = nn_ops.get_nonlinearity(nonlinearity, inplace=True)
-        self.scattransform = ScatTransform(J = 3, L=8, M=64, N=64)   
+        self.scattransform = ScatTransform(J=3, L=8, M=64, N=64)
 
         classifier_layers = [
-            *(dropout and [nn.Dropout()] or []),
+            nn.Dropout() if dropout else None,
             nn.Linear(self.scattransform.layer_size, 1024),
             nonlin_fn,
-            *(batchnorm and [nn.BatchNorm1d(1024)] or []),
+            nn.BatchNorm1d(1024) if batchnorm else None,
             nn.Linear(1024, 1024),
             nonlin_fn,
-            *(dropout and [nn.Dropout()] or []),
+            nn.Dropout() if dropout else None,
             nn.Linear(1024, num_classes),
         ]
+        classifier_layers = [layer for layer in classifier_layers if layer is not None]
         self.classifier = nn.Sequential(*classifier_layers)
         fc_idx = 0
         print("Trainable layers: ", trainable_layers)
