@@ -6,6 +6,7 @@ from archvision.dataloader import get_dataloader
 from archvision.models.base_cnn import BaseCNN
 from archvision.models.wavelet_front import WaveletNet
 from archvision.models.scat_transform_front import ScatTransformNet
+from archvision.models.scat_transform_base_cnn import ScatTransformBaseCNN
 import archvision.utils as utils
 import wandb
 from omegaconf import OmegaConf
@@ -53,7 +54,8 @@ def train(cfg):
     model_class = {
         "base_cnn": BaseCNN,
         "wavelet_net": WaveletNet,
-        "scattransform_net": ScatTransformNet
+        "scattransform_net": ScatTransformNet,
+        "scattransform_base_cnn":ScatTransformBaseCNN
     }[cfg.model_class]
 
     model = model_class(

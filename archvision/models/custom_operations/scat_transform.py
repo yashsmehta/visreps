@@ -4,18 +4,14 @@ import torch
 
 class ScatTransform(nn.Module):
     
-    def __init__(self,
-                J: int,
-                L: int,
-                M: int,
-                N: int):
+    def __init__(self, C:int, J: int,L: int,M: int,N: int) -> None:
         
         super(ScatTransform, self).__init__()
         
-        self.J, self.L, self.M,self.N =  J, L, M, N
+        self.C, self.J, self.L, self.M,self.N =  C, J, L, M, N
         self.model = Scattering2D(J = self.J, shape=(self.M, self.N), L=self.L)  
-        self.layer_size = int(3 * (1 + (self.L * self.J) + (((self.L**2*self.J)*(self.J-1))/2)) * (self.M/(2**self.J))  * (N/(2**self.J)))
+        self.layer_size = int(self.C * (1 + (self.L * self.J) + (((self.L**2*self.J)*(self.J-1))/2)) * (self.M/(2**self.J))  * (N/(2**self.J)))
 
     
-    def forward(self, x:nn.Module):
+    def forward(self, x:nn.Module) -> torch.Tensor:
         return self.model(x)
