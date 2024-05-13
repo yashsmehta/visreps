@@ -1,7 +1,6 @@
-import torch.nn as nn
 import torch
+import torch.nn as nn
 import archvision.models.nn_ops as nn_ops
-from archvision.models.custom_operations.last import LastLayer
 
 
 class BaseCNN(nn.Module):
@@ -23,6 +22,10 @@ class BaseCNN(nn.Module):
                                  '1's and '0's indicating the trainability of each layer in the respective
                                  section of the model. Default is all layers trainable.
         nonlinearity (str): The type of nonlinearity to use. Default is 'relu'.
+        dropout (bool): Whether to include dropout layers in the classifier. Default is True.
+        batchnorm (bool): Whether to include batch normalization layers after each convolutional and linear layer.
+                          Default is True.
+        pooling_type (str): The type of pooling to use in the feature extractor. Default is 'max'.
     """
 
     def __init__(
@@ -32,7 +35,7 @@ class BaseCNN(nn.Module):
         nonlinearity="relu",
         dropout=True,
         batchnorm=True,
-        pooling="max",
+        pooling_type="max",
     ):
         super(BaseCNN, self).__init__()
         trainable_layers = trainable_layers or {"conv": "11111", "fc": "111"}
@@ -42,38 +45,41 @@ class BaseCNN(nn.Module):
         }
 
         nonlin_fn = nn_ops.get_nonlinearity(nonlinearity, inplace=True)
-        pool_fn = nn_ops.get_pooling_fn(pooling)
+        pool_fn = nn_ops.get_pooling_fn(pooling_type)
+
         layers = [
-            nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=2),
+            nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3),
             nonlin_fn,
             nn.Conv2d(64, 64, kernel_size=5, padding=2),
-            *(batchnorm and [nn.BatchNorm2d(64)] or []),
+            nn.BatchNorm2d(64) if batchnorm else None,
             nonlin_fn,
             pool_fn,
             nn.Conv2d(64, 128, kernel_size=3, padding=1),
-            *(batchnorm and [nn.BatchNorm2d(128)] or []),
+            nn.BatchNorm2d(128) if batchnorm else None,
             nonlin_fn,
             nn.Conv2d(128, 256, kernel_size=3, padding=1),
             nonlin_fn,
             pool_fn,
-            nn.Conv2d(256, 512, kernel_size=2, padding=1),
-            *(batchnorm and [nn.BatchNorm2d(512)] or []),
+            nn.Conv2d(256, 512, kernel_size=3, padding=1),
+            nn.BatchNorm2d(512) if batchnorm else None,
             nonlin_fn,
         ]
-
+        layers = [layer for layer in layers if layer is not None]
         self.features = nn.Sequential(*layers)
-        self.adaptive_pool = nn_ops.get_pooling_fn("adaptive" + pooling)
+        self.adaptive_pool = nn_ops.get_pooling_fn("adaptive" + pooling_type)
+        nonlin_fn = nn_ops.get_nonlinearity(nonlinearity, inplace=True)
 
         classifier_layers = [
+            nn.Dropout() if dropout else None,
             nn.Linear(512 * 3 * 3, 1024),
-            *(dropout and [nn.Dropout(inplace=True)] or []),
-            *(batchnorm and [nn.BatchNorm1d(1024)] or []),
+            nn.BatchNorm1d(1024) if batchnorm else None,
             nonlin_fn,
+            nn.Dropout() if dropout else None,
             nn.Linear(1024, 1024),
-            *(dropout and [nn.Dropout(inplace=True)] or []),
             nonlin_fn,
             nn.Linear(1024, num_classes),
         ]
+        classifier_layers = [layer for layer in classifier_layers if layer is not None]
         self.classifier = nn.Sequential(*classifier_layers)
 
         conv_idx = 0
@@ -95,15 +101,6 @@ class BaseCNN(nn.Module):
                 fc_idx += 1
 
     def forward(self, x):
-        """
-        Defines the forward pass of the model.
-
-        Args:
-            x (torch.Tensor): The input tensor containing the image data.
-
-        Returns:
-            torch.Tensor: The output tensor containing the class probabilities.
-        """
         x = self.features(x)
         x = self.adaptive_pool(x)
         x = torch.flatten(x, 1)
