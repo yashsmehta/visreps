@@ -10,8 +10,11 @@ class ScatTransform(nn.Module):
         
         self.C, self.J, self.L, self.M,self.N =  C, J, L, M, N
         self.model = Scattering2D(J = self.J, shape=(self.M, self.N), L=self.L)  
-        self.layer_size = int(self.C * (1 + (self.L * self.J) + (((self.L**2*self.J)*(self.J-1))/2)) * (self.M/(2**self.J))  * (N/(2**self.J)))
+        self.channel_size = int(self.C * (1 + (self.L * self.J) + (((self.L**2*self.J)*(self.J-1))/2)))
+        self.layer_size = int(self.channel_size * (self.M/(2**self.J))  * (N/(2**self.J)))
 
     
     def forward(self, x:nn.Module) -> torch.Tensor:
-        return self.model(x)
+        out = self.model(x)
+        #print(out.shape)
+        return out
