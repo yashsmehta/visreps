@@ -1,4 +1,5 @@
-from omegaconf import OmegaConf
+import colorlog
+import logging
 import time
 import random
 from pathlib import Path
@@ -23,17 +24,18 @@ def check_trainer_config(cfg):
     Raises:
         AssertionError: If any of the conditions on 'conv_trainable' or 'fc_trainable' are not met.
     """
-    assert len(cfg.conv_trainable) == 5, "conv_trainable must have 5 elements!"
-    assert len(cfg.fc_trainable) == 3, "fc_trainable must have 3 elements!"
-    assert cfg.model_class in ["base_cnn", "wavelet_net", "scattransform_net", "scattransform_base_cnn","scattransform_base_cnn"], "model_class must be 'base_cnn' or 'wavelet_net' or 'scattransform_net'!"
-    assert all(
-        char in "01" for char in cfg.conv_trainable
-    ), "conv_trainable must only contain 0s and 1s!"
-    assert all(
-        char in "01" for char in cfg.fc_trainable
-    ), "fc_trainable must only contain 0s and 1s!"
+    # assert len(cfg.conv_trainable) == 5, "conv_trainable must have 5 elements!"
+    # assert len(cfg.fc_trainable) == 3, "fc_trainable must have 3 elements!"
+    assert cfg.model_class in [
+        "base_cnn", 
+        "wavelet_net", 
+        "scattransform_net", 
+        "scattransform_base_cnn", 
+        "scattransform_custom"
+    ], "model_class must be one of 'base_cnn', 'wavelet_net', 'scattransform_net', 'scattransform_base_cnn', or 'scattransform_custom'!"
+    assert all(char in "01" for char in cfg.conv_trainable), "conv_trainable must only contain '0's and '1's!"
+    assert all(char in "01" for char in cfg.fc_trainable), "fc_trainable must only contain '0's and '1's!"
     return cfg
-
 
 def save_logs(df, cfg):
     """
@@ -166,3 +168,22 @@ def log_results(results, folder_name, cfg_id):
 
     results.to_csv(csv_file, mode='a', header=write_header, index=False)
     print(f"Saved logs to {csv_file} after sleeping for {sleep_time:.2f} seconds")
+
+
+def setup_logging():
+    handler = colorlog.StreamHandler()
+    handler.setFormatter(colorlog.ColoredFormatter(
+        '%(log_color)s%(asctime)s - %(levelname)s - %(message)s',
+        log_colors={
+            'DEBUG': 'cyan',
+            'INFO': 'green',
+            'WARNING': 'yellow',
+            'ERROR': 'red',
+            'CRITICAL': 'red,bg_white',
+        }
+    ))
+
+    logger = colorlog.getLogger()
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    return logger
