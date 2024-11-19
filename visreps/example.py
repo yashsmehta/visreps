@@ -8,15 +8,12 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import models
 from torchvision.models.feature_extraction import create_feature_extractor
 
-from bonner.computation.metrics import pearson_r
-from bonner.computation.regression._linear_regression import LinearRegression
-
-from archvision.utils import setup_logging
+from visreps.utils import setup_logging
 
 # Constants
-DATA_DIR = Path('data')
-NSD_DATA_FILE = DATA_DIR / 'nsd_data.pkl'
-SELECTED_IMAGES_FILE = DATA_DIR / 'selected_images.pkl'
+DATA_DIR = Path('data/nsd')
+NSD_DATA_FILE = DATA_DIR / 'neural_responses.pkl'
+SELECTED_IMAGES_FILE = DATA_DIR / 'stimuli.pkl'
 BATCH_SIZE = 32
 
 def load_pickle(file_path):
@@ -105,20 +102,6 @@ def main():
     X_tensor = torch.tensor(np.array(X), dtype=torch.float32)
     Y_tensor = torch.tensor(np.array(Y), dtype=torch.float32)
     logger.info(f"Data shapes - X: {X_tensor.shape}, Y: {Y_tensor.shape}")
-
-    # Train Linear Regression model
-    lr_model = LinearRegression()
-    logger.info("Training linear regression model...")
-    lr_model.fit(X_tensor, Y_tensor)
-
-    # Predict and evaluate
-    Y_pred = lr_model.predict(X_tensor)
-    Y_pred = Y_pred.to(Y_tensor.device)  # Ensure Y_pred is on the same device as Y_tensor
-    mse = torch.mean((Y_pred - Y_tensor) ** 2).item()
-    r = pearson_r(Y_tensor.cpu(), Y_pred.cpu()).mean().item()  # Move tensors to CPU for pearson_r calculation
-
-    logger.info(f"Model evaluation - MSE: {mse}, Pearson correlation: {r}")
-    logger.info("Processing completed.")
 
 if __name__ == "__main__":
     main()

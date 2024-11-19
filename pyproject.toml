@@ -1,21 +1,29 @@
 [tool.poetry]
-name = "archvision"
+name = "visreps"
 version = "0.1.0"
-description = "Architecture search and local learning for high brain score alignment"
+description = "A repository for studying the emergence of representational similarities between artificial neural networks and the human visual system during training."
 authors = ["Yash Mehta <yashsmehta95@gmail.com>"]
 license = "MIT"
 readme = "README.md"
+homepage = "https://github.com/yashsmehta/visreps"
+repository = "https://github.com/yashsmehta/visreps"
+keywords = ["deep learning", "visual representations", "neural networks", "representation learning", "cognitive science"]
 
 [tool.poetry.dependencies]
 python = "^3.11"
 torch = "^2.2.2"
-pandas = "^2.2.1"
-numpy = "^1.26.4"
 torchvision = "^0.17.2"
 torchaudio = "^2.2.2"
+pandas = "^2.2.1"
+numpy = "^1.26.4"
 omegaconf = "^2.3.0"
-pywavelets = "^1.6.0"
+PyWavelets = "^1.6.0"
 
+[tool.poetry.dev-dependencies]
+pytest = "^7.4.0"
+black = "^23.9.1"
+flake8 = "^6.1.0"
+mypy = "^1.6.0"
 
 [build-system]
 requires = ["poetry-core"]

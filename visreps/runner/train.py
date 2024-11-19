@@ -1,5 +1,5 @@
 from omegaconf import OmegaConf
-import archvision.trainer as trainer
+import visreps.trainer as trainer
 import json
 import sys
 

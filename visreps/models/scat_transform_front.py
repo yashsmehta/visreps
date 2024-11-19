@@ -1,11 +1,11 @@
 import torch.nn as nn
 import torch
-import archvision.models.nn_ops as nn_ops
-from archvision.models.custom_operations.scat_transform import ScatTransform
+import visreps.models.nn_ops as nn_ops
+from visreps.models.custom_operations.scat_transform import ScatTransform
 
 
 
-class ScatTransformNet(nn.Module):
+class ScatTransformFront(nn.Module):
 
     def __init__(
         self,

@@ -1,5 +1,5 @@
 from omegaconf import OmegaConf
-import archvision.evals as evals
+import visreps.evals as evals
 import json
 
 
@@ -20,7 +20,7 @@ def load_config(file_path):
 
 
 def main():
-    config_path = "archvision/configs/eval.json"
+    config_path = "visreps/configs/eval.json"
     cfg = load_config(config_path)
     evals.eval(cfg)
 

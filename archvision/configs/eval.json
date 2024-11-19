@@ -1,9 +1,0 @@
-{
-  "region": "OTC",
-  "benchmark_name": "nsd",
-  "log_expdata": true,
-  "cfg_id": 1,
-  "exp_name": "basic",
-  "epoch": 0,
-  "deepjuice_keep_layer": "all"
-}
