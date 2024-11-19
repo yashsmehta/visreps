@@ -2,14 +2,10 @@ import time
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from archvision.dataloader import get_dataloader
-from archvision.models.base_cnn import BaseCNN
-from archvision.models.wavelet_front import WaveletNet
-from archvision.models.scat_transform_front import ScatTransformNet
-from archvision.models.scat_transform_base_cnn import ScatTransformBaseCNN
-from archvision.models.scat_transform_custom import ScatTransformCustom
+from visreps.dataloader import get_dataloader
+from visreps.models.base_cnn import BaseCNN
 
-import archvision.utils as utils
+import visreps.utils as utils
 import wandb
 from omegaconf import OmegaConf
 import json
@@ -55,11 +51,7 @@ def train(cfg):
 
     model_class = {
         "base_cnn": BaseCNN,
-        "wavelet_net": WaveletNet,
-        "scattransform_net": ScatTransformNet,
-        "scattransform_base_cnn":ScatTransformBaseCNN,
-        "scattransform_custom":ScatTransformCustom
-        
+
     }[cfg.model_class]
 
     model = model_class(

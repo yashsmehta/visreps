@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from archvision.models.custom_operations.norm import DivNorm
+from visreps.models.custom_operations.norm import DivNorm
 
 
 def get_normalization(out_channels, norm_type):

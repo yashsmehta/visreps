@@ -1,10 +1,32 @@
-import torch.nn as nn
 import torch
-import archvision.models.nn_ops as nn_ops
-from archvision.models.custom_operations.wavelet_conv import WaveletConvolution
+import torch.nn as nn
+import visreps.models.nn_ops as nn_ops
 
 
-class WaveletNet(nn.Module):
+class BaseCNN(nn.Module):
+    """
+    A basic convolutional neural network model for image classification.
+
+    Attributes:
+        features (torch.nn.Sequential): The sequential container of convolutional, batch normalization,
+                                        and non-linear activation layers forming the feature extractor part of the CNN.
+        avgpool (torch.nn.AdaptiveAvgPool2d): Adaptive average pooling layer to reduce the spatial dimensions
+                                              to a fixed size.
+        classifier (torch.nn.Sequential): The sequential container of linear layers and dropout layers
+                                          forming the classifier part of the CNN.
+
+    Args:
+        num_classes (int): Number of output classes for the classifier. Default is 200.
+        trainable_layers (dict): A dictionary specifying which layers are trainable. Each key should be
+                                 either 'conv' or 'fc', and the corresponding value should be a string of
+                                 '1's and '0's indicating the trainability of each layer in the respective
+                                 section of the model. Default is all layers trainable.
+        nonlinearity (str): The type of nonlinearity to use. Default is 'relu'.
+        dropout (bool): Whether to include dropout layers in the classifier. Default is True.
+        batchnorm (bool): Whether to include batch normalization layers after each convolutional and linear layer.
+                          Default is True.
+        pooling_type (str): The type of pooling to use in the feature extractor. Default is 'max'.
+    """
 
     def __init__(
         self,
@@ -15,7 +37,7 @@ class WaveletNet(nn.Module):
         batchnorm=True,
         pooling_type="max",
     ):
-        super(WaveletNet, self).__init__()
+        super(BaseCNN, self).__init__()
         trainable_layers = trainable_layers or {"conv": "11111", "fc": "111"}
         trainable_layers = {
             layer_type: [val == "1" for val in layers]
@@ -24,10 +46,9 @@ class WaveletNet(nn.Module):
 
         nonlin_fn = nn_ops.get_nonlinearity(nonlinearity, inplace=True)
         pool_fn = nn_ops.get_pooling_fn(pooling_type)
-        self.wavelets = WaveletConvolution(filter_type="curvature", device="cuda")
 
         layers = [
-            nn.Conv2d(self.wavelets.layer_size, 64, kernel_size=7, stride=2, padding=3),
+            nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3),
             nonlin_fn,
             nn.Conv2d(64, 64, kernel_size=5, padding=2),
             nn.BatchNorm2d(64) if batchnorm else None,
@@ -80,16 +101,6 @@ class WaveletNet(nn.Module):
                 fc_idx += 1
 
     def forward(self, x):
-        """
-        Defines the forward pass of the model.
-
-        Args:
-            x (torch.Tensor): The input tensor containing the image data.
-
-        Returns:
-            torch.Tensor: The output tensor containing the class probabilities.
-        """
-        x = self.wavelets(x)
         x = self.features(x)
         x = self.adaptive_pool(x)
         x = torch.flatten(x, 1)

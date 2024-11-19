@@ -29,10 +29,7 @@ def check_trainer_config(cfg):
     assert cfg.model_class in [
         "base_cnn", 
         "wavelet_net", 
-        "scattransform_net", 
-        "scattransform_base_cnn", 
-        "scattransform_custom"
-    ], "model_class must be one of 'base_cnn', 'wavelet_net', 'scattransform_net', 'scattransform_base_cnn', or 'scattransform_custom'!"
+    ], "model_class must be one of 'base_cnn', 'wavelet_net'!"
     assert all(char in "01" for char in cfg.conv_trainable), "conv_trainable must only contain '0's and '1's!"
     assert all(char in "01" for char in cfg.fc_trainable), "fc_trainable must only contain '0's and '1's!"
     return cfg
