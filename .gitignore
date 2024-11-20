@@ -10,4 +10,4 @@ logs/
 model_checkpoints/
 wandb/
 playground/
-
+benchmarks/

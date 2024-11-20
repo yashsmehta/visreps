@@ -1,7 +1,7 @@
 from omegaconf import OmegaConf
 import visreps.evals as evals
 import json
-
+import os
 
 def load_config(file_path):
     """
@@ -23,7 +23,6 @@ def main():
     config_path = "visreps/configs/eval.json"
     cfg = load_config(config_path)
     evals.eval(cfg)
-
 
 if __name__ == "__main__":
     main()
