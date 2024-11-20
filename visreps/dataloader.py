@@ -34,7 +34,7 @@ def get_transform(
     return transforms.Compose(transform_list)
 
 
-def get_dataloader(data_dir, batchsize, num_workers=8, ds_stats="tiny-imagenet"):
+def tinyimgnet_loader(batchsize=32, num_workers=8, ds_stats="tiny-imagenet"):
     """
     This function returns a dictionary of data loaders for the specified dataset.
 
@@ -57,11 +57,14 @@ def get_dataloader(data_dir, batchsize, num_workers=8, ds_stats="tiny-imagenet")
         ),
     }
 
+    # Use data/tiny-imagenet-200 as the base directory
+    base_dir = os.path.join("data", "tiny-imagenet-200")
+    
     train_dataset = datasets.ImageFolder(
-        root=os.path.join(data_dir, "train"), transform=data_transform["train"]
+        root=os.path.join(base_dir, "train"), transform=data_transform["train"]
     )
     test_dataset = datasets.ImageFolder(
-        root=os.path.join(data_dir, "val"), transform=data_transform["test"]
+        root=os.path.join(base_dir, "val"), transform=data_transform["test"]
     )
 
     data_loader = {

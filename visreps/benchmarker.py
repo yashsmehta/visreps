@@ -2,20 +2,32 @@
 import visreps.metrics as metrics
 import visreps.utils as utils
 
-def load_benchmark(cfg):
+def load_nsd_data(file_path='benchmarks/nsd/neural_responses.pkl'):
     """
-    Load and prepare the benchmark data using the configuration.
+    Load NSD neural responses from a pickle file.
 
     Args:
+        file_path (str): Path to the pickle file containing NSD data.
+
+    Returns:
+        dict: Loaded NSD data.
+    """
+    try:
+        return utils.load_pickle(file_path)
+    except FileNotFoundError:
+        raise FileNotFoundError(f"NSD data file not found at {file_path}")
+
+def prepare_benchmark_data(nsd_data, cfg):
+    """
+    Prepare benchmark data for a specific region and subject.
+
+    Args:
+        nsd_data (dict): NSD data loaded from file.
         cfg (OmegaConf): Configuration object containing experiment details and settings.
 
     Returns:
         dict: A dictionary containing the benchmark data.
     """
-    # Load NSD neural responses
-    nsd_data = utils.load_pickle('data/nsd/neural_responses.pkl')
-
-    # Process fMRI data and prepare for benchmarking
     region_key = cfg.region
     subject_idx = cfg.subject_idx
 
@@ -25,30 +37,29 @@ def load_benchmark(cfg):
     subjects_data = nsd_data[region_key]
     stimuli_ids = subjects_data[subject_idx].coords['stimulus'].values
 
-    benchmark = {}
-    for stimulus_id in stimuli_ids:
-        benchmark[stimulus_id] = subjects_data[subject_idx].sel(stimulus=stimulus_id).values
+    return {stimulus_id: subjects_data[subject_idx].sel(stimulus=stimulus_id).values for stimulus_id in stimuli_ids}
 
-    return benchmark
-
-def get_benchmarking_results(benchmark, activations_dict):
+def load_benchmark_data(cfg):
     """
-    Calculate benchmarking results using the RSA score.
+    Load both NSD neural responses and stimuli data.
 
     Args:
-        benchmark (dict): The benchmark data.
-        activations_dict (dict): The model activations.
+        cfg (OmegaConf): Configuration object containing experiment details and settings.
 
     Returns:
-        dict: A dictionary containing the RSA scores.
+        tuple: A tuple containing (neural_data, stimuli)
+            - neural_data: Dictionary of neural responses
+            - stimuli: Dictionary of selected stimuli
     """
-    # Calculate RSA score
-    rsa_scores = metrics.calculate_rsa_score(benchmark, activations_dict)
+    # Load NSD data
+    nsd_data = load_nsd_data()
+    
+    try:
+        stimuli = utils.load_pickle('benchmarks/nsd/stimuli.pkl')
+    except FileNotFoundError:
+        raise FileNotFoundError("Stimuli data file not found")
 
-    # Prepare results
-    results = {
-        "rsa_scores": rsa_scores,
-        "metric": "rsa"
-    }
-
-    return results 
+    # Prepare benchmark data
+    neural_data = prepare_benchmark_data(nsd_data, cfg)
+    
+    return neural_data, stimuli

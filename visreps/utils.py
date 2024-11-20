@@ -5,6 +5,7 @@ import random
 from pathlib import Path
 import torch
 import os
+import pickle
 
 
 def check_trainer_config(cfg):
@@ -184,3 +185,7 @@ def setup_logging():
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
     return logger
+
+def load_pickle(file_path):
+    with open(file_path, 'rb') as file:
+        return pickle.load(file)

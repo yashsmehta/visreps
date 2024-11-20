@@ -1,90 +1,75 @@
-import visreps.benchmarker as benchmarker
-from visreps.dataloader import get_data_loader
-import visreps.utils as utils
 import torch
-import json
+import numpy as np
 from torchvision import models
 from torchvision.models.feature_extraction import create_feature_extractor
-from visreps.models.standard_cnns import AlexNet, VGG16, ResNet50, DenseNet121
+from visreps.dataloader import get_dataloader, get_transform
+import visreps.utils as utils
+import visreps.benchmarker as benchmarker
+import visreps.metrics as metrics
 
+def load_model(cfg):
+    if cfg.load_checkpoint:
+        model = utils.load_checkpoint(cfg.checkpoint_path)
+    else:
+        model_map = {
+            "alexnet": models.alexnet,
+            "vgg16": models.vgg16,
+            "resnet50": models.resnet50,
+            "densenet121": models.densenet121,
+        }
+        if cfg.model.lower() not in model_map:
+            raise ValueError(
+                f"Model {cfg.model} not supported. Choose from: {list(model_map.keys())}"
+            )
+        model = model_map[cfg.model.lower()](pretrained=cfg.pretrained)
+
+    # Define default return nodes if not specified in cfg
+    default_return_nodes = {
+        "alexnet": ["features.12"],
+        "vgg16": ["features.29"],
+        "resnet50": ["layer4"],
+        "densenet121": ["features.denseblock4"],
+    }
+    return_nodes = getattr(cfg, "return_nodes", default_return_nodes[cfg.model.lower()])
+
+    # Create a feature extractor
+    return_nodes_dict = {node_name: node_name for node_name in return_nodes}
+    feature_extractor = create_feature_extractor(model, return_nodes=return_nodes_dict)
+    return feature_extractor, {}
+
+def extract_activations(model, dataloader, device):
+    model.eval()
+    activations_dict = {}
+    with torch.no_grad():
+        for batch in dataloader:
+            inputs = batch.to(device)
+            outputs = model(inputs)
+            for node_name, output in outputs.items():
+                output_np = output.cpu().numpy()
+                activations_dict.setdefault(node_name, []).append(output_np)
+    # Concatenate activations for each layer
+    for node_name in activations_dict:
+        activations_dict[node_name] = np.concatenate(activations_dict[node_name], axis=0)
+    return activations_dict
 
 def eval(cfg):
-    """
-    Evaluate a model using a specified configuration.
-
-    This function performs the following steps:
-    1. Determines the device to use based on CUDA availability.
-    2. Constructs the path to the model checkpoint.
-    3. Loads the training configuration from the checkpoint.
-    4. Loads the model from the checkpoint.
-    5. Loads the benchmark using the configuration.
-    6. Gets the data loader with the appropriate transformations.
-    7. Sets up device configuration for feature extraction.
-    8. Determines layers to keep based on configuration.
-    9. Initializes the feature extractor with the model and dataloader.
-    10. Gets benchmarking results and filters by region.
-    11. Appends training configuration to results.
-    12. Logs results if specified in configuration.
-
-    Args:
-        cfg (OmegaConf): Configuration object containing experiment details and settings.
-    """
-
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(f"Device: {device}")
 
+    model, training_config = load_model(cfg)
+    model.to(device)
+
+    neural_data, stimuli = benchmarker.load_benchmark_data(cfg)
+    dataloader = get_dataloader(stimuli, get_transform(image_size=64))
+    activations_dict = extract_activations(model, dataloader, device)
+    results = metrics.calculate_rsa_score(neural_data, activations_dict)
+
+    results["epoch"] = cfg.epoch
+    print(f"RSA Score: {results['rsa_scores']}")
     if cfg.load_checkpoint:
-        model_checkpoint_path = f"model_checkpoints/{cfg.exp_name}/cfg{cfg.cfg_id}"
-        with open(f"{model_checkpoint_path}/config.json", "r") as f:
-            training_config = json.load(f)
-
-        model = torch.load(f"{model_checkpoint_path}/model_epoch_{cfg.epoch:02d}.pth")
-    else:
-        if cfg.model == "alexnet":
-            model = create_feature_extractor(AlexNet(pretrained=cfg.pretrained), return_nodes={'classifier.6': 'fc8'})
-        elif cfg.model == "vgg16":
-            model = create_feature_extractor(VGG16(pretrained=cfg.pretrained), return_nodes={'classifier.6': 'fc8'})
-        elif cfg.model == "resnet50":
-            model = create_feature_extractor(ResNet50(pretrained=cfg.pretrained), return_nodes={'fc': 'fc8'})
-        elif cfg.model == "densenet121":
-            model = create_feature_extractor(DenseNet121(pretrained=cfg.pretrained), return_nodes={'classifier': 'fc8'})
-
-        print(model)
-        exit()
-
-        # Interface with NSD data
-        nsd_data = utils.load_pickle('data/nsd/neural_responses.pkl')
-        selected_images = utils.load_pickle('data/nsd/stimuli.pkl')
-        dataloader = get_data_loader(selected_images, utils.get_transform(image_size=64))
-
-        # Extract activations
-        activations_dict = {}
-        model.eval()
-        with torch.no_grad():
-            for image_ids, images in dataloader:
-                outputs = model(images)['fc8']
-                for image_id, activation in zip(image_ids, outputs):
-                    activations_dict[int(image_id)] = activation.cpu().numpy()
-
-        benchmark = benchmarker.load_benchmark(cfg)
-
-        devices = {"device": device, "output_device": "cpu"}
-
+        results.update(training_config)
+    if cfg.log_expdata:
         try:
-            results = benchmarker.get_benchmarking_results(benchmark, activations_dict)
-            results = results[results["region"] == cfg.region]
-            results["epoch"] = cfg.epoch
-            print(results[results["metric"] == "srpr"])
-
-            for key, value in training_config.items():
-                results[key] = value
-
-            if cfg.log_expdata:
-                utils.log_results(results, folder_name=cfg.exp_name, cfg_id=cfg.cfg_id)
-
-        except FileNotFoundError as e:
-            print(f"File not found: {e}")
-        except KeyError as e:
-            print(f"Key error: {e}")
-        except Exception as e:
-            print(f"An error occurred: {e}")
+            utils.log_results(results, folder_name=cfg.exp_name, cfg_id=cfg.cfg_id)
+        except (FileNotFoundError, KeyError) as e:
+            print(f"An error occurred while logging results: {e}")

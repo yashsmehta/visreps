@@ -2,59 +2,42 @@ import time
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from visreps.dataloader import get_dataloader
+from visreps.dataloader import tinyimgnet_loader
 from visreps.models.base_cnn import BaseCNN
-
 import visreps.utils as utils
 import wandb
 from omegaconf import OmegaConf
 import json
 import os
-
+from tqdm import tqdm
 
 def train(cfg):
     """
     Train a convolutional neural network model based on the provided configuration.
 
-    This function sets up and trains a CNN model using the specified training configuration.
-    It initializes the model, sets up data loaders, defines the loss function and optimizer,
-    and manages the training process including logging and checkpointing.
-
     Args:
-        cfg (OmegaConf.DictConfig): A configuration object containing all necessary parameters
-                                    for training, including data paths, model parameters, training
-                                    hyperparameters, and logging settings.
-
-    The function performs the following steps:
-    1. Validates and updates the training configuration.
-    2. Sets the random seed for reproducibility.
-    3. Initializes the model with specified trainable layers.
-    4. Moves the model to the appropriate device (CPU or GPU).
-    5. Optionally initializes Weights & Biases logging.
-    6. Sets up the loss function and optimizer.
-    7. Enters a training loop which includes:
-        - Evaluating the model on the test set and optionally on the training set.
-        - Saving model checkpoints at specified intervals.
-        - Training the model on the training data.
-        - Logging loss and accuracy metrics.
-    8. Optionally saves the final model configuration and statistics.
-
-    Outputs:
-        The function does not return any values but will output logs directly to the console
-        and optionally to Weights & Biases. It also saves model checkpoints and configuration
-        to the disk based on the provided settings.
+        cfg (OmegaConf.DictConfig): A configuration object containing all necessary parameters.
     """
+    # Validate and update the training configuration.
     cfg = utils.check_trainer_config(cfg)
     torch.manual_seed(cfg.seed)
+
+    # Define trainable layers.
     trainable_layers = {"conv": cfg.conv_trainable, "fc": cfg.fc_trainable}
-    data_loader = get_dataloader(cfg.data_dir, cfg.batchsize, ds_stats="tiny-imagenet")
 
-    model_class = {
+    # Get data loaders.
+    data_loader = tinyimgnet_loader(cfg.batchsize)
+
+    # Select the model class.
+    model_classes = {
         "base_cnn": BaseCNN,
+        # Add other model classes here if available.
+    }
 
-    }[cfg.model_class]
+    if cfg.model_class not in model_classes:
+        raise ValueError(f"Model class '{cfg.model_class}' not recognized.")
 
-    model = model_class(
+    model = model_classes[cfg.model_class](
         num_classes=cfg.num_classes,
         trainable_layers=trainable_layers,
         nonlinearity=cfg.nonlinearity,
@@ -64,84 +47,128 @@ def train(cfg):
     )
     print(model)
 
+    # Calculate total and trainable parameters.
     total_params = sum(p.numel() for p in model.parameters())
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print("Total params: ", total_params)
-    print("Trainable params: ", trainable_params)
+    print(f"Total params: {total_params}")
+    print(f"Trainable params: {trainable_params}")
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    # Set device.
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
-    print(f"Using {'GPU' if device == 'cuda' else 'CPU'} for training")
+    print(f"Using {'GPU' if device.type == 'cuda' else 'CPU'} for training")
 
+    # Initialize Weights & Biases if enabled.
     if cfg.use_wandb:
         wandb.init(
             project=cfg.exp_name,
             group=cfg.group,
-            config=dict(cfg),
+            config=OmegaConf.to_container(cfg, resolve=True),
             name=f"seed_{cfg.seed}",
         )
 
+    # Set up loss function and optimizer.
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
 
+    # Make optimizer type and learning rate configurable.
+    if cfg.optimizer == 'adam':
+        optimizer = optim.Adam(model.parameters(), lr=cfg.learning_rate)
+    elif cfg.optimizer == 'sgd':
+        optimizer = optim.SGD(model.parameters(), lr=cfg.learning_rate, momentum=0.9)
+    else:
+        raise ValueError(f"Optimizer '{cfg.optimizer}' not recognized.")
+
+    # Set up checkpoint directory if logging checkpoints.
     if cfg.log_checkpoints:
         checkpoint_subdir = utils.make_checkpoint_dir(folder=cfg.exp_name)
 
-    for epoch in range(cfg.num_epochs + 1):
-        model.eval()
-        with torch.no_grad():
-            if epoch % cfg.checkpoint_interval == 0:
-                train_acc = utils.calculate_accuracy(
-                    data_loader["train"], model, device
-                )
-                print(f"Train Accuracy: {train_acc:.2f}%")
-                if cfg.log_checkpoints:
-                    model_path = os.path.join(
-                        checkpoint_subdir, f"model_epoch_{epoch:02d}.pth"
-                    )
-                    torch.save(model, model_path)
-                    print(f"Model saved as {model_path}")
-            test_acc = utils.calculate_accuracy(data_loader["test"], model, device)
-            print(f"Test Accuracy: {test_acc:.2f}%")
+    # Training loop.
+    for epoch in range(1, cfg.num_epochs + 1):
+        start_time = time.time()
 
-        start = time.time()
+        # Training phase.
         model.train()
-        for i, (images, labels) in enumerate(data_loader["train"]):
+        running_loss = 0.0
+        total_steps = len(data_loader["train"])
+        
+        # Progress bar for batches
+        progress_bar = tqdm(data_loader["train"], desc=f"Epoch {epoch}/{cfg.num_epochs}")
+        
+        for images, labels in progress_bar:
             images, labels = images.to(device), labels.to(device)
+
+            # Forward pass.
             outputs = model(images)
             loss = criterion(outputs, labels)
 
+            # Backward and optimize.
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            if (i + 1) % 100 == 0:
-                print(
-                    f'Epoch [{epoch+1}/{cfg.num_epochs}], Step [{i+1}/{len(data_loader["train"])}], Loss: {loss.item():.6f}'
+            # Accumulate loss.
+            running_loss += loss.item()
+            
+            # Update progress bar with current loss
+            progress_bar.set_postfix({'loss': loss.item()})
+
+        # Calculate average loss for the epoch
+        avg_loss = running_loss / total_steps
+        epoch_duration = time.time() - start_time
+        
+        # Log every log_interval epochs
+        if epoch % cfg.log_interval == 0 or epoch == cfg.num_epochs:
+            print(
+                f"\nEpoch [{epoch}/{cfg.num_epochs}], "
+                f"Average Loss: {avg_loss:.6f}, "
+                f"Time: {epoch_duration:.2f}s"
+            )
+            if cfg.use_wandb:
+                wandb.log(
+                    {"epoch": epoch, "loss": avg_loss},
                 )
+        running_loss = 0.0
+
+        # Evaluation phase.
+        model.eval()
+        with torch.no_grad():
+            test_acc = utils.calculate_accuracy(data_loader["test"], model, device)
+            print(f"Test Accuracy after epoch {epoch}: {test_acc:.2f}%")
+            if cfg.use_wandb:
+                wandb.log({"epoch": epoch, "test_acc": test_acc})
+
+            # Optionally evaluate on training data.
+            if cfg.evaluate_train:
+                train_acc = utils.calculate_accuracy(data_loader["train"], model, device)
+                print(f"Train Accuracy after epoch {epoch}: {train_acc:.2f}%")
                 if cfg.use_wandb:
-                    wandb.log(
-                        {
-                            "epoch": epoch,
-                            "loss": loss.item(),
-                            "test_acc": test_acc,
-                            "train_acc": (
-                                train_acc
-                                if epoch % cfg.checkpoint_interval == 0
-                                else "N/A"
-                            ),
-                        }
-                    )
+                    wandb.log({"epoch": epoch, "train_acc": train_acc})
 
-        epoch_duration = time.time() - start
-        print(f"Epoch [{epoch+1}/{cfg.num_epochs}], Time: {epoch_duration:.2f}s")
+        # Save checkpoints.
+        if cfg.log_checkpoints and epoch % cfg.checkpoint_interval == 0:
+            checkpoint = {
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'cfg': OmegaConf.to_container(cfg, resolve=True),
+            }
+            model_path = os.path.join(
+                checkpoint_subdir, f"model_epoch_{epoch:02d}.pth"
+            )
+            torch.save(checkpoint, model_path)
+            print(f"Model checkpoint saved at {model_path}")
 
+    # Save final configuration and stats.
     if cfg.log_checkpoints:
         cfg_dict = {
-            "epoch_duration": epoch_duration,
+            "last_epoch_duration": epoch_duration,
             "total_params": total_params,
             "trainable_params": trainable_params,
             **OmegaConf.to_container(cfg, resolve=True),
         }
         with open(f"{checkpoint_subdir}/config.json", "w") as f:
             json.dump(cfg_dict, f)
+
+    # Finish wandb run.
+    if cfg.use_wandb:
+        wandb.finish()

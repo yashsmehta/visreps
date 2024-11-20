@@ -37,7 +37,7 @@ def load_config(file_path):
 
 
 def main():
-    config_paths = {"train": "archvision/configs/train.json"}
+    config_paths = {"train": "visreps/configs/train.json"}
     cfg = load_config(config_paths["train"])
     trainer.train(cfg)
 
