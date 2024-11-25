@@ -1,9 +1,10 @@
 {
   "region": "early visual stream",
   "subject_idx": 0,
-  "model": "alexnet",
-  "load_checkpoint": false,
-  "checkpoint_path": "",
+  "model": "custom_cnn",
+  "return_nodes": ["fc.3"],
+  "load_checkpoint": true,
+  "checkpoint_path": "model_checkpoints/base/cfg1/",
   "pretrained": true,
   "benchmark_name": "nsd",
   "log_expdata": true,

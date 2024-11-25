@@ -9,7 +9,7 @@ DS_STD = {"tiny-imagenet": [0.272, 0.265, 0.274], "imgnet": [0.229, 0.224, 0.225
 
 
 def get_transform(
-    mean=DS_MEAN["imgnet"], std=DS_STD["imgnet"], data_augment=False, image_size=64
+    mean=DS_MEAN["tiny-imagenet"], std=DS_STD["tiny-imagenet"], data_augment=False, image_size=64
 ):
     """
     This function returns a composition of image transformations.
@@ -34,14 +34,14 @@ def get_transform(
     return transforms.Compose(transform_list)
 
 
-def tinyimgnet_loader(batchsize=32, num_workers=8, ds_stats="tiny-imagenet"):
+def tinyimgnet_loader(batchsize=32, num_workers=8, data_augment=True, ds_stats="tiny-imagenet"):
     """
     This function returns a dictionary of data loaders for the specified dataset.
 
     Args:
-        data_dir (str): The directory where the dataset is located.
         batchsize (int): The batch size for the data loaders.
         num_workers (int): The number of worker processes to use for data loading.
+        data_augment (bool): If True, apply data augmentation.
         ds_stats (str): The dataset statistics to use for normalization.
 
     Returns:
@@ -50,14 +50,13 @@ def tinyimgnet_loader(batchsize=32, num_workers=8, ds_stats="tiny-imagenet"):
     assert ds_stats in ["tiny-imagenet", "imgnet"]
     data_transform = {
         "train": get_transform(
-            mean=DS_MEAN[ds_stats], std=DS_STD[ds_stats], data_augment=True
+            mean=DS_MEAN[ds_stats], std=DS_STD[ds_stats], data_augment=data_augment
         ),
         "test": get_transform(
             mean=DS_MEAN[ds_stats], std=DS_STD[ds_stats], data_augment=False
         ),
     }
 
-    # Use data/tiny-imagenet-200 as the base directory
     base_dir = os.path.join("data", "tiny-imagenet-200")
     
     train_dataset = datasets.ImageFolder(
@@ -78,7 +77,7 @@ def tinyimgnet_loader(batchsize=32, num_workers=8, ds_stats="tiny-imagenet"):
         "test": DataLoader(
             dataset=test_dataset,
             batch_size=batchsize,
-            shuffle=False,
+            shuffle=True,
             num_workers=num_workers,
             prefetch_factor=2,
         ),
