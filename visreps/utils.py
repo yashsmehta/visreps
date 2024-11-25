@@ -6,6 +6,8 @@ from pathlib import Path
 import torch
 import os
 import pickle
+from torchvision import models
+from torch import nn
 
 
 def check_trainer_config(cfg):
@@ -28,11 +30,14 @@ def check_trainer_config(cfg):
     # assert len(cfg.conv_trainable) == 5, "conv_trainable must have 5 elements!"
     # assert len(cfg.fc_trainable) == 3, "fc_trainable must have 3 elements!"
     assert cfg.model_class in [
-        "base_cnn", 
-        "wavelet_net", 
-    ], "model_class must be one of 'base_cnn', 'wavelet_net'!"
-    assert all(char in "01" for char in cfg.conv_trainable), "conv_trainable must only contain '0's and '1's!"
-    assert all(char in "01" for char in cfg.fc_trainable), "fc_trainable must only contain '0's and '1's!"
+        "custom_cnn",
+        "alexnet",
+        "vgg16",
+        "resnet50",
+        "densenet121",
+    ], "model_class must be one of 'custom_cnn', 'alexnet', 'vgg16', 'resnet50', 'densenet121'!"
+    assert all(char in "01" for char in cfg.custom.conv_trainable), "conv_trainable must only contain '0's and '1's!"
+    assert all(char in "01" for char in cfg.custom.fc_trainable), "fc_trainable must only contain '0's and '1's!"
     return cfg
 
 def save_logs(df, cfg):
@@ -88,21 +93,6 @@ def save_logs(df, cfg):
 
 
 def calculate_accuracy(data_loader, model, device):
-    """
-    Calculate the accuracy of a model on a given dataset.
-
-    This function iterates over all batches in the provided data loader, computes the model's predictions,
-    and compares them to the actual labels to determine the number of correct predictions. It then calculates
-    the percentage of correct predictions over the total number of samples.
-
-    Args:
-        data_loader (torch.utils.data.DataLoader): The data loader containing the dataset to evaluate.
-        model (torch.nn.Module): The model to evaluate.
-        device (str): The device to perform computations on ('cuda' or 'cpu').
-
-    Returns:
-        float: The accuracy of the model on the provided dataset, as a percentage.
-    """
     correct = 0
     total = 0
     with torch.no_grad():
@@ -189,3 +179,12 @@ def setup_logging():
 def load_pickle(file_path):
     with open(file_path, 'rb') as file:
         return pickle.load(file)
+
+def load_model_from_checkpoint(checkpoint_path):
+    if not os.path.exists(checkpoint_path):
+        raise FileNotFoundError(f"Checkpoint file not found at {checkpoint_path}")
+    
+    checkpoint = torch.load(checkpoint_path)
+    model = load_state_dict(checkpoint['model_state_dict'])
+    
+    return model

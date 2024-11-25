@@ -51,7 +51,6 @@ def load_benchmark_data(cfg):
             - neural_data: Dictionary of neural responses
             - stimuli: Dictionary of selected stimuli
     """
-    # Load NSD data
     nsd_data = load_nsd_data()
     
     try:
@@ -59,7 +58,6 @@ def load_benchmark_data(cfg):
     except FileNotFoundError:
         raise FileNotFoundError("Stimuli data file not found")
 
-    # Prepare benchmark data
     neural_data = prepare_benchmark_data(nsd_data, cfg)
     
     return neural_data, stimuli
