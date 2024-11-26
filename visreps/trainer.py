@@ -74,6 +74,14 @@ def train(cfg):
 
     if cfg.log_checkpoints:
         checkpoint_subdir = utils.make_checkpoint_dir(folder=cfg.exp_name)
+        # Save configuration before training
+        cfg_dict = {
+            "total_params": total_params,
+            "trainable_params": trainable_params,
+            **OmegaConf.to_container(cfg, resolve=True),
+        }
+        with open(f"{checkpoint_subdir}/config.json", "w") as f:
+            json.dump(cfg_dict, f)
 
     for epoch in range(1, cfg.num_epochs + 1):
         start_time = time.time()
@@ -127,28 +135,12 @@ def train(cfg):
                     wandb.log({"epoch": epoch, "train_acc": train_acc})
 
         if cfg.log_checkpoints and epoch % cfg.checkpoint_interval == 0:
-            checkpoint = {
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'cfg': OmegaConf.to_container(cfg, resolve=True),
-            }
             model_path = os.path.join(
                 checkpoint_subdir, f"model_epoch_{epoch:02d}.pth"
             )
-            torch.save(checkpoint, model_path)
-            print(f"Model checkpoint saved at {model_path}")
+            torch.save(model, model_path)  # Save entire model instead of just state_dict
+            print(f"Model saved at {model_path}")
 
-    # Save final configuration and stats.
-    if cfg.log_checkpoints:
-        cfg_dict = {
-            "last_epoch_duration": epoch_duration,
-            "total_params": total_params,
-            "trainable_params": trainable_params,
-            **OmegaConf.to_container(cfg, resolve=True),
-        }
-        with open(f"{checkpoint_subdir}/config.json", "w") as f:
-            json.dump(cfg_dict, f)
 
     # Finish wandb run.
     if cfg.use_wandb:
