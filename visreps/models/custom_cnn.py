@@ -47,34 +47,27 @@ class CustomCNN(nn.Module):
         nonlin_fn = nn_ops.get_nonlinearity(nonlinearity, inplace=True)
         pool_fn = nn_ops.get_pooling_fn(pooling_type)
         
-        # Define feature extractor blocks with named components
-        self.conv1 = nn.Sequential(
+        # Combine all conv layers into a single sequential container
+        self.conv = nn.Sequential(
+            # conv1
             nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=not batchnorm),
             nn.BatchNorm2d(64) if batchnorm else nn.Identity(),
             nonlin_fn,
             pool_fn,
-        )
-        
-        self.conv2 = nn.Sequential(
+            # conv2
             nn.Conv2d(64, 64, kernel_size=5, padding=2, bias=not batchnorm),
             nn.BatchNorm2d(64) if batchnorm else nn.Identity(),
             nonlin_fn,
-        )
-        
-        self.conv3 = nn.Sequential(
+            # conv3
             nn.Conv2d(64, 128, kernel_size=3, padding=1, bias=not batchnorm),
             nn.BatchNorm2d(128) if batchnorm else nn.Identity(),
             nonlin_fn,
             pool_fn,
-        )
-        
-        self.conv4 = nn.Sequential(
+            # conv4
             nn.Conv2d(128, 256, kernel_size=3, padding=1, bias=not batchnorm),
             nn.BatchNorm2d(256) if batchnorm else nn.Identity(),
             nonlin_fn,
-        )
-        
-        self.conv5 = nn.Sequential(
+            # conv5
             nn.Conv2d(256, 512, kernel_size=3, padding=1, bias=not batchnorm),
             nn.BatchNorm2d(512) if batchnorm else nn.Identity(),
             nonlin_fn,
@@ -82,58 +75,55 @@ class CustomCNN(nn.Module):
 
         self.adaptive_pool = nn_ops.get_pooling_fn("adaptive" + pooling_type)
 
-        # Define classifier blocks with named components
-        self.fc1 = nn.Sequential(
+        # Sequential container for fc layers
+        self.fc = nn.Sequential(
+            # fc1
             nn.Flatten(),
             nn.Dropout() if dropout else nn.Identity(),
             nn.Linear(512 * 3 * 3, 1024),
             nn.BatchNorm1d(1024) if batchnorm else nn.Identity(),
             nonlin_fn,
-        )
-        
-        self.fc2 = nn.Sequential(
+            # fc2
             nn.Dropout() if dropout else nn.Identity(),
             nn.Linear(1024, 1024),
             nonlin_fn,
+            # fc3
+            nn.Linear(1024, num_classes)
         )
-        
-        self.fc3 = nn.Linear(1024, num_classes)
 
         # Set trainable parameters based on configuration
         self._set_trainable_layers(trainable_layers)
 
     def _set_trainable_layers(self, trainable_layers):
         """Helper method to set which layers are trainable"""
-        conv_layers = [self.conv1, self.conv2, self.conv3, self.conv4, self.conv5]
-        fc_layers = [self.fc1, self.fc2, self.fc3]
+        # Get conv and fc modules
+        conv_modules = [m for m in self.conv.modules() if isinstance(m, nn.Conv2d)]
+        fc_modules = [m for m in self.fc.modules() if isinstance(m, nn.Linear)]
 
         # Set trainable parameters for conv layers
-        for idx, layer in enumerate(conv_layers):
-            for module in layer.modules():
-                if isinstance(module, nn.Conv2d):
-                    module.requires_grad_(trainable_layers["conv"][idx])
-                elif isinstance(module, nn.BatchNorm2d):
-                    module.requires_grad_(True)
+        for idx, module in enumerate(conv_modules):
+            module.requires_grad_(trainable_layers["conv"][idx])
+            # Find and set corresponding BatchNorm if it exists
+            if idx < len(conv_modules) - 1:  # Skip checking after last conv
+                next_modules = list(self.conv.modules())[list(self.conv.modules()).index(module) + 1:]
+                for next_module in next_modules:
+                    if isinstance(next_module, nn.BatchNorm2d):
+                        next_module.requires_grad_(True)
+                        break
 
         # Set trainable parameters for fc layers
-        for idx, layer in enumerate(fc_layers):
-            for module in layer.modules():
-                if isinstance(module, nn.Linear):
-                    module.requires_grad_(trainable_layers["fc"][idx])
-                elif isinstance(module, nn.BatchNorm1d):
-                    module.requires_grad_(True)
+        for idx, module in enumerate(fc_modules):
+            module.requires_grad_(trainable_layers["fc"][idx])
+            # Find and set corresponding BatchNorm if it exists
+            if idx < len(fc_modules) - 1:  # Skip checking after last fc
+                next_modules = list(self.fc.modules())[list(self.fc.modules()).index(module) + 1:]
+                for next_module in next_modules:
+                    if isinstance(next_module, nn.BatchNorm1d):
+                        next_module.requires_grad_(True)
+                        break
 
     def forward(self, x):
-        # Feature extraction
-        x = self.conv1(x)
-        x = self.conv2(x)
-        x = self.conv3(x)
-        x = self.conv4(x)
-        x = self.conv5(x)
+        x = self.conv(x)
         x = self.adaptive_pool(x)
-        
-        # Classification
-        x = self.fc1(x)
-        x = self.fc2(x)
-        x = self.fc3(x)
+        x = self.fc(x)
         return x
