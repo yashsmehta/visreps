@@ -6,6 +6,8 @@ from PIL import Image
 from torch.utils.data import Dataset, DataLoader
 from torchvision import transforms
 from torchvision.models.feature_extraction import create_feature_extractor
+import pandas as pd
+import re
 
 import visreps.utils as utils
 import visreps.benchmarker as benchmarker
@@ -29,11 +31,17 @@ class StimuliDataset(Dataset):
             img = self.transform(img)
         else:
             img = transforms.ToTensor()(img)
-        return img, key
+        return img, key  # Return key as is
 
 def create_dataloader(stimuli_dict, transform=None, batch_size=32, num_workers=4):
     dataset = StimuliDataset(stimuli_dict, transform)
-    return DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+
+    def custom_collate_fn(batch):
+        images, keys = zip(*batch)
+        images = torch.stack(images, 0)
+        return images, list(keys)
+
+    return DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, collate_fn=custom_collate_fn)
 
 def extract_activations(model, dataloader, device):
     model.eval()
@@ -43,7 +51,7 @@ def extract_activations(model, dataloader, device):
         for images, keys in dataloader:
             inputs = images.to(device)
             outputs = model(inputs)
-            all_keys.extend(keys)
+            all_keys.extend(keys)  # 'keys' is a list
             for node_name, output in outputs.items():
                 output = output.cpu()
                 activations_dict.setdefault(node_name, []).append(output)
@@ -78,58 +86,80 @@ def eval(cfg):
     for checkpoint_file in checkpoint_files:
         print(f"\nEvaluating checkpoint: {checkpoint_file}")
         
-        model = utils.load_model_from_checkpoint(checkpoint_file)
+        # Load the model properly
+        try:
+            model = torch.load(checkpoint_file)
+            print("Model loaded directly from checkpoint.")
+        except Exception as e:
+            print(f"Failed to load model directly from checkpoint: {e}")
+            # Alternatively, define model architecture and load state_dict
+            # Assuming you have a function build_model(cfg) that returns an instance of the model
+            # model = build_model(cfg)  # You need to implement build_model function
+            # state_dict = torch.load(checkpoint_file)
+            # model.load_state_dict(state_dict)
+            # print("Model architecture instantiated and state_dict loaded.")
+
+        model.to(device)
         
-        # Prepare the model for feature extraction
         return_nodes = getattr(cfg, 'return_nodes', None)
         if return_nodes:
+            if isinstance(return_nodes, list):
+                return_nodes = {node: node for node in return_nodes}
+            elif isinstance(return_nodes, dict):
+                pass  # Use as is
+            else:
+                raise ValueError("return_nodes should be a list or dict")
             model = create_feature_extractor(model, return_nodes=return_nodes)
         else:
             raise ValueError("No return_nodes specified in the configuration for feature extraction.")
-        model.to(device)
         
         activations_dict, keys = extract_activations(model, dataloader, device)
- 
-        # Align activations with neural data
-        neural_responses = np.array([neural_data[key] for key in keys])
-        
-        # Convert activations to NumPy arrays
-        for layer in activations_dict:
-            activations_dict[layer] = activations_dict[layer].cpu().numpy()
-        
-        # Better printing
         print("Activations Dictionary:")
-        for layer, activations in activations_dict.items():
-            print(f"Layer: {layer}, Activations Shape: {activations.shape}")
-        
+        for node_name, activations in activations_dict.items():
+            print(f"{node_name}: {activations.shape}")
+ 
+        neural_responses = np.array([neural_data[key] for key in keys])
         print("\nNeural Responses:")
         print(f"Shape: {neural_responses.shape}")
-        print(neural_responses)
-        exit()
-
-        # Calculate RSA scores
-        rsa_scores = metrics.calculate_rsa_score(neural_responses, activations_dict)
         
+        rsa_scores = {}
+        for layer, activations in activations_dict.items():
+            print(f"Layer: {layer}, Activations Shape: {activations.shape}")
+            # Flatten activations if they're not 2D
+            if len(activations.shape) > 2:
+                activations = activations.view(activations.size(0), -1)
+            assert activations.shape[0] == neural_responses.shape[0], \
+                f"Mismatch in number of samples between activations and neural_responses for layer {layer}"
+            rsa_scores[layer] = metrics.calculate_rsa_score(neural_responses, activations.numpy())
+        
+        print(f"RSA Scores: {rsa_scores}")
+
         # Extract epoch number
-        try:
-            epoch = int(os.path.basename(checkpoint_file).split('_')[-1].split('.')[0])
-        except ValueError:
-            epoch = None
+        epoch_match = re.search(r'model_epoch_(\d+)\.pth', os.path.basename(checkpoint_file))
+        epoch = int(epoch_match.group(1)) if epoch_match else None
 
-        results = {
-            "epoch": epoch,
-            "rsa_scores": rsa_scores,
-            "checkpoint_path": checkpoint_file
-        }
-        
-        # Log results
-        if getattr(cfg, 'log_expdata', False):
-            try:
-                utils.log_results(results, folder_name=cfg.exp_name, cfg_id=cfg.cfg_id)
-            except (FileNotFoundError, KeyError) as e:
-                print(f"An error occurred while logging results: {e}")
-        
-        results_list.append(results)
-        print(f"Epoch {epoch}: RSA Score = {results['rsa_scores']}")
+        for layer, score in rsa_scores.items():
+            result = {
+                "epoch": epoch,
+                "layer": layer,
+                "rsa_score": score
+            }
+            # Add all cfg attributes to the result
+            result.update(vars(cfg))
+            results_list.append(result)
+        print(f"Epoch {epoch}: RSA Score = {rsa_scores}")
     
-    return results_list[0] if len(results_list) == 1 else results_list
+    results_df = pd.DataFrame(results_list)
+    
+    # Determine the save directory based on checkpoint_path
+    save_dir = os.path.dirname(cfg.checkpoint_path) if os.path.isfile(cfg.checkpoint_path) else cfg.checkpoint_path
+    
+    # Create save directory if it doesn't exist
+    os.makedirs(save_dir, exist_ok=True)
+    
+    # Update the save path to use the determined directory
+    results_path = os.path.join(save_dir, "results.csv")
+    results_df.to_csv(results_path, index=False)
+    print(f"Results saved to: {results_path}")
+    
+    return results_df
