@@ -36,9 +36,14 @@ def check_trainer_config(cfg):
         "resnet50",
         "densenet121",
     ], "model_class must be one of 'custom_cnn', 'alexnet', 'vgg16', 'resnet50', 'densenet121'!"
-    assert all(char in "01" for char in cfg.custom.conv_trainable), "conv_trainable must only contain '0's and '1's!"
-    assert all(char in "01" for char in cfg.custom.fc_trainable), "fc_trainable must only contain '0's and '1's!"
+    assert all(
+        char in "01" for char in cfg.custom.conv_trainable
+    ), "conv_trainable must only contain '0's and '1's!"
+    assert all(
+        char in "01" for char in cfg.custom.fc_trainable
+    ), "fc_trainable must only contain '0's and '1's!"
     return cfg
+
 
 def save_logs(df, cfg):
     """
@@ -154,37 +159,31 @@ def log_results(results, folder_name, cfg_id):
     csv_file = logdata_path / f"cfg{cfg_id}.csv"
     write_header = not csv_file.exists()
 
-    results.to_csv(csv_file, mode='a', header=write_header, index=False)
+    results.to_csv(csv_file, mode="a", header=write_header, index=False)
     print(f"Saved logs to {csv_file} after sleeping for {sleep_time:.2f} seconds")
 
 
 def setup_logging():
     handler = colorlog.StreamHandler()
-    handler.setFormatter(colorlog.ColoredFormatter(
-        '%(log_color)s%(asctime)s - %(levelname)s - %(message)s',
-        log_colors={
-            'DEBUG': 'cyan',
-            'INFO': 'green',
-            'WARNING': 'yellow',
-            'ERROR': 'red',
-            'CRITICAL': 'red,bg_white',
-        }
-    ))
+    handler.setFormatter(
+        colorlog.ColoredFormatter(
+            "%(log_color)s%(asctime)s - %(levelname)s - %(message)s",
+            log_colors={
+                "DEBUG": "cyan",
+                "INFO": "green",
+                "WARNING": "yellow",
+                "ERROR": "red",
+                "CRITICAL": "red,bg_white",
+            },
+        )
+    )
 
     logger = colorlog.getLogger()
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
     return logger
 
-def load_pickle(file_path):
-    with open(file_path, 'rb') as file:
-        return pickle.load(file)
 
-def load_model_from_checkpoint(checkpoint_path):
-    if not os.path.exists(checkpoint_path):
-        raise FileNotFoundError(f"Checkpoint file not found at {checkpoint_path}")
-    
-    checkpoint = torch.load(checkpoint_path)
-    model = load_state_dict(checkpoint['model_state_dict'])
-    
-    return model
+def load_pickle(file_path):
+    with open(file_path, "rb") as file:
+        return pickle.load(file)

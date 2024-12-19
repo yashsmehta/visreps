@@ -1,5 +1,4 @@
-play.py
-data
+datasets/
 .DS_Store
 notebooks/
 .ipynb_checkpoints
@@ -11,3 +10,4 @@ model_checkpoints/
 wandb/
 playground/
 benchmarks/
+scripts/

@@ -9,7 +9,10 @@ DS_STD = {"tiny-imagenet": [0.272, 0.265, 0.274], "imgnet": [0.229, 0.224, 0.225
 
 
 def get_transform(
-    mean=DS_MEAN["tiny-imagenet"], std=DS_STD["tiny-imagenet"], data_augment=False, image_size=64
+    mean=DS_MEAN["tiny-imagenet"],
+    std=DS_STD["tiny-imagenet"],
+    data_augment=False,
+    image_size=64,
 ):
     """
     This function returns a composition of image transformations.
@@ -34,7 +37,9 @@ def get_transform(
     return transforms.Compose(transform_list)
 
 
-def tinyimgnet_loader(batchsize=32, num_workers=8, data_augment=True, ds_stats="tiny-imagenet"):
+def tinyimgnet_loader(
+    batchsize=32, num_workers=8, data_augment=True, ds_stats="tiny-imagenet"
+):
     """
     This function returns a dictionary of data loaders for the specified dataset.
 
@@ -58,7 +63,7 @@ def tinyimgnet_loader(batchsize=32, num_workers=8, data_augment=True, ds_stats="
     }
 
     base_dir = os.path.join("data", "tiny-imagenet-200")
-    
+
     train_dataset = datasets.ImageFolder(
         root=os.path.join(base_dir, "train"), transform=data_transform["train"]
     )
