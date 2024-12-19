@@ -4,7 +4,8 @@
   "data_augment": true,
   "optimizer": "adam",
   "learning_rate": 0.001,
-  "model_class": "alexnet",
+  "model_class": "standard_cnns",
+  "model_name": "AlexNet",
   "custom": {
     "nonlinearity": "relu",
     "conv_trainable": "11111", 

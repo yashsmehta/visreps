@@ -1,11 +1,7 @@
 import numpy as np
-from scipy.spatial.distance import pdist
-from scipy.stats import spearmanr, pearsonr
-
-import numpy as np
 from scipy.spatial.distance import pdist, squareform
 from scipy.stats import spearmanr, pearsonr
-
+import torch
 
 def calculate_rdm(responses, distance_metric="euclidean"):
     """
@@ -64,3 +60,15 @@ def calculate_rsa_score(
         raise ValueError("Unsupported correlation method. Use 'spearman' or 'pearson'.")
 
     return rsa_score
+
+def calculate_cls_accuracy(data_loader, model, device):
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for images, labels in data_loader:
+            images, labels = images.to(device), labels.to(device)
+            outputs = model(images)
+            _, predicted = torch.max(outputs, 1)
+            total += labels.size(0)
+            correct += (predicted == labels).sum().item()
+    return 100 * correct / total

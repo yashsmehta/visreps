@@ -1,7 +1,9 @@
 datasets/
 .DS_Store
-notebooks/
 .ipynb_checkpoints
+.cursorignore
+.cursorrules
+notebooks/
 *.pyc
 *.pkl
 output.out

@@ -1,10 +1,9 @@
 {
   "region": "early visual stream",
   "subject_idx": 0,
-  "model": "alexnet",
   "return_nodes": ["conv.5", "fc.3"],
-  "checkpoint_path": "model_checkpoints/base/cfg2/",
-  "benchmark_name": "nsd",
+  "model_name": "AlexNet",
+  "neural_dataset": "nsd",
   "log_expdata": true,
   "cfg_id": 1,
   "exp_name": "base",
