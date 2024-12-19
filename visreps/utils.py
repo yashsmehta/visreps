@@ -97,19 +97,6 @@ def save_logs(df, cfg):
     return logdata_path
 
 
-def calculate_accuracy(data_loader, model, device):
-    correct = 0
-    total = 0
-    with torch.no_grad():
-        for images, labels in data_loader:
-            images, labels = images.to(device), labels.to(device)
-            outputs = model(images)
-            _, predicted = torch.max(outputs, 1)
-            total += labels.size(0)
-            correct += (predicted == labels).sum().item()
-    return 100 * correct / total
-
-
 def make_checkpoint_dir(folder, parent_dir="model_checkpoints"):
     """
     Create a new subdirectory for a training checkpoint within a specified parent directory.
@@ -185,5 +172,33 @@ def setup_logging():
 
 
 def load_pickle(file_path):
-    with open(file_path, "rb") as file:
-        return pickle.load(file)
+    """Load data from pickle file"""
+    try:
+        with open(file_path, "rb") as file:
+            return pickle.load(file)
+    except FileNotFoundError:
+        raise FileNotFoundError(f"Pickle file not found at path: {file_path}")
+    except pickle.UnpicklingError:
+        raise pickle.UnpicklingError(f"Error unpickling file at {file_path}. File may be corrupted.")
+    except Exception as e:
+        raise RuntimeError(f"Error loading pickle file at {file_path}: {str(e)}")
+
+
+def extract_activations(model, dataloader, device):
+    """
+    Extract activations from a model for a given dataloader.
+    """
+    model.eval()
+    activations_dict = {}
+    all_keys = []
+    with torch.no_grad():
+        for images, keys in dataloader:
+            inputs = images.to(device)
+            outputs = model(inputs)
+            all_keys.extend(keys)
+            for node_name, output in outputs.items():
+                output = output.cpu()
+                activations_dict.setdefault(node_name, []).append(output)
+    for node_name in activations_dict:
+        activations_dict[node_name] = torch.cat(activations_dict[node_name], dim=0)
+    return activations_dict, all_keys

@@ -1,6 +1,6 @@
 from omegaconf import OmegaConf
 import visreps.trainer as trainer
-import visreps.evals as evals
+import visreps.visreps.evals as evals
 import json
 import sys
 
