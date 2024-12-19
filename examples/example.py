@@ -11,19 +11,22 @@ from torchvision.models.feature_extraction import create_feature_extractor
 from visreps.utils import setup_logging
 
 # Constants
-DATA_DIR = Path('data/nsd')
-NSD_DATA_FILE = DATA_DIR / 'neural_responses.pkl'
-SELECTED_IMAGES_FILE = DATA_DIR / 'stimuli.pkl'
+DATA_DIR = Path("data/nsd")
+NSD_DATA_FILE = DATA_DIR / "neural_responses.pkl"
+SELECTED_IMAGES_FILE = DATA_DIR / "stimuli.pkl"
 BATCH_SIZE = 32
+
 
 def load_pickle(file_path):
     """Load data from a pickle file."""
-    with open(file_path, 'rb') as f:
+    with open(file_path, "rb") as f:
         data = pickle.load(f)
     return data
 
+
 class ImageDataset(Dataset):
     """Custom dataset for images stored in a dictionary."""
+
     def __init__(self, images_dict, transform=None):
         self.image_ids = list(images_dict.keys())
         self.images = images_dict
@@ -39,11 +42,13 @@ class ImageDataset(Dataset):
             image = self.transform(image)
         return image_id, image
 
+
 def collate_fn(batch):
     """Custom collate function to handle image IDs and images."""
     image_ids, images = zip(*batch)
     images = torch.stack(images)
     return image_ids, images
+
 
 def main():
     logger = setup_logging()
@@ -54,12 +59,16 @@ def main():
     # Prepare model and transformations
     weights = models.AlexNet_Weights.DEFAULT
     transform = weights.transforms()
-    return_nodes = {'classifier.6': 'fc8'}
-    model = create_feature_extractor(models.alexnet(weights=weights), return_nodes=return_nodes)
+    return_nodes = {"classifier.6": "fc8"}
+    model = create_feature_extractor(
+        models.alexnet(weights=weights), return_nodes=return_nodes
+    )
 
     # Prepare dataset and dataloader
     dataset = ImageDataset(selected_images, transform=transform)
-    dataloader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=False, collate_fn=collate_fn)
+    dataloader = DataLoader(
+        dataset, batch_size=BATCH_SIZE, shuffle=False, collate_fn=collate_fn
+    )
     logger.info(f"Dataset created with {len(dataset)} images.")
 
     # Extract activations
@@ -68,13 +77,13 @@ def main():
     model.eval()
     with torch.no_grad():
         for image_ids, images in dataloader:
-            outputs = model(images)['fc8']
+            outputs = model(images)["fc8"]
             for image_id, activation in zip(image_ids, outputs):
                 activations_dict[int(image_id)] = activation.cpu().numpy()
     logger.info("Activations extraction completed.")
 
     # Process fMRI data
-    region_key = 'early visual stream'
+    region_key = "early visual stream"
     subject_idx = 0
 
     if region_key not in nsd_data:
@@ -83,8 +92,10 @@ def main():
         return
 
     subjects_data = nsd_data[region_key]
-    stimuli_ids = subjects_data[subject_idx].coords['stimulus'].values
-    logger.info(f"Processing data for region '{region_key}', subject {subject_idx} with {len(stimuli_ids)} stimuli.")
+    stimuli_ids = subjects_data[subject_idx].coords["stimulus"].values
+    logger.info(
+        f"Processing data for region '{region_key}', subject {subject_idx} with {len(stimuli_ids)} stimuli."
+    )
 
     # Prepare X (activations) and Y (fMRI data)
     X = []
@@ -102,6 +113,7 @@ def main():
     X_tensor = torch.tensor(np.array(X), dtype=torch.float32)
     Y_tensor = torch.tensor(np.array(Y), dtype=torch.float32)
     logger.info(f"Data shapes - X: {X_tensor.shape}, Y: {Y_tensor.shape}")
+
 
 if __name__ == "__main__":
     main()

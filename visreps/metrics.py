@@ -6,7 +6,8 @@ import numpy as np
 from scipy.spatial.distance import pdist, squareform
 from scipy.stats import spearmanr, pearsonr
 
-def calculate_rdm(responses, distance_metric='euclidean'):
+
+def calculate_rdm(responses, distance_metric="euclidean"):
     """
     Calculate the Representational Dissimilarity Matrix (RDM).
 
@@ -24,7 +25,13 @@ def calculate_rdm(responses, distance_metric='euclidean'):
     rdm = squareform(distances)
     return rdm
 
-def calculate_rsa_score(neural_responses, activations, distance_metric='euclidean', correlation_method='spearman'):
+
+def calculate_rsa_score(
+    neural_responses,
+    activations,
+    distance_metric="euclidean",
+    correlation_method="spearman",
+):
     """
     Calculate the RSA score between model activations and neural responses.
 
@@ -49,9 +56,9 @@ def calculate_rsa_score(neural_responses, activations, distance_metric='euclidea
     activation_rdm_flat = activation_rdm[triu_indices]
 
     # Compute the correlation between the flattened RDMs
-    if correlation_method == 'spearman':
+    if correlation_method == "spearman":
         rsa_score, _ = spearmanr(neural_rdm_flat, activation_rdm_flat)
-    elif correlation_method == 'pearson':
+    elif correlation_method == "pearson":
         rsa_score, _ = pearsonr(neural_rdm_flat, activation_rdm_flat)
     else:
         raise ValueError("Unsupported correlation method. Use 'spearman' or 'pearson'.")

@@ -2,7 +2,8 @@
 import visreps.metrics as metrics
 import visreps.utils as utils
 
-def load_nsd_data(file_path='benchmarks/nsd/neural_responses.pkl'):
+
+def load_nsd_data(file_path="benchmarks/nsd/neural_responses.pkl"):
     """
     Load NSD neural responses from a pickle file.
 
@@ -16,6 +17,7 @@ def load_nsd_data(file_path='benchmarks/nsd/neural_responses.pkl'):
         return utils.load_pickle(file_path)
     except FileNotFoundError:
         raise FileNotFoundError(f"NSD data file not found at {file_path}")
+
 
 def prepare_benchmark_data(nsd_data, cfg):
     """
@@ -32,12 +34,18 @@ def prepare_benchmark_data(nsd_data, cfg):
     subject_idx = cfg.subject_idx
 
     if region_key not in nsd_data:
-        raise ValueError(f"Region '{region_key}' not found in nsd_data. Available regions: {list(nsd_data.keys())}")
+        raise ValueError(
+            f"Region '{region_key}' not found in nsd_data. Available regions: {list(nsd_data.keys())}"
+        )
 
     subjects_data = nsd_data[region_key]
-    stimuli_ids = subjects_data[subject_idx].coords['stimulus'].values
+    stimuli_ids = subjects_data[subject_idx].coords["stimulus"].values
 
-    return {stimulus_id: subjects_data[subject_idx].sel(stimulus=stimulus_id).values for stimulus_id in stimuli_ids}
+    return {
+        stimulus_id: subjects_data[subject_idx].sel(stimulus=stimulus_id).values
+        for stimulus_id in stimuli_ids
+    }
+
 
 def load_benchmark_data(cfg):
     """
@@ -52,12 +60,12 @@ def load_benchmark_data(cfg):
             - stimuli: Dictionary of selected stimuli
     """
     nsd_data = load_nsd_data()
-    
+
     try:
-        stimuli = utils.load_pickle('benchmarks/nsd/stimuli.pkl')
+        stimuli = utils.load_pickle("benchmarks/nsd/stimuli.pkl")
     except FileNotFoundError:
         raise FileNotFoundError("Stimuli data file not found")
 
     neural_data = prepare_benchmark_data(nsd_data, cfg)
-    
+
     return neural_data, stimuli

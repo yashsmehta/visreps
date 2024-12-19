@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from visreps.models.custom_operations.norm import DivNorm
 
 
 def get_normalization(out_channels, norm_type):
@@ -9,8 +8,8 @@ def get_normalization(out_channels, norm_type):
 
     Args:
         out_channels (int): The number of output channels for the normalization layer.
-        norm_type (str): The type of normalization to apply. Supported types are "batch", "channel",
-                         "instance", and "none". An unsupported type raises a ValueError.
+        norm_type (str): The type of normalization to apply. Supported types are "batch", "instance", 
+                        "layer", and "none". An unsupported type raises a ValueError.
 
     Returns:
         torch.nn.Module: A normalization layer corresponding to the specified type.
@@ -21,10 +20,10 @@ def get_normalization(out_channels, norm_type):
     match norm_type:
         case "batch":
             return nn.BatchNorm2d(out_channels)
-        case "channel":
-            return DivNorm()
         case "instance":
             return nn.InstanceNorm2d(out_channels)
+        case "layer":
+            return nn.LayerNorm(out_channels)
         case "none":
             return nn.Identity()
         case _:
@@ -59,6 +58,7 @@ def get_nonlinearity(nonlin_type, inplace=True):
         case _:
             raise ValueError(f"Unsupported non-linearity: {nonlin_type}")
 
+
 def get_pooling_fn(pooling_type, pooling_kernel_size=2):
     """
     Retrieve a pooling layer based on the specified type and kernel size.
@@ -87,6 +87,7 @@ def get_pooling_fn(pooling_type, pooling_kernel_size=2):
             return nn.Identity()
         case _:
             raise ValueError(f"Unsupported pooling type: {pooling_type}")
+
 
 def initialize_weights(conv_layer, initialization, seed):
     """

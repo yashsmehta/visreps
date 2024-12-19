@@ -46,7 +46,7 @@ class CustomCNN(nn.Module):
         # Get activation and pooling functions
         nonlin_fn = nn_ops.get_nonlinearity(nonlinearity, inplace=True)
         pool_fn = nn_ops.get_pooling_fn(pooling_type)
-        
+
         # Combine all conv layers into a single sequential container
         self.conv = nn.Sequential(
             # conv1
@@ -88,7 +88,7 @@ class CustomCNN(nn.Module):
             nn.Linear(1024, 1024),
             nonlin_fn,
             # fc3
-            nn.Linear(1024, num_classes)
+            nn.Linear(1024, num_classes),
         )
 
         # Set trainable parameters based on configuration
@@ -105,7 +105,9 @@ class CustomCNN(nn.Module):
             module.requires_grad_(trainable_layers["conv"][idx])
             # Find and set corresponding BatchNorm if it exists
             if idx < len(conv_modules) - 1:  # Skip checking after last conv
-                next_modules = list(self.conv.modules())[list(self.conv.modules()).index(module) + 1:]
+                next_modules = list(self.conv.modules())[
+                    list(self.conv.modules()).index(module) + 1 :
+                ]
                 for next_module in next_modules:
                     if isinstance(next_module, nn.BatchNorm2d):
                         next_module.requires_grad_(True)
@@ -116,7 +118,9 @@ class CustomCNN(nn.Module):
             module.requires_grad_(trainable_layers["fc"][idx])
             # Find and set corresponding BatchNorm if it exists
             if idx < len(fc_modules) - 1:  # Skip checking after last fc
-                next_modules = list(self.fc.modules())[list(self.fc.modules()).index(module) + 1:]
+                next_modules = list(self.fc.modules())[
+                    list(self.fc.modules()).index(module) + 1 :
+                ]
                 for next_module in next_modules:
                     if isinstance(next_module, nn.BatchNorm1d):
                         next_module.requires_grad_(True)
