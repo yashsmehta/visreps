@@ -2,7 +2,7 @@ import time
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from visreps.visreps.dataloaders.obj_cls import tinyimgnet_loader
+from visreps.dataloaders.obj_cls import tinyimgnet_loader
 from visreps.models.custom_cnn import CustomCNN
 from visreps.models.standard_cnns import AlexNet, VGG16, ResNet50, DenseNet121
 import visreps.utils as utils
@@ -11,7 +11,7 @@ from omegaconf import OmegaConf
 import json
 import os
 from tqdm import tqdm
-from visreps.visreps.metrics import calculate_cls_accuracy
+from visreps.metrics import calculate_cls_accuracy
 
 def evaluate(model, loader, device):
     model.eval()
