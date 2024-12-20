@@ -43,13 +43,13 @@ def load_model(cfg):
         print("Initialized custom CNN model")
     else:
         # Get standard model initialization function
-        model_fn = getattr(standard_cnns, cfg.model_class, None)
+        model_fn = getattr(standard_cnns, cfg.model_name, None)
         if model_fn is None:
-            raise ValueError(f"Model class {cfg.model_class} not found")
+            raise ValueError(f"Model class {cfg.model_name} not found")
         
         pretrained = getattr(cfg, 'pretrained', True)
         num_classes = getattr(cfg, 'num_classes', 200)
         model = model_fn(pretrained=pretrained, num_classes=num_classes)
-        print(f"Initialized standard model: {cfg.model_class}")
+        print(f"Initialized standard model: {cfg.model_name}")
     
     return model 

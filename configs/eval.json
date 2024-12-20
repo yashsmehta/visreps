@@ -1,11 +1,17 @@
 {
   "region": "early visual stream",
   "subject_idx": 0,
-  "return_nodes": ["conv.5", "fc.3"],
+  "return_nodes": {
+    "features.10": "features.10",
+    "classifier.5": "classifier.5"
+  },
+  "model_class": "standard_cnn",
   "model_name": "AlexNet",
   "neural_dataset": "nsd",
   "log_expdata": true,
   "cfg_id": 1,
   "exp_name": "base",
-  "epoch": 0
+  "epoch": 0,
+  "batchsize": 32,
+  "num_workers": 4
 }

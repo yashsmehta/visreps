@@ -1,6 +1,6 @@
 from omegaconf import OmegaConf
 import visreps.trainer as trainer
-import visreps.visreps.evals as evals
+import visreps.evals as evals
 import json
 import sys
 
@@ -40,12 +40,12 @@ def load_config(file_path):
 def main():
     # Define config paths for different modes
     config_paths = {
-        "train": "visreps/configs/train.json",
-        "eval": "visreps/configs/eval.json"
+        "train": "configs/train.json",
+        "eval": "configs/eval.json"
     }
 
     # Get mode from command line arguments, default to train
-    mode = "train"  # default mode
+    mode = "eval"  # default mode
     for arg in sys.argv[1:]:
         if arg.startswith("mode="):
             mode = arg.split("=")[1]
