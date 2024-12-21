@@ -1,7 +1,6 @@
 import numpy as np
 import os
 import pandas as pd
-import re
 import torch
 from torchvision.models.feature_extraction import create_feature_extractor
 from omegaconf import OmegaConf
@@ -21,34 +20,44 @@ def evaluate_model(model, dataloader, neural_data, cfg, device):
 
     return_nodes = OmegaConf.to_container(return_nodes, resolve=True)
     return_nodes = {node: node for node in return_nodes} if isinstance(return_nodes, list) else return_nodes
-
+    print(f"Evaluating layers: {list(return_nodes.keys())}")
+    
     model = create_feature_extractor(model, return_nodes=return_nodes)
+    
     activations_dict, keys = extract_activations(model, dataloader, device)
+    print(f"Extracted features from {len(keys)} samples")
+    
     neural_responses = np.array([neural_data[str(key)] for key in keys])
 
     results = []
     for layer, activations in activations_dict.items():
         activations = activations.flatten(start_dim=1) if activations.ndim > 2 else activations
+        
         rsa_score = metrics.calculate_rsa_score(neural_responses, activations.cpu().numpy())
+        print(f"Layer {layer:<20} RSA Score: {rsa_score:.4f}")
 
         result = {"layer": layer, "rsa_score": rsa_score}
         result.update(cfg if isinstance(cfg, dict) else vars(cfg))
         results.append(result)
-        print(f"Layer {layer}: RSA Score = {rsa_score}")
 
     return results
 
 
 def eval(cfg):
+    print("\nStarting model evaluation...")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"Device: {device}")
+    print(f"Using device: {device}")
 
+    print("Loading data...")
     neural_data, stimuli = neural.load_nsd_data(cfg)
+    
     transform = get_transform(image_size=224)
     dataloader = create_nsd_dataloader(stimuli, transform, batch_size=cfg.batchsize, num_workers=cfg.num_workers)
 
+    print("Loading model...")
     model = load_model(cfg)
     model.to(device)
+    
     results = evaluate_model(model, dataloader, neural_data, cfg, device)
 
     results_df = pd.DataFrame(results)
@@ -61,6 +70,6 @@ def eval(cfg):
     
     results_path = os.path.join(save_dir, "results.csv")
     results_df.to_csv(results_path, index=False)
-    print(f"Results saved to: {results_path}")
+    print(f"\nResults saved to: {results_path}")
 
     return results_df

@@ -25,7 +25,9 @@ def get_transform(
     transform_list.extend(
         [transforms.ToTensor(), transforms.Normalize(mean=DS_MEAN[ds_stats], std=DS_STD[ds_stats])]
     )
-    return transforms.Compose(transform_list)
+    
+    transform = transforms.Compose(transform_list)
+    return transform
 
 
 def tinyimgnet_loader(batchsize=32, num_workers=8, data_augment=True, ds_stats="tiny-imagenet"):
@@ -36,13 +38,20 @@ def tinyimgnet_loader(batchsize=32, num_workers=8, data_augment=True, ds_stats="
     }
 
     base_dir = os.path.join("data", "tiny-imagenet-200")
-    datasets_dict = {
-        "train": datasets.ImageFolder(os.path.join(base_dir, "train"), data_transform["train"]),
-        "test": datasets.ImageFolder(os.path.join(base_dir, "val"), data_transform["test"])
-    }
+    
+    datasets_dict = {}
+    for split in ["train", "test"]:
+        split_dir = os.path.join(base_dir, "train" if split == "train" else "val")
+        try:
+            dataset = datasets.ImageFolder(split_dir, data_transform[split])
+            datasets_dict[split] = dataset
+        except Exception as e:
+            raise
 
-    return {
-        split: DataLoader(dataset, batch_size=batchsize, shuffle=True, 
-                         num_workers=num_workers, prefetch_factor=2)
-        for split, dataset in datasets_dict.items()
-    }
+    dataloaders = {}
+    for split, dataset in datasets_dict.items():
+        dataloader = DataLoader(dataset, batch_size=batchsize, shuffle=True, 
+                              num_workers=num_workers, prefetch_factor=2)
+        dataloaders[split] = dataloader
+
+    return dataloaders

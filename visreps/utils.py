@@ -6,8 +6,6 @@ from pathlib import Path
 import torch
 import os
 import pickle
-from torchvision import models
-from torch import nn
 
 
 def check_trainer_config(cfg):
