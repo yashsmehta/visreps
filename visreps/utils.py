@@ -6,6 +6,9 @@ from pathlib import Path
 import torch
 import os
 import pickle
+from datetime import datetime
+import pandas as pd
+from typing import Dict
 
 
 def check_trainer_config(cfg):
@@ -200,3 +203,32 @@ def extract_activations(model, dataloader, device):
     for node_name in activations_dict:
         activations_dict[node_name] = torch.cat(activations_dict[node_name], dim=0)
     return activations_dict, all_keys
+
+
+def save_results(results_df: pd.DataFrame, cfg: Dict, result_type: str = None) -> str:
+    """Save results to CSV in a structured directory
+    
+    Args:
+        results_df: DataFrame containing results
+        cfg: Configuration dictionary
+        result_type: Type of results (e.g., 'neural_alignment', 'training', etc.)
+                    Used to organize results in subdirectories
+    
+    Returns:
+        Path where results were saved
+    """
+    # Create base directory structure
+    exp_name = getattr(cfg, 'exp_name', 'default')
+    model_class = getattr(cfg, 'model_class', 'unknown')
+    save_dir = os.path.join('logs', exp_name, model_class)
+    
+    # Add result type subdirectory if specified
+    if result_type:
+        save_dir = os.path.join(save_dir, result_type)
+    
+    os.makedirs(save_dir, exist_ok=True)
+    
+    results_path = os.path.join(save_dir, f"results.csv")
+    results_df.to_csv(results_path, index=False)
+    
+    return results_path
