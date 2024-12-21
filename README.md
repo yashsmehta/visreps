@@ -1,15 +1,7 @@
 # VisReps: How do cortex-like representations emerge in deep neural networks during training?
 
 <p align="left">
-<a href="https://docs.python.org/3/whatsnew/3.12.html">
-<img src="https://img.shields.io/badge/python-3.12-blue.svg?style=for-the-badge&logo=python" alt="Python Version">
-</a>
-<a href="https://www.pytorch.com/">
-<img src="https://img.shields.io/badge/PyTorch-2.5-blue?style=for-the-badge&logo=pytorch&labelColor=gray&color=orange" alt="PyTorch Version">
-</a>
-<a href="https://opensource.org/license/mit/">
-<img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge&logo=open-source-initiative" alt="License">
-</a>
+<a href="https://docs.python.org/3/whatsnew/3.12.html"><img src="https://img.shields.io/badge/python-3.12-blue.svg?style=for-the-badge&logo=python" alt="Python Version"></a> <a href="https://www.pytorch.com/"><img src="https://img.shields.io/badge/PyTorch-2.5-blue?style=for-the-badge&logo=pytorch&labelColor=gray&color=orange" alt="PyTorch Version"></a> <a href="https://opensource.org/license/mit/"><img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge&logo=open-source-initiative" alt="License"></a>
 </p>
 
 
