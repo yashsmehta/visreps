@@ -13,3 +13,4 @@ wandb/
 playground/
 benchmarks/
 scripts/
+.venv/
