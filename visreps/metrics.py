@@ -2,7 +2,8 @@ import numpy as np
 import torch
 from itertools import batched
 from tqdm.auto import tqdm
-from typing import Callable, Tuple, Union, Iterator
+from typing import Callable, Tuple, Union, Iterator, Dict, List
+import pandas as pd
 
 
 def pearson_r(x: torch.Tensor, y: torch.Tensor = None, return_diagonal: bool = False) -> torch.Tensor:
@@ -174,3 +175,52 @@ def calculate_cls_accuracy(data_loader, model, device):
     
     final_accuracy = 100 * correct / total
     return final_accuracy
+
+
+def compute_neural_alignment(
+    activations_dict: Dict[str, torch.Tensor], 
+    neural_data: Dict[str, np.ndarray],
+    keys: List[str],
+    cfg: Dict
+) -> pd.DataFrame:
+    """Compute neural alignment scores for each layer using specified metric
+    
+    Args:
+        activations_dict: Dict mapping layer names to activation tensors
+        neural_data: Dict mapping stimulus IDs to neural responses
+        keys: List of stimulus IDs in the order they were processed
+        cfg: Configuration dictionary with metric settings
+        
+    Returns:
+        DataFrame containing alignment scores and metadata for each layer
+    """
+    results = []
+    neural_responses = np.array([neural_data[str(key)] for key in keys])
+    metric_name = cfg.get('metric', 'rsa')
+    
+    # Get metric function based on config
+    metric_fn = {
+        'rsa': calculate_rsa_score,
+        # Add more metrics here as needed
+    }.get(metric_name)
+    
+    if not metric_fn:
+        raise ValueError(f"Unknown metric: {metric_name}. Available metrics: ['rsa']")
+    
+    print(f"Computing {metric_name.upper()} scores...")
+    for layer, activations in activations_dict.items():
+        # Flatten activations if needed
+        activations = activations.flatten(start_dim=1) if activations.ndim > 2 else activations
+        score = metric_fn(neural_responses, activations.cpu().numpy())
+        print(f"Layer {layer:<20} {metric_name.upper()} Score: {score:.4f}")
+        
+        # Store results
+        result = {
+            "layer": layer,
+            f"{metric_name}_score": score,
+            "metric": metric_name
+        }
+        result.update(cfg if isinstance(cfg, dict) else vars(cfg))
+        results.append(result)
+    
+    return pd.DataFrame(results)

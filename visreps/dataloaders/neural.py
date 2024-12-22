@@ -1,11 +1,12 @@
 import logging
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict
 import torch
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 from torchvision import transforms
 
 import visreps.utils as utils
+from visreps.dataloaders.obj_cls import get_transform
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -70,3 +71,42 @@ def create_nsd_dataloader(
         collate_fn=custom_collate_fn,
         pin_memory=True
     )
+
+def prepare_neural_dataset_loader(cfg: Dict) -> Tuple[Dict, DataLoader]:
+    """Prepare neural dataset and its dataloader based on config
+    
+    Args:
+        cfg: Configuration dictionary with:
+            - neural_dataset: Which dataset to load ('nsd', etc.)
+            - Other dataset-specific parameters
+    
+    Returns:
+        Tuple of (neural_responses, dataloader) where:
+            - neural_responses: Dict mapping stimulus IDs to neural responses
+            - dataloader: DataLoader for the corresponding stimuli
+            
+    Raises:
+        ValueError: If dataset loading fails or unknown dataset specified
+    """
+    dataset = cfg.get('neural_dataset', 'nsd')  # Default to NSD for backward compatibility
+    
+    # Select appropriate data loading function
+    if dataset == 'nsd':
+        neural_data, stimuli = load_nsd_data(cfg)
+        dataloader_fn = create_nsd_dataloader
+    # Add more datasets here as needed
+    else:
+        raise ValueError(f"Unknown dataset: {dataset}. Available: ['nsd']")
+    
+    if not neural_data or not stimuli:
+        raise ValueError(f"Failed to load {dataset} data")
+    
+    # Create dataloader using dataset-specific function
+    dataloader = dataloader_fn(
+        stimuli, 
+        transform=get_transform(image_size=224),
+        batch_size=cfg.batchsize, 
+        num_workers=cfg.num_workers
+    )
+    print(f"Loaded {dataset} data with {len(stimuli)} stimuli")
+    return neural_data, dataloader
