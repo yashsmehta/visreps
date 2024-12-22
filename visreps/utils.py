@@ -185,25 +185,6 @@ def load_pickle(file_path):
         raise RuntimeError(f"Error loading pickle file at {file_path}: {str(e)}")
 
 
-def extract_activations(model, dataloader, device):
-    """
-    Extract activations from a model for a given dataloader.
-    """
-    model.eval()
-    activations_dict = {}
-    all_keys = []
-    with torch.no_grad():
-        for images, keys in dataloader:
-            inputs = images.to(device)
-            outputs = model(inputs)
-            all_keys.extend(keys)
-            for node_name, output in outputs.items():
-                output = output.cpu()
-                activations_dict.setdefault(node_name, []).append(output)
-    for node_name in activations_dict:
-        activations_dict[node_name] = torch.cat(activations_dict[node_name], dim=0)
-    return activations_dict, all_keys
-
 
 def save_results(results_df: pd.DataFrame, cfg: Dict, result_type: str = None) -> str:
     """Save results to CSV in a structured directory
