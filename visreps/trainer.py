@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.optim as optim
 from visreps.dataloaders.obj_cls import tinyimgnet_loader
 from visreps.models.custom_cnn import CustomCNN
-from visreps.models.standard_cnns import AlexNet, VGG16, ResNet50, DenseNet121
+from visreps.models.standard_cnn import AlexNet, VGG16, ResNet50, DenseNet121
 import visreps.utils as utils
 import wandb
 from omegaconf import OmegaConf

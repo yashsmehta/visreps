@@ -1,0 +1,5 @@
+{
+  "model_class": "standard_cnn",
+  "pretrained": true,
+  "model_name": "AlexNet"
+}

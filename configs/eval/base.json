@@ -1,12 +1,6 @@
 {
   "region": "early visual stream",
   "subject_idx": 0,
-  "return_nodes": {
-    "features.10": "features.10",
-    "classifier.5": "classifier.5"
-  },
-  "model_class": "standard_cnn",
-  "model_name": "AlexNet",
   "pretrained": true,
   "neural_dataset": "nsd",
   "log_expdata": true,
@@ -14,5 +8,6 @@
   "exp_name": "base",
   "epoch": 0,
   "batchsize": 32,
-  "num_workers": 4
+  "num_workers": 4,
+  "load_model_from": "torchvision"
 }
