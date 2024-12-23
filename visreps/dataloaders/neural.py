@@ -72,7 +72,7 @@ def create_nsd_dataloader(
         pin_memory=True
     )
 
-def prepare_neural_dataset_loader(cfg: Dict) -> Tuple[Dict, DataLoader]:
+def get_neural_loader(cfg: Dict) -> Tuple[Dict, DataLoader]:
     """Prepare neural dataset and its dataloader based on config
     
     Args:

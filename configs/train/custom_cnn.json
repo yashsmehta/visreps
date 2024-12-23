@@ -1,7 +1,7 @@
 {
   "model_class": "custom_cnn",
   "model_name": "CustomCNN",
-  "custom": {
+  "arch": {
     "nonlinearity": "relu",
     "conv_trainable": "11111", 
     "fc_trainable": "111",

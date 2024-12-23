@@ -1,6 +1,7 @@
 {
   "seed": 24,
   "data_augment": true,
+  "dataset": "tiny-imagenet",
   "optimizer": "adam",
   "learning_rate": 0.001,
   "num_epochs": 10,
@@ -13,5 +14,5 @@
   "log_dir": "model_checkpoints/",
   "use_wandb": false,
   "exp_name": "base",
-  "model_class": "standard_cnn"
+  "model_class": "custom_cnn"
 }

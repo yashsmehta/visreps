@@ -1,15 +1,30 @@
-import colorlog
-import logging
 import time
 import random
 from pathlib import Path
-import torch
 import os
 import pickle
 from datetime import datetime
 import pandas as pd
 from typing import Dict
+import torch.optim as optim
+from rich.console import Console
+from rich.theme import Theme
 
+def setup_logging():
+    """Initialize Rich with custom theme and return themed print function"""
+    custom_theme = Theme({
+        "info": "bold blue",
+        "success": "bold green",
+        "warning": "bold yellow",
+        "error": "bold red",
+        "highlight": "bold magenta",
+        "setup": "bold cyan"
+    })
+    console = Console(theme=custom_theme)
+    return console.print
+
+# Initialize Rich print globally as rprint
+rprint = setup_logging()
 
 def check_trainer_config(cfg):
     """
@@ -32,16 +47,13 @@ def check_trainer_config(cfg):
     # assert len(cfg.fc_trainable) == 3, "fc_trainable must have 3 elements!"
     assert cfg.model_class in [
         "custom_cnn",
-        "alexnet",
-        "vgg16",
-        "resnet50",
-        "densenet121",
-    ], "model_class must be one of 'custom_cnn', 'alexnet', 'vgg16', 'resnet50', 'densenet121'!"
+        "standard_cnn",
+    ], "model_class must be one of 'custom_cnn', 'standard_cnn'!"
     assert all(
-        char in "01" for char in cfg.custom.conv_trainable
+        char in "01" for char in cfg.arch.conv_trainable
     ), "conv_trainable must only contain '0's and '1's!"
     assert all(
-        char in "01" for char in cfg.custom.fc_trainable
+        char in "01" for char in cfg.arch.fc_trainable
     ), "fc_trainable must only contain '0's and '1's!"
     return cfg
 
@@ -85,40 +97,19 @@ def save_logs(df, cfg):
 
     lock_file = csv_file.with_suffix(".lock")
     while lock_file.exists():
-        print(f"Waiting for lock on {csv_file}...")
+        rprint(f"Waiting for lock on {csv_file}...", style="warning")
         time.sleep(random.uniform(1, 5))
 
     try:
         lock_file.touch()
         df.to_csv(csv_file, mode="a", header=write_header, index=False)
-        print(f"Saved logs to {csv_file}")
+        rprint(f"Saved logs to {csv_file}", style="success")
     finally:
         lock_file.unlink()
 
     return logdata_path
 
 
-def make_checkpoint_dir(folder, parent_dir="model_checkpoints"):
-    """
-    Create a new subdirectory for a training checkpoint within a specified parent directory.
-
-    This function constructs a directory path using the provided `folder` name under the `parent_dir`.
-    It ensures that the directory exists and then creates a new subdirectory within it to store the
-    checkpoint. The subdirectory is named by incrementing the count of existing directories.
-
-    Args:
-        folder (str): The name of the main folder under which the checkpoint directory will be created.
-        parent_dir (str): The parent directory where the `folder` will be located. Defaults to 'model_checkpoints'.
-
-    Returns:
-        str: The path to the newly created checkpoint subdirectory.
-    """
-    checkpoint_dir = os.path.join(parent_dir, folder)
-    os.makedirs(checkpoint_dir, exist_ok=True)
-    ith_folder = len(os.listdir(checkpoint_dir)) + 1
-    checkpoint_subdir = os.path.join(checkpoint_dir, "cfg" + str(ith_folder))
-    os.makedirs(checkpoint_subdir, exist_ok=True)
-    return checkpoint_subdir
 
 
 def log_results(results, folder_name, cfg_id):
@@ -148,28 +139,7 @@ def log_results(results, folder_name, cfg_id):
     write_header = not csv_file.exists()
 
     results.to_csv(csv_file, mode="a", header=write_header, index=False)
-    print(f"Saved logs to {csv_file} after sleeping for {sleep_time:.2f} seconds")
-
-
-def setup_logging():
-    handler = colorlog.StreamHandler()
-    handler.setFormatter(
-        colorlog.ColoredFormatter(
-            "%(log_color)s%(asctime)s - %(levelname)s - %(message)s",
-            log_colors={
-                "DEBUG": "cyan",
-                "INFO": "green",
-                "WARNING": "yellow",
-                "ERROR": "red",
-                "CRITICAL": "red,bg_white",
-            },
-        )
-    )
-
-    logger = colorlog.getLogger()
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-    return logger
+    rprint(f"Saved logs to {csv_file} after sleeping for {sleep_time:.2f} seconds", style="success")
 
 
 def load_pickle(file_path):
@@ -213,3 +183,21 @@ def save_results(results_df: pd.DataFrame, cfg: Dict, result_type: str = None) -
     results_df.to_csv(results_path, index=False)
     
     return results_path
+
+
+def get_optimizer_class(optimizer_name):
+    """Get optimizer class by name with exact or fuzzy matching."""
+    available_optimizers = {name.lower(): getattr(optim, name) 
+                          for name in dir(optim) 
+                          if name[0].isupper() and not name.startswith('_')}
+    
+    opt_name = optimizer_name.lower()
+    if opt_name in available_optimizers:
+        return available_optimizers[opt_name]
+    
+    matches = [name for name in available_optimizers.keys() 
+              if name.startswith(opt_name) or opt_name.startswith(name)]
+    if matches:
+        return available_optimizers[matches[0]]
+    
+    raise ValueError(f"Could not find optimizer '{optimizer_name}'. Available optimizers: {list(available_optimizers.keys())}")

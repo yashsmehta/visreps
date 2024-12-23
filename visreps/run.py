@@ -2,7 +2,7 @@ import argparse
 from pathlib import Path
 from omegaconf import OmegaConf
 
-import visreps.trainer as trainer
+from visreps.trainer import Trainer
 import visreps.evals as evals
 
 
@@ -59,7 +59,8 @@ def main():
     cfg = load_config(args.config, args.override)
 
     if args.mode == "train":
-        trainer.train(cfg)
+        trainer = Trainer(cfg)
+        trainer.train()
     else:
         evals.eval(cfg)
 
