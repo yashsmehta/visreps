@@ -37,8 +37,24 @@ class Trainer:
         self.datasets, self.loaders = get_obj_cls_loader(self.cfg)
         self.model = model_utils.load_model(self.cfg, self.device)
         self.criterion = nn.CrossEntropyLoss()
+        
+        # Setup optimizer with weight decay
         optimizer_cls = utils.get_optimizer_class(self.cfg.optimizer)
-        self.optimizer = optimizer_cls(self.model.parameters(), lr=self.cfg.learning_rate)
+        param_groups = [
+            {'params': [p for n, p in self.model.named_parameters() if 'bias' not in n], 'weight_decay': 1e-4},
+            {'params': [p for n, p in self.model.named_parameters() if 'bias' in n], 'weight_decay': 0}
+        ]
+        self.optimizer = optimizer_cls(param_groups, lr=self.cfg.learning_rate)
+        
+        # Setup learning rate scheduler with warmup
+        warmup_epochs = 5
+        self.scheduler = torch.optim.lr_scheduler.OneCycleLR(
+            self.optimizer,
+            max_lr=self.cfg.learning_rate,
+            epochs=self.cfg.num_epochs,
+            steps_per_epoch=len(self.loaders["train"]),
+            pct_start=warmup_epochs/self.cfg.num_epochs
+        )
         
         if self.cfg.use_wandb:
             rprint("Initializing W&B logging...", style="highlight")
@@ -69,29 +85,35 @@ class Trainer:
         """Train for one epoch"""
         self.model.train()
         total_loss = 0.0
-        for images, labels in tqdm(self.loaders["train"], desc="Training"):
+        num_batches = len(self.loaders["train"])
+        progress_bar = tqdm(self.loaders["train"], desc="Training")
+        
+        for images, labels in progress_bar:
             images, labels = images.to(self.device), labels.to(self.device)
             self.optimizer.zero_grad()
-            loss = self.criterion(self.model(images), labels)
+            outputs = self.model(images)
+            loss = self.criterion(outputs, labels)
             loss.backward()
             self.optimizer.step()
+            self.scheduler.step()
             total_loss += loss.item()
-        return total_loss / len(self.loaders["train"])
+            
+            # Update progress bar with current loss
+            progress_bar.set_postfix({'loss': f'{loss.item():.4f}', 
+                                    'lr': f'{self.scheduler.get_last_lr()[0]:.6f}'})
+            
+        return total_loss / num_batches
 
     def log_metrics(self, epoch, loss, metrics):
         """Log metrics to console and W&B"""
         if self.cfg.use_wandb:
             wandb.log(metrics)
             
-        if epoch % self.cfg.log_interval == 0 or epoch == self.cfg.num_epochs:
-            rprint(
-                f"Epoch [{epoch}/{self.cfg.num_epochs}]",
-                f"Loss: {loss:.6f}",
-                f"Test Acc: {metrics['test_acc']:.2f}%",
-                style="info"
-            )
-            if 'train_acc' in metrics:
-                rprint(f"Train Acc: {metrics['train_acc']:.2f}%", style="success")
+        # Print metrics every epoch
+        status = f"Epoch [{epoch}/{self.cfg.num_epochs}] Loss: {loss:.6f} Test Acc: {metrics['test_acc']:.2f}%"
+        if 'train_acc' in metrics:
+            status += f" Train Acc: {metrics['train_acc']:.2f}%"
+        rprint(status, style="info")
 
     def train(self):
         """Run the main training loop and return the trained model."""
@@ -104,11 +126,12 @@ class Trainer:
                 "loss": loss,
                 "test_acc": self.evaluate("test")
             }
-            if self.cfg.evaluate_train:
+            if self.cfg.evaluate_train and epoch % self.cfg.log_interval == 0:
                 metrics["train_acc"] = self.evaluate("train")
                 
             # Logging and checkpoints
             self.log_metrics(epoch, loss, metrics)
+            
             if self.cfg.log_checkpoints and epoch % self.cfg.checkpoint_interval == 0:
                 rprint(f"Saving checkpoint at epoch {epoch}...", style="setup")
                 model_utils.save_checkpoint(self.checkpoint_dir, epoch, self.model, 
