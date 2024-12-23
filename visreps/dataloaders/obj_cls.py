@@ -1,57 +1,107 @@
-import torchvision.transforms as transforms
-from torch.utils.data import DataLoader
-from torchvision import datasets
 import os
+from typing import Dict, Tuple
+import torch
+from torch.utils.data import Dataset, DataLoader
+import torchvision.transforms as transforms
+from torchvision import datasets
 
-DS_MEAN = {"tiny-imagenet": [0.480, 0.448, 0.398], "imgnet": [0.485, 0.456, 0.406]}
-DS_STD = {"tiny-imagenet": [0.272, 0.265, 0.274], "imgnet": [0.229, 0.224, 0.225]}
+DS_MEAN = {
+    "tiny-imagenet": [0.480, 0.448, 0.398],
+    "imgnet": [0.485, 0.456, 0.406],
+}
+DS_STD = {
+    "tiny-imagenet": [0.272, 0.265, 0.274],
+    "imgnet": [0.229, 0.224, 0.225],
+}
 
-def get_transform(
-    ds_stats="imgnet",
-    data_augment=False,
-    image_size=224,
-):
-    """
-    Get a transform for an image dataset. This is the standard AlexNet transform for ImageNet1K.
-    """
-    transform_list = [
+def get_transform(ds_stats="imgnet", data_augment=False, image_size=224):
+    """Return a transform composed of resizing, (optional) augmentation, and normalization."""
+    transforms_list = [
         transforms.Resize(256, interpolation=transforms.InterpolationMode.BILINEAR),
-        transforms.CenterCrop(image_size)
+        transforms.CenterCrop(image_size),
     ]
     if data_augment:
-        transform_list.extend(
-            [transforms.RandomHorizontalFlip(), transforms.RandomRotation(10)]
+        transforms_list += [transforms.RandomHorizontalFlip(), transforms.RandomRotation(10)]
+    transforms_list += [
+        transforms.ToTensor(),
+        transforms.Normalize(DS_MEAN[ds_stats], DS_STD[ds_stats]),
+    ]
+    return transforms.Compose(transforms_list)
+
+class TinyImageNetDataset(Dataset):
+    """Dataset class for Tiny ImageNet"""
+    def __init__(self, base_path: str, split: str, transform=None):
+        self.split_folder = "train" if split == "train" else "val"
+        self.dataset = datasets.ImageFolder(
+            os.path.join(base_path, self.split_folder), 
+            transform=transform
         )
-    transform_list.extend(
-        [transforms.ToTensor(), transforms.Normalize(mean=DS_MEAN[ds_stats], std=DS_STD[ds_stats])]
+        
+    def __len__(self) -> int:
+        return len(self.dataset)
+    
+    def __getitem__(self, idx: int):
+        return self.dataset[idx]
+
+def create_tinyimgnet_dataloader(
+    dataset: Dataset,
+    batch_size: int = 32,
+    num_workers: int = 8,
+    shuffle: bool = True
+) -> DataLoader:
+    """Create DataLoader for Tiny ImageNet dataset"""
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        prefetch_factor=2,
+        pin_memory=True
     )
+
+def prepare_tinyimgnet_data(cfg: Dict) -> Tuple[Dict, Dict[str, DataLoader]]:
+    """Prepare Tiny ImageNet datasets and dataloaders"""
+    base_path = cfg.get("dataset_path") or os.path.join("datasets", "obj_cls", "tiny-imagenet-200")
+    splits = ["train", "test"]
     
-    transform = transforms.Compose(transform_list)
-    return transform
-
-
-def tinyimgnet_loader(batchsize=32, num_workers=8, data_augment=True, ds_stats="tiny-imagenet"):
-    assert ds_stats in ["tiny-imagenet", "imgnet"]
-    data_transform = {
-        "train": get_transform(ds_stats=ds_stats, data_augment=data_augment),
-        "test": get_transform(ds_stats=ds_stats, data_augment=False)
-    }
-
-    base_dir = os.path.join("data", "tiny-imagenet-200")
-    
+    # Create datasets
     datasets_dict = {}
-    for split in ["train", "test"]:
-        split_dir = os.path.join(base_dir, "train" if split == "train" else "val")
-        try:
-            dataset = datasets.ImageFolder(split_dir, data_transform[split])
-            datasets_dict[split] = dataset
-        except Exception as e:
-            raise
+    loaders_dict = {}
+    
+    for split in splits:
+        transform = get_transform(
+            ds_stats=cfg.get("ds_stats", "tiny-imagenet"),
+            data_augment=(split == "train" and cfg.get("data_augment", True)),
+            image_size=224
+        )
+        
+        dataset = TinyImageNetDataset(base_path, split, transform)
+        datasets_dict[split] = dataset
+        
+        loader = create_tinyimgnet_dataloader(
+            dataset,
+            batch_size=cfg.get("batchsize", 32),
+            num_workers=cfg.get("num_workers", 8),
+            shuffle=(split == "train")
+        )
+        loaders_dict[split] = loader
+    
+    return datasets_dict, loaders_dict
 
-    dataloaders = {}
-    for split, dataset in datasets_dict.items():
-        dataloader = DataLoader(dataset, batch_size=batchsize, shuffle=True, 
-                              num_workers=num_workers, prefetch_factor=2)
-        dataloaders[split] = dataloader
+def get_obj_cls_loader(cfg: Dict) -> Tuple[Dict, Dict[str, DataLoader]]:
+    """
+    Prepare object classification datasets and loaders based on config.
+    Currently supports only 'tiny-imagenet'.
+    
+    Args:
+        cfg: Configuration dictionary
+        
+    Returns:
+        Tuple of (datasets_dict, loaders_dict) where each dict maps split names to 
+        corresponding Dataset and DataLoader objects
+    """
+    dataset = cfg.get("dataset", "tiny-imagenet")
+    if dataset != "tiny-imagenet":
+        raise ValueError(f"Unknown dataset: {dataset}")
 
-    return dataloaders
+    return prepare_tinyimgnet_data(cfg)

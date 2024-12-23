@@ -1,133 +1,120 @@
-import time
 import torch
-import torch.nn as nn
-import torch.optim as optim
-from visreps.dataloaders.obj_cls import tinyimgnet_loader
-from visreps.models.custom_cnn import CustomCNN
-from visreps.models.standard_cnn import AlexNet, VGG16, ResNet50, DenseNet121
-import visreps.utils as utils
 import wandb
-from omegaconf import OmegaConf
-import json
-import os
+import torch.nn as nn
 from tqdm import tqdm
+from omegaconf import OmegaConf
+
+from visreps.dataloaders.obj_cls import get_obj_cls_loader
+import visreps.utils as utils
+from visreps.models import utils as model_utils
 from visreps.metrics import calculate_cls_accuracy
+from visreps.utils import rprint
 
-def evaluate(model, loader, device):
-    model.eval()
-    with torch.no_grad():
-        return calculate_cls_accuracy(loader, model, device)
-
-def train(cfg):
-    """Train a model for object classification"""
-    cfg = utils.check_trainer_config(cfg)
-    torch.manual_seed(cfg.seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
-    # Setup device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    # Setup data
-    data_loader = tinyimgnet_loader(cfg.batchsize, cfg.data_augment)
-
-    # Initialize model
-    model_classes = {
-        "custom_cnn": CustomCNN,
-        "alexnet": AlexNet,
-        "vgg16": VGG16,
-        "resnet50": ResNet50,
-        "densenet121": DenseNet121,
-    }
-    if cfg.model_class not in model_classes:
-        raise ValueError(f"Invalid model: {cfg.model_class}")
-
-    if cfg.model_class == "custom_cnn":
-        params = {
-            "num_classes": cfg.num_classes,
-            "trainable_layers": {"conv": cfg.custom.conv_trainable, "fc": cfg.custom.fc_trainable},
-            "nonlinearity": cfg.custom.nonlinearity,
-            "dropout": cfg.custom.dropout,
-            "batchnorm": cfg.custom.batchnorm,
-            "pooling_type": cfg.custom.pooling_type,
-        }
-    else:
-        params = {"num_classes": cfg.num_classes, "pretrained": cfg.pretrained}
-
-    model = model_classes[cfg.model_class](**params)
-    model.to(device)
-
-    # Initialize wandb if needed
-    if cfg.use_wandb:
-        wandb.init(project=cfg.exp_name, 
-                  group=cfg.group, 
-                  config=OmegaConf.to_container(cfg, resolve=True), 
-                  name=f"seed_{cfg.seed}")
-
-    # Setup training
-    criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=cfg.learning_rate)
-
-    # Save initial checkpoint if needed
-    if cfg.log_checkpoints:
-        checkpoint_subdir = utils.make_checkpoint_dir(cfg.exp_name)
-        cfg_dict = {
-            "total_params": sum(p.numel() for p in model.parameters()),
-            "trainable_params": sum(p.numel() for p in model.parameters() if p.requires_grad),
-            **OmegaConf.to_container(cfg, resolve=True),
-        }
-        with open(os.path.join(checkpoint_subdir, "config.json"), "w") as f:
-            json.dump(cfg_dict, f)
-        torch.save(model.state_dict(), os.path.join(checkpoint_subdir, "model_init.pth"))
-        print(f"Model saved to {checkpoint_subdir}")
-
-    # Training loop
-    for epoch in range(1, cfg.num_epochs + 1):
-        start_time = time.time()
-        model.train()
-        running_loss = 0.0
+class Trainer:
+    """Main trainer class for object classification models.
+    
+    Usage:
+        trainer = Trainer(cfg)
+        model = trainer.train()
+    """
+    def __init__(self, cfg):
+        rprint("Initializing trainer...", style="info")
+        self.cfg = utils.check_trainer_config(cfg)
+        self.setup_environment()
+        self.setup_training()
         
-        # Train one epoch
-        for images, labels in tqdm(data_loader["train"], desc=f"Epoch {epoch}/{cfg.num_epochs}"):
-            images = images.to(device)
-            labels = labels.to(device)
+    def setup_environment(self):
+        """Setup seeds and device"""
+        torch.manual_seed(self.cfg.seed)
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cudnn.benchmark = False
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        rprint(f"Using device: {self.device}", style="success")
+        
+    def setup_training(self):
+        """Initialize model, data, optimizer"""
+        rprint("Setting up training components...", style="setup")
+        self.datasets, self.loaders = get_obj_cls_loader(self.cfg)
+        self.model = model_utils.load_model(self.cfg, self.device)
+        self.criterion = nn.CrossEntropyLoss()
+        optimizer_cls = utils.get_optimizer_class(self.cfg.optimizer)
+        self.optimizer = optimizer_cls(self.model.parameters(), lr=self.cfg.learning_rate)
+        
+        if self.cfg.use_wandb:
+            rprint("Initializing W&B logging...", style="highlight")
+            self._init_wandb()
             
-            optimizer.zero_grad()
-            outputs = model(images)
-            loss = criterion(outputs, labels)
+        if self.cfg.log_checkpoints:
+            rprint("Setting up checkpointing...", style="setup")
+            self.checkpoint_dir, self.cfg_dict = model_utils.setup_checkpoint_dir(self.cfg, self.model)
+            model_utils.save_checkpoint(self.checkpoint_dir, 0, self.model, self.optimizer, {}, self.cfg_dict)
+            rprint(f"Initial checkpoint saved to {self.checkpoint_dir}", style="success")
+
+    def _init_wandb(self):
+        """Initialize W&B logging"""
+        wandb.init(
+            project=self.cfg.exp_name,
+            group=self.cfg.group,
+            name=f"seed_{self.cfg.seed}",
+            config=OmegaConf.to_container(self.cfg, resolve=True)
+        )
+
+    @torch.no_grad()
+    def evaluate(self, split="test"):
+        """Evaluate model on given split"""
+        self.model.eval()
+        return calculate_cls_accuracy(self.loaders[split], self.model, self.device)
+
+    def train_epoch(self):
+        """Train for one epoch"""
+        self.model.train()
+        total_loss = 0.0
+        for images, labels in tqdm(self.loaders["train"], desc="Training"):
+            images, labels = images.to(self.device), labels.to(self.device)
+            self.optimizer.zero_grad()
+            loss = self.criterion(self.model(images), labels)
             loss.backward()
-            optimizer.step()
-            
-            running_loss += loss.item()
+            self.optimizer.step()
+            total_loss += loss.item()
+        return total_loss / len(self.loaders["train"])
 
-        # Evaluate
-        test_acc = evaluate(model, data_loader["test"], device)
-        metrics = {
-            "epoch": epoch, 
-            "loss": running_loss / len(data_loader["train"]), 
-            "test_acc": test_acc
-        }
-
-        if cfg.evaluate_train:
-            metrics["train_acc"] = evaluate(model, data_loader["train"], device)
-
-        # Logging
-        if cfg.use_wandb:
+    def log_metrics(self, epoch, loss, metrics):
+        """Log metrics to console and W&B"""
+        if self.cfg.use_wandb:
             wandb.log(metrics)
-
-        if cfg.log_checkpoints and epoch % cfg.checkpoint_interval == 0:
-            torch.save(
-                model.state_dict(), 
-                os.path.join(checkpoint_subdir, f"model_epoch_{epoch:02d}.pth")
+            
+        if epoch % self.cfg.log_interval == 0 or epoch == self.cfg.num_epochs:
+            rprint(
+                f"Epoch [{epoch}/{self.cfg.num_epochs}]",
+                f"Loss: {loss:.6f}",
+                f"Test Acc: {metrics['test_acc']:.2f}%",
+                style="info"
             )
+            if 'train_acc' in metrics:
+                rprint(f"Train Acc: {metrics['train_acc']:.2f}%", style="success")
 
-        if epoch % cfg.log_interval == 0 or epoch == cfg.num_epochs:
-            print(f"Epoch [{epoch}/{cfg.num_epochs}] "
-                  f"Loss: {metrics['loss']:.6f}, "
-                  f"Test Acc: {metrics['test_acc']:.2f}%, "
-                  f"Time: {time.time() - start_time:.2f}s")
+    def train(self):
+        """Run the main training loop and return the trained model."""
+        rprint("Starting training...", style="info")
+        for epoch in range(1, self.cfg.num_epochs + 1):
+            # Train and evaluate
+            loss = self.train_epoch()
+            metrics = {
+                "epoch": epoch,
+                "loss": loss,
+                "test_acc": self.evaluate("test")
+            }
+            if self.cfg.evaluate_train:
+                metrics["train_acc"] = self.evaluate("train")
+                
+            # Logging and checkpoints
+            self.log_metrics(epoch, loss, metrics)
+            if self.cfg.log_checkpoints and epoch % self.cfg.checkpoint_interval == 0:
+                rprint(f"Saving checkpoint at epoch {epoch}...", style="setup")
+                model_utils.save_checkpoint(self.checkpoint_dir, epoch, self.model, 
+                                         self.optimizer, metrics, self.cfg_dict)
 
-    print("Training complete.")
-    if cfg.use_wandb:
-        wandb.finish()
-    return model
+        rprint("Training complete!", style="success")
+        if self.cfg.use_wandb:
+            wandb.finish()
+        return self.model
