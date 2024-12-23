@@ -1,0 +1,8 @@
+{
+  "return_nodes": {
+    "features.10": "features.10",
+    "classifier.5": "classifier.5"
+  },
+  "load_model_from": "checkpoint",
+  "checkpoint_path": "model_checkpoints/base/checkpoint_epoch_0.pth"
+}

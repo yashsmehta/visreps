@@ -1,0 +1,17 @@
+{
+  "seed": 24,
+  "data_augment": true,
+  "optimizer": "adam",
+  "learning_rate": 0.001,
+  "num_epochs": 10,
+  "log_interval": 2,
+  "checkpoint_interval": 1,
+  "evaluate_train": true,
+  "num_classes": 200,
+  "batchsize": 64,
+  "log_checkpoints": true,
+  "log_dir": "model_checkpoints/",
+  "use_wandb": false,
+  "exp_name": "base",
+  "model_class": "standard_cnn"
+}
