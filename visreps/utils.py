@@ -43,18 +43,19 @@ def check_trainer_config(cfg):
     Raises:
         AssertionError: If any of the conditions on 'conv_trainable' or 'fc_trainable' are not met.
     """
-    # assert len(cfg.conv_trainable) == 5, "conv_trainable must have 5 elements!"
-    # assert len(cfg.fc_trainable) == 3, "fc_trainable must have 3 elements!"
     assert cfg.model_class in [
         "custom_cnn",
         "standard_cnn",
     ], "model_class must be one of 'custom_cnn', 'standard_cnn'!"
-    assert all(
-        char in "01" for char in cfg.arch.conv_trainable
-    ), "conv_trainable must only contain '0's and '1's!"
-    assert all(
-        char in "01" for char in cfg.arch.fc_trainable
-    ), "fc_trainable must only contain '0's and '1's!"
+    
+    if cfg.model_class == "custom_cnn":
+        assert all(
+            char in "01" for char in cfg.arch.conv_trainable
+        ), "conv_trainable must only contain '0's and '1's!"
+        assert all(
+            char in "01" for char in cfg.arch.fc_trainable
+        ), "fc_trainable must only contain '0's and '1's!"
+    
     return cfg
 
 

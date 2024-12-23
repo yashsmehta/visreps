@@ -4,6 +4,7 @@ import torch
 from omegaconf import OmegaConf
 from torchvision.models.feature_extraction import create_feature_extractor
 from rich import print
+import torch.nn as nn
 
 from visreps.models import standard_cnn
 from visreps.models.custom_cnn import CustomCNN
@@ -71,7 +72,6 @@ def load_model(cfg, device):
     # Initialize custom CNN
     if model_class == 'custom_cnn':
         custom_cfg = getattr(cfg, 'arch', {})
-        # Store model params for printing
         model_params = {
             'num_classes': getattr(cfg, 'num_classes', 200),
             'trainable_layers': {
@@ -83,9 +83,7 @@ def load_model(cfg, device):
             'batchnorm': getattr(custom_cfg, 'batchnorm', True),
             'pooling_type': getattr(custom_cfg, 'pooling_type', 'max')
         }
-        
         model = CustomCNN(**model_params)
-        print(model_params)
         
     else:
         # Initialize standard CNN
@@ -94,8 +92,26 @@ def load_model(cfg, device):
             raise ValueError(f"Model '{model_name}' not found in standard_cnn.")
         pretrained = getattr(cfg, 'pretrained', True)
         num_classes = getattr(cfg, 'num_classes', 200)
+        
+        # Load model - classifier layer is already replaced in model_fn
         model = model_fn(pretrained=pretrained, num_classes=num_classes)
-        print(f"Initialized standard model: {model_name}")
+        
+        # Initialize the classifier weights if not using pretrained model
+        if not pretrained:
+            if hasattr(model, 'classifier') and isinstance(model.classifier, nn.Sequential):
+                # For models like AlexNet, VGG
+                nn.init.xavier_uniform_(model.classifier[-1].weight)
+                nn.init.zeros_(model.classifier[-1].bias)
+            elif hasattr(model, 'classifier') and isinstance(model.classifier, nn.Linear):
+                # For models like DenseNet
+                nn.init.xavier_uniform_(model.classifier.weight)
+                nn.init.zeros_(model.classifier.bias)
+            elif hasattr(model, 'fc') and isinstance(model.fc, nn.Linear):
+                # For models like ResNet
+                nn.init.xavier_uniform_(model.fc.weight)
+                nn.init.zeros_(model.fc.bias)
+            else:
+                raise ValueError(f"Unknown classifier structure for model {model_name}")
 
     return model.to(device)
 

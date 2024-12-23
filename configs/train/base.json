@@ -14,5 +14,5 @@
   "log_dir": "model_checkpoints/",
   "use_wandb": false,
   "exp_name": "base",
-  "model_class": "custom_cnn"
+  "model_class": "standard_cnn"
 }
