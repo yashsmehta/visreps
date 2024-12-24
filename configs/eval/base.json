@@ -1,7 +1,7 @@
 {
   "region": "early visual stream",
   "subject_idx": 0,
-  "pretrained": true,
+  "analysis": "rsa",
   "neural_dataset": "nsd",
   "log_expdata": true,
   "cfg_id": 1,

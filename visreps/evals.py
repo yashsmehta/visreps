@@ -2,11 +2,10 @@ import torch
 import visreps.models.utils as model_utils
 from visreps.dataloaders.neural import get_neural_loader
 from visreps.utils import save_results
-import visreps.metrics as metrics
-
+from visreps.analysis.alignment import compute_neural_alignment
 
 def eval(cfg):
-    """Evaluate model's neural alignment with brain data"""
+    """Evaluate model's neural alignment with brain data using RSA"""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"\nStarting model evaluation...device: {device}")
     
@@ -20,11 +19,11 @@ def eval(cfg):
     neural_data, dataloader = get_neural_loader(cfg)
     
     # 3. Compute alignment
-    print("Computing neural data and model alignment...")
+    print("Computing RSA between neural data and model activations...")
     activations_dict, keys = model_utils.get_activations(model, dataloader, device)
-    results_df = metrics.compute_neural_alignment(activations_dict, neural_data, keys, cfg)
+    results_df = compute_neural_alignment(activations_dict, neural_data, keys, cfg)
     
     # 4. Save and return
     results_path = save_results(results_df, cfg, result_type='neural_alignment')
     print(f"\nResults saved to: {results_path}")
-    return
+    return results_df
