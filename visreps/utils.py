@@ -6,6 +6,7 @@ import pickle
 from datetime import datetime
 import pandas as pd
 from typing import Dict
+import torch
 import torch.optim as optim
 from rich.console import Console
 from rich.theme import Theme
@@ -202,3 +203,44 @@ def get_optimizer_class(optimizer_name):
         return available_optimizers[matches[0]]
     
     raise ValueError(f"Could not find optimizer '{optimizer_name}'. Available optimizers: {list(available_optimizers.keys())}")
+
+
+def calculate_cls_accuracy(data_loader, model, device):
+    """Calculate classification accuracy with proper device handling and numerical stability.
+    
+    Args:
+        data_loader: PyTorch DataLoader
+        model: PyTorch model
+        device: torch.device for computation
+    
+    Returns:
+        float: Classification accuracy as percentage (0-100)
+    """
+    model.eval()  # Ensure model is in eval mode
+    correct = 0
+    total = 0
+    
+    # Use autocast based on device type
+    autocast_device = "cuda" if device.type == "cuda" else "cpu"
+    autocast_dtype = torch.float16 if device.type == "cuda" else torch.bfloat16
+    
+    with torch.no_grad(), torch.autocast(device_type=autocast_device, dtype=autocast_dtype):
+        for images, labels in data_loader:
+            # Move data to device efficiently
+            images = images.to(device, non_blocking=True)
+            labels = labels.to(device, non_blocking=True)
+            
+            # Forward pass
+            outputs = model(images)
+            predicted = outputs.argmax(dim=1)
+            
+            # Accumulate statistics without keeping autograd history
+            total += labels.size(0)
+            correct += torch.eq(predicted, labels).sum().item()
+    
+    # Handle edge case and ensure floating point division
+    if total == 0:
+        return 0.0
+        
+    # Use float for stable division and percentage calculation
+    return (100.0 * correct) / total

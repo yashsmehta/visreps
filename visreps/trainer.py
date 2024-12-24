@@ -5,9 +5,9 @@ from tqdm import tqdm
 from omegaconf import OmegaConf
 
 from visreps.dataloaders.obj_cls import get_obj_cls_loader
-import visreps.utils as utils
 from visreps.models import utils as model_utils
-from visreps.metrics import calculate_cls_accuracy
+import visreps.utils as utils
+from visreps.utils import calculate_cls_accuracy
 from visreps.utils import rprint
 
 class Trainer:
