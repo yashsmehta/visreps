@@ -3,11 +3,11 @@ import random
 from pathlib import Path
 import os
 import pickle
-from datetime import datetime
 import pandas as pd
 from typing import Dict
 import torch
 import torch.optim as optim
+from filelock import FileLock, Timeout
 from rich.console import Console
 from rich.theme import Theme
 
@@ -60,54 +60,51 @@ def check_trainer_config(cfg):
     return cfg
 
 
-def save_logs(df, cfg):
+def save_logs(cfg, df):
     """
-    Saves logs to a CSV file based on the experiment configuration.
-
-    This function modifies the dataframe by dropping specific columns and adding configuration details.
-    It then determines the appropriate logging directory based on the model type and creates the directory if it does not exist.
-    The function handles concurrent write operations by using a lock file to ensure data integrity.
-    Logs are appended to a CSV file named after the experiment name.
+    Saves the logs to a specified directory based on the configuration.
 
     Args:
-        df (pandas.DataFrame): The dataframe containing the logs to be saved.
-        cfg (OmegaConf): The configuration object containing experiment and model settings.
+        cfg (object): Configuration object containing the model settings and paths.
+        df (DataFrame): DataFrame containing the logs to be saved.
 
     Returns:
-        pathlib.Path: The path to the directory where the log file is saved.
+        Path: The path where the logs were saved.
     """
-    df = df.drop(columns=["model_layer_index"])
-    df["exp_name"] = cfg.exp_name
-    df["seed"] = cfg.seed
-    if cfg.model.name != "custom":
-        df["model"] = cfg.model.name
-        df["pretrained"] = cfg.model.pretrained
-    else:
-        df["nonlin"] = cfg.model.nonlin
-        df["weights_init"] = cfg.model.weights_init
-        df["norm"] = cfg.model.norm
+    # Use local random for thread safety
+    local_random = random.Random()
+    local_random.seed(os.urandom(10))
+    sleep_duration = local_random.uniform(1, 5)
+    time.sleep(sleep_duration)
+    rprint(f"Slept for {sleep_duration:.2f} seconds.", style="info")
 
     logdata_path = Path(cfg.log_dir)
-    if cfg.model.name == "custom":
-        logdata_path = logdata_path / "custom_arch"
-    else:
-        logdata_path = logdata_path / "standard_arch"
+    if cfg.log_expdata:
+        if cfg.use_experimental_data:
+            logdata_path = (
+                logdata_path / "expdata" / cfg.exp_name / cfg.plasticity_model
+            )
+        else:
+            logdata_path = (
+                logdata_path / "simdata" / cfg.exp_name / cfg.plasticity_model
+            )
 
-    logdata_path.mkdir(parents=True, exist_ok=True)
-    csv_file = logdata_path / f"{cfg.exp_name}.csv"
-    write_header = not csv_file.exists()
+        logdata_path.mkdir(parents=True, exist_ok=True)
+        csv_file = logdata_path / f"exp_{cfg.expid}.csv"
+        write_header = not csv_file.exists()
 
-    lock_file = csv_file.with_suffix(".lock")
-    while lock_file.exists():
-        rprint(f"Waiting for lock on {csv_file}...", style="warning")
-        time.sleep(random.uniform(1, 5))
+        lock_file = csv_file.with_suffix(".lock")
+        while lock_file.exists():
+            rprint(f"Waiting for lock on {csv_file}...", style="warning")
+            time.sleep(random.uniform(1, 5))
 
-    try:
-        lock_file.touch()
-        df.to_csv(csv_file, mode="a", header=write_header, index=False)
-        rprint(f"Saved logs to {csv_file}", style="success")
-    finally:
-        lock_file.unlink()
+        try:
+            lock_file.touch()
+            df.to_csv(csv_file, mode="a", header=write_header, index=False)
+            rprint(f"Saved logs to {csv_file}", style="success")
+        finally:
+            if lock_file.exists():
+                lock_file.unlink()
 
     return logdata_path
 
@@ -157,34 +154,31 @@ def load_pickle(file_path):
         raise RuntimeError(f"Error loading pickle file at {file_path}: {str(e)}")
 
 
-
-def save_results(results_df: pd.DataFrame, cfg: Dict, result_type: str = None) -> str:
-    """Save results to CSV in a structured directory
+def save_results(df, cfg, timeout=60):
+    """Save results to CSV with file locking in logs/mode/exp_name.csv format."""
+    # Add random delay
+    random.seed(os.urandom(10))
+    time.sleep(random.uniform(0, 5))
     
-    Args:
-        results_df: DataFrame containing results
-        cfg: Configuration dictionary
-        result_type: Type of results (e.g., 'neural_alignment', 'training', etc.)
-                    Used to organize results in subdirectories
+    # Setup paths and lock
+    save_dir = Path('logs') / cfg.mode
+    save_dir.mkdir(parents=True, exist_ok=True)
+    results_path = save_dir / f"{cfg.exp_name}.csv"
+    lock = FileLock(str(results_path.with_suffix(".lock")), timeout=timeout)
     
-    Returns:
-        Path where results were saved
-    """
-    # Create base directory structure
-    exp_name = getattr(cfg, 'exp_name', 'default')
-    model_class = getattr(cfg, 'model_class', 'unknown')
-    save_dir = os.path.join('logs', exp_name, model_class)
-    
-    # Add result type subdirectory if specified
-    if result_type:
-        save_dir = os.path.join(save_dir, result_type)
-    
-    os.makedirs(save_dir, exist_ok=True)
-    
-    results_path = os.path.join(save_dir, f"results.csv")
-    results_df.to_csv(results_path, index=False)
-    
-    return results_path
+    try:
+        with lock:
+            write_header = not results_path.exists()
+            df.to_csv(results_path, mode="a", header=write_header, index=False)
+            rprint(f"Successfully saved results to {results_path}", style="success")
+    except Timeout:
+        rprint(f"ERROR: Could not acquire lock for {results_path} after {timeout}s", style="error")
+        raise
+    except Exception as e:
+        rprint(f"ERROR: Failed to save results to {results_path}: {str(e)}", style="error")
+        raise
+        
+    return str(results_path)
 
 
 def get_optimizer_class(optimizer_name):

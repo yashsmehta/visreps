@@ -9,7 +9,7 @@ import torch.nn as nn
 from visreps.models import standard_cnn
 from visreps.models.custom_cnn import CustomCNN
 
-def configure_feature_extractor(model, cfg):
+def configure_feature_extractor(cfg, model):
     return_nodes = OmegaConf.to_container(cfg.get("return_nodes", {}), resolve=True)
     if not return_nodes:
         raise ValueError("return_nodes must be specified in config")

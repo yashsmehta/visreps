@@ -16,9 +16,6 @@ def parse_args():
                         help='Override config values, e.g. batch_size=32 lr=0.001')
 
     args = parser.parse_args()
-    # Set default config path
-    if not args.config:
-        args.config = f"configs/{args.mode}/base.json"
     return args
 
 
@@ -29,8 +26,8 @@ def load_config(config_path, overrides):
 
     cfg = OmegaConf.load(config_path)
 
-    # Mode-specific configs
-    if "eval" in config_path:
+    # Mode-specific configs based on cfg.mode
+    if cfg.mode == "eval":
         model_paths = {
             "torchvision": "configs/eval/torchvision_model.json",
             "checkpoint":  "configs/eval/checkpoint_model.json"
@@ -38,7 +35,7 @@ def load_config(config_path, overrides):
         model_cfg_path = model_paths.get(cfg.load_model_from)
         if model_cfg_path:
             cfg = OmegaConf.merge(cfg, OmegaConf.load(model_cfg_path))
-    elif "train" in config_path:
+    elif cfg.mode == "train":
         model_paths = {
             "standard_cnn": "configs/train/standard_cnn.json",
             "custom_cnn":   "configs/train/custom_cnn.json"
@@ -56,9 +53,14 @@ def load_config(config_path, overrides):
 
 def main():
     args = parse_args()
+    # Set config path based on mode in config file
+    if not args.config:
+        args.config = f"configs/{args.mode}/base.json"
+    
     cfg = load_config(args.config, args.override)
+    cfg.mode = args.mode  # Ensure mode is set in config
 
-    if args.mode == "train":
+    if cfg.mode == "train":
         trainer = Trainer(cfg)
         trainer.train()
     else:
