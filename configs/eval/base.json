@@ -1,9 +1,10 @@
 {
+  "mode": "eval",
   "region": "early visual stream",
   "subject_idx": 0,
   "analysis": "rsa",
   "neural_dataset": "nsd",
-  "log_expdata": true,
+  "log_expdata": false,
   "cfg_id": 1,
   "exp_name": "base",
   "epoch": 0,

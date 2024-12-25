@@ -3,6 +3,7 @@ import pandas as pd
 from typing import Dict, List
 import torch
 from visreps.analysis.rsa import compute_rsa_alignment
+from visreps.utils import rprint
 
 def compute_neural_alignment(
     cfg: Dict,
@@ -39,11 +40,11 @@ def compute_neural_alignment(
         raise ValueError(f"Unknown analysis type: {analysis_type}. Available types: {list(analysis_functions.keys())}")
     
     # Compute alignment using specified analysis
-    results, messages = analysis_functions[analysis_type](activations_dict, neural_responses, cfg)
+    results, messages = analysis_functions[analysis_type](cfg, activations_dict, neural_responses)
     
     # Print analysis messages
     for msg in messages:
-        print(msg)
+        rprint(msg, style="success")
     
     # Create DataFrame and add config info
     results_df = pd.DataFrame(results)

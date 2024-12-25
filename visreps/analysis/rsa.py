@@ -27,7 +27,7 @@ def compute_rsm_correlation(rsm1: torch.Tensor, rsm2: torch.Tensor, correlation:
 def bootstrap_correlation(
     rsm1: torch.Tensor,
     rsm2: torch.Tensor,
-    n_bootstraps: int = 5000,
+    n_bootstraps: int = 500,
     subsample_fraction: float = 0.9,
     correlation: str = "Pearson",
     seed: int = 0,
@@ -62,17 +62,17 @@ def bootstrap_correlation(
     return torch.cat(bootstrap_scores)
 
 def compute_rsa_alignment(
-    activations_dict: Dict[str, torch.Tensor],
-    neural_data: torch.Tensor,
-    cfg: Dict
-) -> Tuple[List[Dict[str, Any]], List[str]]:
+    cfg,
+    activations_dict,
+    neural_data
+):
     """Compute RSA alignment between model layer activations and neural data"""
     results = []
     messages = []
     
     # Get RSA parameters from config
     correlation = cfg.get('correlation', 'Pearson')
-    n_bootstraps = cfg.get('n_bootstraps', 5000)
+    n_bootstraps = cfg.get('n_bootstraps', 500)
     subsample_fraction = cfg.get('subsample_fraction', 0.9)
     
     messages.append(f"Computing RSA scores using {correlation} correlation...")
@@ -83,6 +83,7 @@ def compute_rsa_alignment(
     # Compute RSA for each layer
     for layer, activations in activations_dict.items():
         # Flatten activations if needed
+        print(f"Layer: {layer}, Activations: {activations.shape}")
         if activations.ndim > 2:
             activations = activations.flatten(start_dim=1)
             
@@ -98,15 +99,23 @@ def compute_rsa_alignment(
             correlation=correlation
         )
         
-        messages.append(f"Layer {layer:<20} RSA Score: {score:.4f}")
+        # Compute bootstrap statistics
+        bootstrap_mean = float(bootstrap_scores.mean())
+        bootstrap_std = float(bootstrap_scores.std())
+        bootstrap_ci = bootstrap_scores.quantile(torch.tensor([0.025, 0.975]))
         
-        # Store results
+        messages.append(f"Layer {layer:<20} RSA Score: {score:.4f} (Bootstrap Mean: {bootstrap_mean:.4f} ± {bootstrap_std:.4f})")
+        
+        # Store results with summary statistics instead of raw bootstrap scores
         results.append({
             "layer": layer,
             "score": score,
             "analysis": "rsa",
             "correlation": correlation,
-            "bootstrap_scores": bootstrap_scores.tolist()
+            "bootstrap_mean": bootstrap_mean,
+            "bootstrap_std": bootstrap_std,
+            "bootstrap_ci_lower": float(bootstrap_ci[0]),
+            "bootstrap_ci_upper": float(bootstrap_ci[1])
         })
         
     return results, messages

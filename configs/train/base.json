@@ -1,4 +1,5 @@
 {
+  "mode": "train",
   "seed": 24,
   "data_augment": true,
   "dataset": "tiny-imagenet",
