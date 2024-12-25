@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from tqdm.auto import tqdm
 from visreps.analysis.metrics import pearson_r, spearman_r
+from visreps.utils import rprint
 
 def compute_rsm(activations: torch.Tensor) -> torch.Tensor:
     """Compute RSM from activations tensor (n_samples, n_features) -> (n_samples, n_samples)"""
@@ -68,14 +69,13 @@ def compute_rsa_alignment(
 ):
     """Compute RSA alignment between model layer activations and neural data"""
     results = []
-    messages = []
     
     # Get RSA parameters from config
     correlation = cfg.get('correlation', 'Pearson')
     n_bootstraps = cfg.get('n_bootstraps', 500)
     subsample_fraction = cfg.get('subsample_fraction', 0.9)
     
-    messages.append(f"Computing RSA scores using {correlation} correlation...")
+    rprint(f"Computing RSA scores using {correlation} correlation...", style="info")
     
     # Compute neural RSM once
     neural_rsm = compute_rsm(neural_data)
@@ -83,13 +83,15 @@ def compute_rsa_alignment(
     # Compute RSA for each layer
     for layer, activations in activations_dict.items():
         # Flatten activations if needed
-        print(f"Layer: {layer}, Activations: {activations.shape}")
+        print(f"\nProcessing Layer: {layer}")
+        print(f"Activations shape: {activations.shape}")
         if activations.ndim > 2:
             activations = activations.flatten(start_dim=1)
             
         # Compute layer RSM and correlation
         layer_rsm = compute_rsm(activations)
         score = compute_rsm_correlation(layer_rsm, neural_rsm, correlation)
+        rprint(f"Layer {layer:<20} RSA Score: {score:.4f}", style="highlight")
         
         # Compute bootstrap scores
         bootstrap_scores = bootstrap_correlation(
@@ -103,10 +105,9 @@ def compute_rsa_alignment(
         bootstrap_mean = float(bootstrap_scores.mean())
         bootstrap_std = float(bootstrap_scores.std())
         bootstrap_ci = bootstrap_scores.quantile(torch.tensor([0.025, 0.975]))
+        print(f"Bootstrap results - Mean: {bootstrap_mean:.4f} ± {bootstrap_std:.4f}")
         
-        messages.append(f"Layer {layer:<20} RSA Score: {score:.4f} (Bootstrap Mean: {bootstrap_mean:.4f} ± {bootstrap_std:.4f})")
-        
-        # Store results with summary statistics instead of raw bootstrap scores
+        # Store results
         results.append({
             "layer": layer,
             "score": score,
@@ -118,4 +119,4 @@ def compute_rsa_alignment(
             "bootstrap_ci_upper": float(bootstrap_ci[1])
         })
         
-    return results, messages
+    return results
