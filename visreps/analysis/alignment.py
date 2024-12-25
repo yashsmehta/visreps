@@ -5,18 +5,18 @@ import torch
 from visreps.analysis.rsa import compute_rsa_alignment
 
 def compute_neural_alignment(
+    cfg: Dict,
     activations_dict: Dict[str, torch.Tensor], 
     neural_data: Dict[str, np.ndarray],
     keys: List[str],
-    cfg: Dict
 ) -> pd.DataFrame:
     """Compute neural alignment scores for each layer using specified analysis
     
     Args:
+        cfg: Configuration dictionary with analysis settings
         activations_dict: Dict mapping layer names to activation tensors
         neural_data: Dict mapping stimulus IDs to neural responses
         keys: List of stimulus IDs in the order they were processed
-        cfg: Configuration dictionary with analysis settings
         
     Returns:
         DataFrame containing alignment scores and metadata for each layer

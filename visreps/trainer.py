@@ -7,8 +7,7 @@ from omegaconf import OmegaConf
 from visreps.dataloaders.obj_cls import get_obj_cls_loader
 from visreps.models import utils as model_utils
 import visreps.utils as utils
-from visreps.utils import calculate_cls_accuracy
-from visreps.utils import rprint
+from visreps.utils import calculate_cls_accuracy, rprint
 
 class Trainer:
     """Main trainer class for object classification models.
