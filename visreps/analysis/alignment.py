@@ -40,11 +40,7 @@ def compute_neural_alignment(
         raise ValueError(f"Unknown analysis type: {analysis_type}. Available types: {list(analysis_functions.keys())}")
     
     # Compute alignment using specified analysis
-    results, messages = analysis_functions[analysis_type](cfg, activations_dict, neural_responses)
-    
-    # Print analysis messages
-    for msg in messages:
-        rprint(msg, style="success")
+    results = analysis_functions[analysis_type](cfg, activations_dict, neural_responses)
     
     # Create DataFrame and add config info
     results_df = pd.DataFrame(results)
