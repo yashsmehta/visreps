@@ -2,20 +2,49 @@ import json
 import os
 import torch
 from omegaconf import OmegaConf
-from torchvision.models.feature_extraction import create_feature_extractor
-from rich import print
 import torch.nn as nn
+from typing import Dict
 
 from visreps.models import standard_cnn
 from visreps.models.custom_cnn import CustomCNN
+
+class FeatureExtractor(nn.Module):
+    def __init__(self, model: nn.Module, return_nodes: Dict[str, str]):
+        super().__init__()
+        self.model = model
+        self.return_nodes = return_nodes
+        self.features = {}
+        self._attach_hooks()
+        
+    def _attach_hooks(self):
+        self.handles = []
+        for name, module in self.model.named_modules():
+            if name in self.return_nodes:
+                handle = module.register_forward_hook(
+                    lambda m, inp, out, name=name: self.features.update({name: out})
+                )
+                self.handles.append(handle)
+    
+    def forward(self, x):
+        self.features.clear()  # Clear previous features
+        self.model(x)  # Run the full model
+        # Return features in the same format as create_feature_extractor
+        return {self.return_nodes[k]: v for k, v in self.features.items()}
+    
+    def __del__(self):
+        for handle in self.handles:
+            handle.remove()
 
 def configure_feature_extractor(cfg, model):
     return_nodes = OmegaConf.to_container(cfg.get("return_nodes", {}), resolve=True)
     if not return_nodes:
         raise ValueError("return_nodes must be specified in config")
     return_nodes = {node: node for node in return_nodes} if isinstance(return_nodes, list) else return_nodes
+    
+    # Use our custom feature extractor
+    model.eval()  # Ensure consistent behavior
     print(f"Extracting features from layers: {list(return_nodes.keys())}")
-    return create_feature_extractor(model, return_nodes=return_nodes)
+    return FeatureExtractor(model, return_nodes)
 
 
 def get_activations(model, dataloader, device):

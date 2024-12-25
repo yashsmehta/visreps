@@ -22,5 +22,6 @@ def eval(cfg):
     rprint("Computing RSA between neural data and model activations...", style="info")
     activations_dict, keys = model_utils.get_activations(model, dataloader, device)
     results_df = compute_neural_alignment(cfg, activations_dict, neural_data, keys)
-    save_results(results_df, cfg)
+    if cfg.log_expdata:
+        save_results(results_df, cfg)
     rprint("Evaluation complete!", style="success")
