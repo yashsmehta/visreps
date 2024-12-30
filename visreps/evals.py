@@ -19,7 +19,7 @@ def eval(cfg):
     neural_data, dataloader = get_neural_loader(cfg)
     
     # 3. Compute alignment and save results
-    rprint("Computing RSA between neural data and model activations...", style="info")
+    rprint("Computing alignment between neural data and model activations...", style="info")
     activations_dict, keys = model_utils.get_activations(model, dataloader, device)
     results_df = compute_neural_alignment(cfg, activations_dict, neural_data, keys)
     if cfg.log_expdata:
