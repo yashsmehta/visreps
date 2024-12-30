@@ -3,6 +3,7 @@ import pandas as pd
 from typing import Dict, List
 import torch
 from visreps.analysis.rsa import compute_rsa_alignment
+from visreps.analysis.regression.linear_regression import compute_linear_regression_alignment
 from visreps.utils import rprint
 
 def compute_neural_alignment(
@@ -31,9 +32,9 @@ def compute_neural_alignment(
     # Map analysis types to their computation functions
     analysis_functions = {
         'rsa': compute_rsa_alignment,
+        'linear_regression': compute_linear_regression_alignment,
         # Add more analysis types here as needed
         # 'cka': compute_cka_alignment,
-        # 'linear_regression': compute_linear_regression,
     }
     
     if analysis_type not in analysis_functions:
