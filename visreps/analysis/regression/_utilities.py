@@ -90,15 +90,20 @@ def regression_cv(
     *,
     x: torch.Tensor,
     y: torch.Tensor,
-    model: Regression,
+    model_class: type[Regression],   # e.g. LinearRegression
+    model_kwargs: dict,
     n_folds: int,
     shuffle: bool,
     seed: int,
 ) -> tuple[list[torch.Tensor], list[torch.Tensor]]:
-    y_true, y_predicted = [], []
 
+    y_true, y_predicted = [], []
     splits = create_splits(n=y.shape[-2], n_folds=n_folds, shuffle=shuffle, seed=seed)
+    
     for indices_test in splits:
+        # --- NEW MODEL EACH FOLD ---
+        model = model_class(**model_kwargs)
+        
         y_true_, y_predicted_ = regression(
             model=model,
             x=x,
