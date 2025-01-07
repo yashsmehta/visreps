@@ -64,6 +64,38 @@ def check_trainer_config(cfg):
     return cfg
 
 
+def merge_nested_config(cfg, source_key):
+    """Merge nested config into root."""
+    if source_key not in cfg:
+        return
+    
+    source = OmegaConf.to_container(cfg[source_key], resolve=True)
+    cfg.update(source)
+    del cfg[source_key]
+
+
+def load_config(config_path, overrides):
+    """Load config from file and apply CLI overrides."""
+    if not Path(config_path).exists():
+        raise FileNotFoundError(f"Config file not found: {config_path}")
+
+    cfg = OmegaConf.load(config_path)
+    
+    if cfg.mode == "train":
+        assert cfg.model_class in ["custom_cnn", "standard_cnn"], "model_class must be custom_cnn or standard_cnn"
+    else:
+        assert cfg.load_model_from in ["checkpoint", "torchvision"], "load_model_from must be checkpoint or torchvision"
+    
+    if source_key := (cfg.load_model_from if cfg.mode == "eval" else cfg.model_class):
+        other_key = {"eval": {"torchvision": "checkpoint", "checkpoint": "torchvision"},
+                    "train": {"custom_cnn": "standard_cnn", "standard_cnn": "custom_cnn"}}[cfg.mode][source_key]
+        if other_key in cfg:
+            del cfg[other_key]
+        merge_nested_config(cfg, source_key)
+
+    return OmegaConf.merge(cfg, OmegaConf.from_dotlist(overrides or []))
+
+
 def load_pickle(file_path):
     """Load data from pickle file"""
     try:
