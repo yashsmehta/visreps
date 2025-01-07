@@ -3,12 +3,17 @@ import random
 from pathlib import Path
 import os
 import pickle
+import warnings
 import torch
 import torch.optim as optim
 from filelock import FileLock, Timeout
 from rich.console import Console
 from rich.theme import Theme
 from omegaconf import OmegaConf
+
+# Suppress specific torch.load FutureWarning
+warnings.filterwarnings("ignore", category=FutureWarning, 
+                       message="You are using `torch.load` with `weights_only=False`.*")
 
 def setup_logging():
     """Initialize Rich with custom theme and return themed print function"""
