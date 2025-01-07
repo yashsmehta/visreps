@@ -29,7 +29,7 @@ def get_normalization(out_channels, norm_type):
         case _:
             raise ValueError(f"Unsupported normalization method: {norm_type}")
 
-def get_nonlinearity(nonlin_type, inplace=True):
+def get_nonlinearity(nonlin_type="relu", inplace=True):
     """
     Retrieve a nonlinearity activation function based on the specified type.
 
