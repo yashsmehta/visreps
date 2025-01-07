@@ -5,15 +5,31 @@
   "dataset": "tiny-imagenet",
   "optimizer": "adam",
   "learning_rate": 0.001,
-  "num_epochs": 10,
+  "num_epochs": 5,
   "log_interval": 2,
   "checkpoint_interval": 1,
-  "evaluate_train": true,
+  "evaluate_train": false,
   "num_classes": 200,
   "batchsize": 64,
   "log_checkpoints": true,
   "log_dir": "model_checkpoints/",
   "use_wandb": false,
   "exp_name": "base",
-  "model_class": "standard_cnn"
+
+  "model_class": "custom_cnn",
+  "custom_cnn": {
+    "model_name": "CustomCNN",
+    "arch": {
+      "nonlinearity": "relu",
+      "conv_trainable": "11111", 
+      "fc_trainable": "111",
+      "pooling_type": "max",
+      "dropout": true,
+      "batchnorm": true
+    }
+  },
+  "standard_cnn": {
+    "model_name": "AlexNet",
+    "pretrained_dataset": "none"
+  }
 }

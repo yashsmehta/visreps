@@ -1,9 +1,0 @@
-{
-  "return_nodes": {
-    "classifier.5": "classifier.5",
-    "features.10": "features.10"
-  },
-  "load_model_from": "torchvision",
-  "model_name": "AlexNet",
-  "pretrained": true
-}

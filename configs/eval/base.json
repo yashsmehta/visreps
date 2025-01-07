@@ -1,14 +1,23 @@
 {
   "mode": "eval",
-  "region": "early visual stream",
+  "region": "ventral visual stream",
   "subject_idx": 0,
   "analysis": "rsa",
   "neural_dataset": "nsd",
-  "log_expdata": false,
+  "log_expdata": true,
   "cfg_id": 1,
-  "exp_name": "base",
-  "epoch": 0,
+  "exp_name": "trial_rsa",
   "batchsize": 32,
-  "num_workers": 4,
-  "load_model_from": "torchvision"
+  "num_workers": 8,
+  "load_model_from": "checkpoint",
+  "return_nodes": ["conv5", "fc1"],
+  "torchvision":
+  {
+    "model_name": "AlexNet",
+    "pretrained_dataset": "imagenet1k"
+  },
+  "checkpoint":
+  {
+    "checkpoint_path": "model_checkpoints/base/cfg4/checkpoint_epoch_0.pth"
+  }
 }
