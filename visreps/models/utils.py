@@ -1,6 +1,7 @@
 import json
 import os
 import torch
+import torchvision
 from omegaconf import OmegaConf
 import torch.nn as nn
 from typing import Dict
@@ -9,27 +10,130 @@ from visreps.models import standard_cnn
 from visreps.models.custom_cnn import CustomCNN
 
 class FeatureExtractor(nn.Module):
-    def __init__(self, model: nn.Module, return_nodes: Dict[str, str]):
+    def __init__(self, model: nn.Module, return_nodes: Dict[str, str] = None):
         super().__init__()
         self.model = model
+        # If return_nodes is a list, convert to dict mapping name to itself
+        if isinstance(return_nodes, list):
+            return_nodes = {node: node for node in return_nodes}
         self.return_nodes = return_nodes
         self.features = {}
+        self.handles = []  # Initialize handles list
+        self.layer_mapping = self._create_layer_mapping()
+        print("\nLayer mapping:", self.layer_mapping)
         self._attach_hooks()
         
+    def _create_layer_mapping(self):
+        """Create mapping from semantic names (conv1, fc1) to actual layer paths"""
+        mapping = {}
+        conv_count = 1
+        fc_count = 1
+        
+        # Helper function to check if module is a conv or fc layer
+        def is_conv(module):
+            return isinstance(module, (nn.Conv1d, nn.Conv2d, nn.Conv3d))
+        def is_fc(module):
+            return isinstance(module, nn.Linear)
+        def is_main_conv(name, module):
+            """Check if this is a main conv layer (not a downsample/shortcut conv)"""
+            return is_conv(module) and 'downsample' not in name
+        
+        # Track seen modules to avoid duplicates
+        seen_modules = set()
+        
+        # Handle different model architectures
+        if isinstance(self.model, torchvision.models.resnet.ResNet):  # Fixed ResNet check
+            # ResNet specific mapping - maintain proper layer order
+            # First conv layer is special in ResNet
+            if hasattr(self.model, 'conv1'):
+                mapping[f'conv{conv_count}'] = 'conv1'
+                conv_count += 1
+                seen_modules.add(id(self.model.conv1))
+            
+            # Then handle layer blocks in order
+            for block_name in ['layer1', 'layer2', 'layer3', 'layer4']:
+                if hasattr(self.model, block_name):
+                    block = getattr(self.model, block_name)
+                    for sub_block_idx, sub_block in enumerate(block):
+                        # Get all convs in this sub_block except downsampling
+                        for name, module in sub_block.named_modules():
+                            if is_main_conv(name, module) and id(module) not in seen_modules:
+                                full_name = f'{block_name}.{sub_block_idx}.{name}'
+                                mapping[f'conv{conv_count}'] = full_name
+                                conv_count += 1
+                                seen_modules.add(id(module))
+            
+            # Handle final fc layer
+            if hasattr(self.model, 'fc'):
+                mapping['fc1'] = 'fc'
+                seen_modules.add(id(self.model.fc))
+                
+        elif hasattr(self.model, 'features') and hasattr(self.model, 'classifier'):
+            # AlexNet/VGG style
+            for name, module in self.model.features.named_modules():
+                if is_conv(module) and id(module) not in seen_modules:
+                    mapping[f'conv{conv_count}'] = f'features.{name}'
+                    conv_count += 1
+                    seen_modules.add(id(module))
+                    
+            for name, module in self.model.classifier.named_modules():
+                if is_fc(module) and id(module) not in seen_modules:
+                    mapping[f'fc{fc_count}'] = f'classifier.{name}'
+                    fc_count += 1
+                    seen_modules.add(id(module))
+                    
+        # Fallback: search all modules if no specific pattern matched
+        if not mapping:
+            for name, module in self.model.named_modules():
+                if id(module) in seen_modules:
+                    continue
+                    
+                if is_main_conv(name, module):
+                    mapping[f'conv{conv_count}'] = name
+                    conv_count += 1
+                    seen_modules.add(id(module))
+                elif is_fc(module):
+                    mapping[f'fc{fc_count}'] = name
+                    fc_count += 1
+                    seen_modules.add(id(module))
+        
+        # Print model-specific debug info
+        print(f"\nModel type: {type(self.model).__name__}")
+        print("Found layers:")
+        for semantic_name, path in sorted(mapping.items()):
+            module = dict(self.model.named_modules())[path]
+            print(f"{semantic_name}: {path} ({type(module).__name__})")
+        
+        return mapping
+        
     def _attach_hooks(self):
-        self.handles = []
+        # Convert semantic names to actual layer paths
+        actual_nodes = {}
+        for semantic_name in self.return_nodes:
+            if semantic_name in self.layer_mapping:
+                actual_path = self.layer_mapping[semantic_name]
+                actual_nodes[actual_path] = self.return_nodes[semantic_name]
+            else:
+                print(f"Warning: {semantic_name} not found in model")
+        
+        print(f"\nAttaching hooks to layers: {actual_nodes}")
+        
+        # Attach hooks using actual paths
         for name, module in self.model.named_modules():
-            if name in self.return_nodes:
-                handle = module.register_forward_hook(
-                    lambda m, inp, out, name=name: self.features.update({name: out})
-                )
+            if name in actual_nodes:
+                print(f"Attaching hook to {name}: {type(module).__name__}")
+                def get_hook(name):
+                    def hook(module, input, output):
+                        self.features[actual_nodes[name]] = output
+                    return hook
+                
+                handle = module.register_forward_hook(get_hook(name))
                 self.handles.append(handle)
     
     def forward(self, x):
-        self.features.clear()  # Clear previous features
-        self.model(x)  # Run the full model
-        # Return features in the same format as create_feature_extractor
-        return {self.return_nodes[k]: v for k, v in self.features.items()}
+        self.features.clear()
+        self.model(x)
+        return self.features
     
     def __del__(self):
         for handle in self.handles:
@@ -40,7 +144,6 @@ def configure_feature_extractor(cfg, model):
     if not return_nodes:
         raise ValueError("return_nodes must be specified in config")
     return_nodes = {node: node for node in return_nodes} if isinstance(return_nodes, list) else return_nodes
-    
     # Use our custom feature extractor
     model.eval()  # Ensure consistent behavior
     print(f"Extracting features from layers: {list(return_nodes.keys())}")
@@ -139,14 +242,14 @@ def load_model(cfg, device):
         model_fn = getattr(standard_cnn, model_name, None)
         if model_fn is None:
             raise ValueError(f"Model '{model_name}' not found in standard_cnn.")
-        pretrained = getattr(cfg, 'pretrained', True)
+        pretrained_dataset = getattr(cfg, 'pretrained_dataset', "none")
         num_classes = getattr(cfg, 'num_classes', 200)
         
         # Load model - classifier layer is already replaced in model_fn
-        model = model_fn(pretrained=pretrained, num_classes=num_classes)
+        model = model_fn(pretrained_dataset, num_classes)
         
         # Initialize the classifier weights if not using pretrained model
-        if not pretrained:
+        if pretrained_dataset == "none":
             if hasattr(model, 'classifier') and isinstance(model.classifier, nn.Sequential):
                 # For models like AlexNet, VGG
                 nn.init.xavier_uniform_(model.classifier[-1].weight)
