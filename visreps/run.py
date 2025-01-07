@@ -12,8 +12,6 @@ def main():
     
     args = parser.parse_args()
     cfg = utils.load_config(args.config or f"configs/{args.mode}/base.json", args.override)
-    print(cfg)
-    exit()
     
     if cfg.mode == "train":
         trainer = Trainer(cfg)
