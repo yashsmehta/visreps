@@ -67,6 +67,25 @@ def get_activations(model, dataloader, device):
     return activations_dict, all_keys
 
 
+def merge_checkpoint_config(cfg, checkpoint):
+    """
+    Update cfg in place with config from checkpoint, giving priority to current cfg.
+    Only adds keys from checkpoint that don't exist in current cfg.
+    
+    Args:
+        cfg (OmegaConf): Current configuration
+        checkpoint (dict): Loaded checkpoint containing 'config' and optionally 'epoch'
+    """
+    if 'config' in checkpoint:
+        checkpoint_cfg = OmegaConf.create(checkpoint['config'])
+        # Update only missing keys from checkpoint config
+        for key in checkpoint_cfg:
+            if key not in cfg:
+                cfg[key] = checkpoint_cfg[key]
+    if 'epoch' in checkpoint:
+        cfg.epoch = checkpoint['epoch']
+
+
 def load_model(cfg, device):
     """
     Load a model from checkpoint or initialize a new model.
@@ -87,11 +106,12 @@ def load_model(cfg, device):
     Returns:
         torch.nn.Module: The loaded or newly-initialized model.
     """
-    # If loading from checkpoint, short-circuit and return
+    # If loading from checkpoint, merge configs and return
     if getattr(cfg, 'load_model_from', None) == 'checkpoint':
         checkpoint_path = cfg.checkpoint_path
         checkpoint = torch.load(checkpoint_path, map_location=device)
         print(f"Loaded model from checkpoint: {checkpoint_path}")
+        merge_checkpoint_config(cfg, checkpoint)
         return checkpoint['model'].to(device)
 
     # Otherwise, determine model class and name
@@ -191,7 +211,7 @@ def save_checkpoint(checkpoint_dir, epoch, model, optimizer, metrics, cfg_dict):
     torch.save(
         {
             "epoch": epoch,
-            "model_state_dict": model.state_dict(),
+            "model": model,  # Save full model
             "optimizer_state_dict": optimizer.state_dict(),
             "metrics": metrics,
             "config": cfg_dict,
