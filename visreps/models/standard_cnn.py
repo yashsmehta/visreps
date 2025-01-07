@@ -1,48 +1,78 @@
 import torchvision.models as models
-from torchvision.models import (
-    ResNet50_Weights,
-    AlexNet_Weights,
-    VGG16_Weights,
-    DenseNet121_Weights,
-)
 import torch
 
-
-def AlexNet(pretrained=True, num_classes=200):
-    if pretrained:
-        alexnet = models.alexnet(weights=AlexNet_Weights.DEFAULT)
+def AlexNet(pretrained_dataset="imagenet1k", num_classes=200):
+    """AlexNet with optional ImageNet pretraining."""
+    if pretrained_dataset == "imagenet1k":
+        model = models.alexnet(weights=models.AlexNet_Weights.IMAGENET1K_V1)
+    elif pretrained_dataset == "none":
+        model = models.alexnet(weights=None)
     else:
-        alexnet = models.alexnet()
+        raise ValueError(f"Invalid pretrained dataset: {pretrained_dataset}")
+    
+    # Replace classifier
+    model.classifier[-1] = torch.nn.Linear(4096, num_classes)
+    
+    # Initialize the classifier weights if not using pretrained model
+    if pretrained_dataset == "none":
+        torch.nn.init.xavier_uniform_(model.classifier[-1].weight)
+        torch.nn.init.zeros_(model.classifier[-1].bias)
+    
+    return model
 
-    alexnet.classifier[-1] = torch.nn.Linear(4096, num_classes)
-    return alexnet
-
-
-def VGG16(pretrained=True, num_classes=200):
-    if pretrained:
-        vggnet = models.vgg16(weights=VGG16_Weights.DEFAULT)
+def VGG16(pretrained_dataset="imagenet1k", num_classes=200):
+    """VGG16 with optional ImageNet pretraining."""
+    if pretrained_dataset == "imagenet1k":
+        model = models.vgg16(weights=models.VGG16_Weights.IMAGENET1K_V1)
+    elif pretrained_dataset == "none":
+        model = models.vgg16(weights=None)
     else:
-        vggnet = models.vgg16()
+        raise ValueError(f"Invalid pretrained dataset: {pretrained_dataset}")
+    
+    # Replace classifier
+    model.classifier[-1] = torch.nn.Linear(4096, num_classes)
+    
+    # Initialize the classifier weights if not using pretrained model
+    if pretrained_dataset == "none":
+        torch.nn.init.xavier_uniform_(model.classifier[-1].weight)
+        torch.nn.init.zeros_(model.classifier[-1].bias)
+    
+    return model
 
-    vggnet.classifier[-1] = torch.nn.Linear(4096, num_classes)
-    return vggnet
-
-
-def ResNet50(pretrained=True, num_classes=200):
-    if pretrained:
-        resnet = models.resnet50(weights=ResNet50_Weights.DEFAULT)
+def ResNet18(pretrained_dataset="imagenet1k", num_classes=200):
+    """ResNet18 with optional ImageNet pretraining."""
+    if pretrained_dataset == "imagenet1k":
+        model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)
+    elif pretrained_dataset == "none":
+        model = models.resnet18(weights=None)
     else:
-        resnet = models.resnet50()
+        raise ValueError(f"Invalid pretrained dataset: {pretrained_dataset}")
+    
+    # Replace fc layer
+    model.fc = torch.nn.Linear(512, num_classes)
+    
+    # Initialize the fc weights if not using pretrained model
+    if pretrained_dataset == "none":
+        torch.nn.init.xavier_uniform_(model.fc.weight)
+        torch.nn.init.zeros_(model.fc.bias)
+    
+    return model
 
-    resnet.fc = torch.nn.Linear(2048, num_classes)
-    return resnet
-
-
-def DenseNet121(pretrained=True, num_classes=200):
-    if pretrained:
-        densenet = models.densenet121(weights=DenseNet121_Weights.DEFAULT)
+def ResNet50(pretrained_dataset="imagenet1k", num_classes=200):
+    """ResNet50 with optional ImageNet pretraining."""
+    if pretrained_dataset == "imagenet1k":
+        model = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V2)
+    elif pretrained_dataset == "none":
+        model = models.resnet50(weights=None)
     else:
-        densenet = models.densenet121()
-
-    densenet.classifier = torch.nn.Linear(1024, num_classes)
-    return densenet
+        raise ValueError(f"Invalid pretrained dataset: {pretrained_dataset}")
+    
+    # Replace fc layer
+    model.fc = torch.nn.Linear(2048, num_classes)
+    
+    # Initialize the fc weights if not using pretrained model
+    if pretrained_dataset == "none":
+        torch.nn.init.xavier_uniform_(model.fc.weight)
+        torch.nn.init.zeros_(model.fc.bias)
+    
+    return model
