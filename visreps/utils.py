@@ -130,13 +130,17 @@ def save_results(df, cfg, timeout=60):
     save_dir = Path('logs') / cfg.mode / cfg.load_model_from
     save_dir.mkdir(parents=True, exist_ok=True)
     results_path = save_dir / f"{cfg.exp_name}.csv"
-    lock = FileLock(str(results_path.with_suffix(".lock")), timeout=timeout)
+    lock_path = results_path.with_suffix(".lock")
+    lock = FileLock(str(lock_path), timeout=timeout)
     
     try:
         with lock:
             write_header = not results_path.exists()
             clean_df.to_csv(results_path, mode="a", header=write_header, index=False)
             rprint(f"Successfully saved results to {results_path}", style="success")
+        # Remove lock file after successful save
+        if lock_path.exists():
+            lock_path.unlink()
     except Timeout:
         rprint(f"ERROR: Could not acquire lock for {results_path} after {timeout}s", style="error")
         raise
