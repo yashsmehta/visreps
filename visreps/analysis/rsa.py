@@ -74,6 +74,7 @@ def compute_rsa_alignment(
     correlation = cfg.get('correlation', 'Pearson')
     n_bootstraps = cfg.get('n_bootstraps', 500)
     subsample_fraction = cfg.get('subsample_fraction', 0.9)
+    do_bootstrap = cfg.get('do_bootstrap', False)
     
     rprint(f"Computing RSA scores using {correlation} correlation...", style="info")
     
@@ -93,30 +94,35 @@ def compute_rsa_alignment(
         score = compute_rsm_correlation(layer_rsm, neural_rsm, correlation)
         rprint(f"Layer {layer:<20} RSA Score: {score:.4f}", style="highlight")
         
-        # Compute bootstrap scores
-        bootstrap_scores = bootstrap_correlation(
-            layer_rsm, neural_rsm,
-            n_bootstraps=n_bootstraps,
-            subsample_fraction=subsample_fraction,
-            correlation=correlation
-        )
-        
-        # Compute bootstrap statistics
-        bootstrap_mean = float(bootstrap_scores.mean())
-        bootstrap_std = float(bootstrap_scores.std())
-        bootstrap_ci = bootstrap_scores.quantile(torch.tensor([0.025, 0.975]))
-        print(f"Bootstrap results - Mean: {bootstrap_mean:.4f} ± {bootstrap_std:.4f}")
-        
-        # Store results
-        results.append({
+        result = {
             "layer": layer,
             "score": score,
             "analysis": "rsa",
             "correlation": correlation,
-            "bootstrap_mean": bootstrap_mean,
-            "bootstrap_std": bootstrap_std,
-            "bootstrap_ci_lower": float(bootstrap_ci[0]),
-            "bootstrap_ci_upper": float(bootstrap_ci[1])
-        })
+        }
+        
+        # Compute bootstrap scores if enabled
+        if do_bootstrap:
+            bootstrap_scores = bootstrap_correlation(
+                layer_rsm, neural_rsm,
+                n_bootstraps=n_bootstraps,
+                subsample_fraction=subsample_fraction,
+                correlation=correlation
+            )
+            
+            # Compute bootstrap statistics
+            bootstrap_mean = float(bootstrap_scores.mean())
+            bootstrap_std = float(bootstrap_scores.std())
+            bootstrap_ci = bootstrap_scores.quantile(torch.tensor([0.025, 0.975]))
+            print(f"Bootstrap results - Mean: {bootstrap_mean:.4f} ± {bootstrap_std:.4f}")
+            
+            result.update({
+                "bootstrap_mean": bootstrap_mean,
+                "bootstrap_std": bootstrap_std,
+                "bootstrap_ci_lower": float(bootstrap_ci[0]),
+                "bootstrap_ci_upper": float(bootstrap_ci[1])
+            })
+        
+        results.append(result)
         
     return results
