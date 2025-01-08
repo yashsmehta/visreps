@@ -20,7 +20,6 @@ class FeatureExtractor(nn.Module):
         self.features = {}
         self.handles = []  # Initialize handles list
         self.layer_mapping = self._create_layer_mapping()
-        print("\nLayer mapping:", self.layer_mapping)
         self._attach_hooks()
         
     def _create_layer_mapping(self):
@@ -97,12 +96,8 @@ class FeatureExtractor(nn.Module):
                     fc_count += 1
                     seen_modules.add(id(module))
         
-        # Print model-specific debug info
-        print(f"\nModel type: {type(self.model).__name__}")
-        print("Found layers:")
         for semantic_name, path in sorted(mapping.items()):
             module = dict(self.model.named_modules())[path]
-            print(f"{semantic_name}: {path} ({type(module).__name__})")
         
         return mapping
         
@@ -116,12 +111,9 @@ class FeatureExtractor(nn.Module):
             else:
                 print(f"Warning: {semantic_name} not found in model")
         
-        print(f"\nAttaching hooks to layers: {actual_nodes}")
-        
         # Attach hooks using actual paths
         for name, module in self.model.named_modules():
             if name in actual_nodes:
-                print(f"Attaching hook to {name}: {type(module).__name__}")
                 def get_hook(name):
                     def hook(module, input, output):
                         self.features[actual_nodes[name]] = output
