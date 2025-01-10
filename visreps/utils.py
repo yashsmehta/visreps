@@ -222,3 +222,195 @@ def calculate_cls_accuracy(data_loader, model, device):
         
     # Use float for stable division and percentage calculation
     return (100.0 * correct) / total
+
+class Logger:
+    """Unified logging class for training metrics and system stats."""
+    def __init__(self, use_wandb=True, log_system_metrics=True, cfg=None):
+        self.use_wandb = use_wandb
+        self.log_system_metrics = log_system_metrics
+        self.global_step = 0  # Add global step counter
+        
+        if use_wandb:
+            try:
+                import wandb
+                self.wandb = wandb
+                
+                # Check if wandb is logged in
+                if not wandb.api.api_key:
+                    rprint("WandB not authenticated. Please run 'wandb login' first.", style="error")
+                    self.use_wandb = False
+                    return
+                
+                # Set environment variables for minimal output
+                os.environ['WANDB_SILENT'] = 'true'
+                os.environ['WANDB_WATCH'] = 'gradients'  # Log gradients by default
+                
+                # Initialize wandb if config provided
+                if cfg is not None:
+                    project = getattr(cfg, 'exp_name', 'visreps')
+                    group = getattr(cfg, 'group', None)
+                    name = f"seed_{cfg.seed}"
+                    tags = [cfg.model_name, f"lr_{cfg.learning_rate}"]
+                    
+                    self.wandb.init(
+                        project=project,
+                        group=group,
+                        name=name,
+                        config=OmegaConf.to_container(cfg, resolve=True),
+                        tags=tags,
+                        notes=f"Training {cfg.model_name} with seed {cfg.seed}",
+                        settings=wandb.Settings(start_method="thread")
+                    )
+                    rprint(f"WandB initialized. View results at: {wandb.run.get_url()}", style="info")
+                
+                # Initialize metric definitions for proper x-axis alignment
+                wandb.define_metric("global_step")
+                wandb.define_metric("*", step_metric="global_step")
+                
+            except (ImportError, Exception) as e:
+                rprint(f"W&B import failed: {str(e)}", style="error")
+                self.use_wandb = False
+        
+    def _get_system_metrics(self):
+        """Collect system metrics if enabled."""
+        if not self.log_system_metrics:
+            return {}
+            
+        try:
+            import psutil
+            import GPUtil
+            
+            metrics = {
+                'system/memory_usage': psutil.Process().memory_info().rss / 1024 / 1024,  # MB
+                'system/cpu_percent': psutil.cpu_percent()
+            }
+            
+            if torch.cuda.is_available():
+                metrics.update({
+                    'system/gpu_utilization': GPUtil.getGPUs()[0].load,
+                    'system/gpu_memory': torch.cuda.memory_allocated() / 1024 / 1024
+                })
+                
+            return metrics
+        except Exception:
+            return {}  # Fail silently on system metrics errors
+        
+    def log_batch(self, batch_idx, metrics):
+        """Log batch-level metrics with optional system stats."""
+        if not self.use_wandb:
+            return
+            
+        try:
+            combined_metrics = {
+                "global_step": self.global_step,
+                **metrics,
+                **self._get_system_metrics()
+            }
+            self.wandb.log(combined_metrics)
+            self.global_step += 1  # Increment global step
+        except Exception as e:
+            rprint(f"W&B batch logging failed: {str(e)}", style="warning")
+        
+    def log_epoch(self, metrics):
+        """Log epoch-level metrics with optional system stats."""
+        if not self.use_wandb:
+            return
+            
+        try:
+            combined_metrics = {
+                "global_step": self.global_step,
+                **metrics,
+                **self._get_system_metrics()
+            }
+            self.wandb.log(combined_metrics)
+        except Exception as e:
+            rprint(f"W&B epoch logging failed: {str(e)}", style="warning")
+        
+    def log_gradients(self, model, epoch):
+        """Log model gradient histograms."""
+        if not self.use_wandb:
+            return
+            
+        try:
+            gradient_dict = {
+                "global_step": self.global_step,
+                **{f'gradients/{name}': self.wandb.Histogram(param.grad.cpu().numpy())
+                   for name, param in model.named_parameters()
+                   if param.grad is not None}
+            }
+            self.wandb.log(gradient_dict)
+        except Exception as e:
+            rprint(f"W&B gradient logging failed: {str(e)}", style="warning")
+
+# Global logger instance
+_logger = None
+
+def get_logger(use_wandb=True, log_system_metrics=True, cfg=None):
+    """Get or create the global logger instance."""
+    global _logger
+    if _logger is None:
+        _logger = Logger(use_wandb, log_system_metrics, cfg)
+    return _logger
+
+def log_batch_metrics(batch_idx, metrics, use_wandb=True):
+    """Log batch-level training metrics to W&B."""
+    get_logger(use_wandb).log_batch(batch_idx, metrics)
+
+def log_epoch_metrics(epoch_metrics, use_wandb=True):
+    """Log epoch-level training metrics to W&B."""
+    get_logger(use_wandb).log_epoch(epoch_metrics)
+
+def log_model_gradients(model, epoch, use_wandb=True):
+    """Log model gradient histograms to W&B."""
+    get_logger(use_wandb).log_gradients(model, epoch)
+
+def setup_optimizer(model, cfg):
+    """Setup optimizer with weight decay."""
+    optimizer_cls = get_optimizer_class(cfg.optimizer)
+    param_groups = [
+        {'params': [p for n, p in model.named_parameters() if 'bias' not in n], 'weight_decay': 1e-4},
+        {'params': [p for n, p in model.named_parameters() if 'bias' in n], 'weight_decay': 0}
+    ]
+    return optimizer_cls(param_groups, lr=cfg.learning_rate)
+
+def setup_scheduler(optimizer, cfg, steps_per_epoch):
+    """Setup learning rate scheduler with warmup."""
+    warmup_epochs = 5
+    return torch.optim.lr_scheduler.OneCycleLR(
+        optimizer,
+        max_lr=cfg.learning_rate,
+        epochs=cfg.num_epochs,
+        steps_per_epoch=steps_per_epoch,
+        pct_start=warmup_epochs/cfg.num_epochs
+    )
+
+def log_training_step(logger, cfg, batch_idx, loss, lr):
+    """Log training step metrics."""
+    if batch_idx % 100 == 0 and cfg.use_wandb:
+        logger.log_batch(batch_idx, {
+            'train/batch_loss': loss,
+            'train/learning_rate': lr,
+        })
+
+def log_training_metrics(logger, cfg, epoch, loss, metrics, scheduler):
+    """Log training metrics with rich console output."""
+    if cfg.use_wandb:
+        # Log epoch metrics
+        logger.log_epoch({
+            'train/epoch': epoch,
+            'train/loss': loss,
+            'train/accuracy': metrics.get('train_acc', 0),
+            'eval/test_accuracy': metrics['test_acc'],
+            'eval/epoch': epoch,
+            'train/learning_rate': scheduler.get_last_lr()[0],
+        })
+        
+        # Log model gradients histogram periodically
+        if epoch % 5 == 0:
+            logger.log_gradients(model, epoch)
+        
+    # Print metrics every epoch
+    status = f"Epoch [{epoch}/{cfg.num_epochs}] Loss: {loss:.6f} Test Acc: {metrics['test_acc']:.2f}%"
+    if 'train_acc' in metrics:
+        status += f" Train Acc: {metrics['train_acc']:.2f}%"
+    rprint(status, style="info")
