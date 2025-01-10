@@ -14,6 +14,8 @@ from omegaconf import OmegaConf
 # Suppress specific torch.load FutureWarning
 warnings.filterwarnings("ignore", category=FutureWarning, 
                        message="You are using `torch.load` with `weights_only=False`.*")
+warnings.filterwarnings("ignore", category=UserWarning,
+                       message="Corrupt EXIF data.*")
 
 def setup_logging():
     """Initialize Rich with custom theme and return themed print function"""
@@ -34,25 +36,37 @@ rprint = setup_logging()
 def check_trainer_config(cfg):
     """
     Validates the trainer configuration for the number of elements and content in 'conv_trainable' and 'fc_trainable'.
-
-    This function checks that the 'conv_trainable' list contains exactly 5 elements and that each element is either '0' or '1'.
-    Similarly, it ensures the 'fc_trainable' list contains exactly 3 elements, each of which must also be '0' or '1'.
-    These checks ensure that the configuration adheres to expected format and content, which is critical for the training process.
+    Also validates and sets dataset-specific parameters like num_classes and default batch size.
 
     Args:
-        cfg (OmegaConf): The configuration object containing 'conv_trainable' and 'fc_trainable' attributes.
+        cfg (OmegaConf): The configuration object containing training parameters.
 
     Returns:
-        OmegaConf: The validated configuration object.
+        OmegaConf: The validated and potentially modified configuration object.
 
     Raises:
-        AssertionError: If any of the conditions on 'conv_trainable' or 'fc_trainable' are not met.
+        AssertionError: If any of the configuration conditions are not met.
     """
+    # Check model class
     assert cfg.model_class in [
         "custom_cnn",
         "standard_cnn",
     ], "model_class must be one of 'custom_cnn', 'standard_cnn'!"
     
+    # Set dataset-specific num_classes
+    if cfg.dataset == "imagenet":
+        cfg.num_classes = 1000
+    elif cfg.dataset == "tiny-imagenet":
+        cfg.num_classes = 200
+    else:
+        raise ValueError(f"Unsupported dataset: {cfg.dataset}")
+    
+    # Set default batch size if not specified
+    if not hasattr(cfg, "batchsize"):
+        cfg.batchsize = 32
+        rprint(f"Using default batch size: {cfg.batchsize}", style="info")
+    
+    # Check custom CNN architecture parameters if applicable
     if cfg.model_class == "custom_cnn":
         assert all(
             char in "01" for char in cfg.arch.conv_trainable
