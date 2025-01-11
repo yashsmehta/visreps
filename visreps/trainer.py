@@ -2,8 +2,6 @@ import torch
 import wandb
 import torch.nn as nn
 from tqdm import tqdm
-from omegaconf import OmegaConf
-import os
 
 from visreps.dataloaders.obj_cls import get_obj_cls_loader
 from visreps.models import utils as model_utils
