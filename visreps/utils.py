@@ -243,16 +243,16 @@ class Logger:
                 
                 # Set environment variables for minimal output
                 os.environ['WANDB_SILENT'] = 'true'
-                os.environ['WANDB_WATCH'] = 'gradients'  # Log gradients by default
                 
                 # Initialize wandb if config provided
                 if cfg is not None:
-                    project = getattr(cfg, 'exp_name', 'visreps')
+                    project = "imagenet-train"  # Use specific project name
                     group = getattr(cfg, 'group', None)
                     name = f"seed_{cfg.seed}"
                     tags = [cfg.model_name, f"lr_{cfg.learning_rate}"]
                     
                     self.wandb.init(
+                        entity="visreps",  # Use team name
                         project=project,
                         group=group,
                         name=name,
@@ -263,12 +263,11 @@ class Logger:
                     )
                     rprint(f"WandB initialized. View results at: {wandb.run.get_url()}", style="info")
                 
-                # Initialize metric definitions for proper x-axis alignment
-                wandb.define_metric("global_step")
-                wandb.define_metric("*", step_metric="global_step")
+                    # Use epoch as x-axis for all metrics
+                    wandb.define_metric("*", step_metric="epoch")
                 
             except (ImportError, Exception) as e:
-                rprint(f"W&B import failed: {str(e)}", style="error")
+                rprint(f"W&B import failed with error: {str(e)}\nFull error: {repr(e)}", style="error")
                 self.use_wandb = False
         
     def _get_system_metrics(self):
@@ -360,10 +359,6 @@ def log_epoch_metrics(epoch_metrics, use_wandb=True):
     """Log epoch-level training metrics to W&B."""
     get_logger(use_wandb).log_epoch(epoch_metrics)
 
-def log_model_gradients(model, epoch, use_wandb=True):
-    """Log model gradient histograms to W&B."""
-    get_logger(use_wandb).log_gradients(model, epoch)
-
 def setup_optimizer(model, cfg):
     """Setup optimizer with weight decay."""
     optimizer_cls = get_optimizer_class(cfg.optimizer)
@@ -386,28 +381,24 @@ def setup_scheduler(optimizer, cfg, steps_per_epoch):
 
 def log_training_step(logger, cfg, batch_idx, loss, lr):
     """Log training step metrics."""
-    if batch_idx % 100 == 0 and cfg.use_wandb:
-        logger.log_batch(batch_idx, {
-            'train/batch_loss': loss,
-            'train/learning_rate': lr,
-        })
+    # No batch-level logging - progress bar will handle this
+    pass
 
 def log_training_metrics(logger, cfg, epoch, loss, metrics, scheduler):
     """Log training metrics with rich console output."""
     if cfg.use_wandb:
-        # Log epoch metrics
-        logger.log_epoch({
-            'train/epoch': epoch,
-            'train/loss': loss,
-            'train/accuracy': metrics.get('train_acc', 0),
-            'eval/test_accuracy': metrics['test_acc'],
-            'eval/epoch': epoch,
-            'train/learning_rate': scheduler.get_last_lr()[0],
-        })
+        # Log all metrics under training namespace
+        log_dict = {
+            'epoch': epoch,
+            'training/loss': loss,
+            'training/test-acc': metrics['test_acc']
+        }
         
-        # Log model gradients histogram periodically
-        if epoch % 5 == 0:
-            logger.log_gradients(model, epoch)
+        # Add train accuracy if enabled
+        if 'train_acc' in metrics:
+            log_dict['training/train-acc'] = metrics['train_acc']
+            
+        logger.wandb.log(log_dict)
         
     # Print metrics every epoch
     status = f"Epoch [{epoch}/{cfg.num_epochs}] Loss: {loss:.6f} Test Acc: {metrics['test_acc']:.2f}%"
