@@ -37,6 +37,8 @@ class Trainer:
         
         # Initialize wandb logging if enabled
         if self.cfg.use_wandb:
+            # Add train loader length to config for fractional epoch calculation
+            self.cfg.train_loader_len = len(self.loaders["train"])
             rprint("Initializing W&B logging...", style="highlight")
             self.logger = get_logger(use_wandb=True, log_system_metrics=True, cfg=self.cfg)
             
@@ -53,12 +55,12 @@ class Trainer:
         self.model.eval()
         return calculate_cls_accuracy(self.loaders[split], self.model, self.device)
 
-    def train_epoch(self):
-        """Train for one epoch with enhanced logging"""
+    def train_epoch(self, epoch):
+        """Train for one epoch with per-batch logging"""
         self.model.train()
-        total_loss = 0.0
         num_batches = len(self.loaders["train"])
         progress_bar = tqdm(self.loaders["train"], desc="Training")
+        last_loss = None
         
         for i, (images, labels) in enumerate(progress_bar):
             # Move data to device and compute forward pass
@@ -74,13 +76,13 @@ class Trainer:
             
             # Logging
             curr_lr = self.scheduler.get_last_lr()[0]
-            utils.log_training_step(self.logger, self.cfg, i, loss.item(), curr_lr)
+            last_loss = loss.item()
+            utils.log_training_step(self.logger, self.cfg, epoch, i, last_loss, curr_lr)
             
             # Update progress
-            total_loss += loss.item()
-            progress_bar.set_postfix({'loss': f'{loss.item():.4f}', 'lr': f'{curr_lr:.6f}'})
-            
-        return total_loss / num_batches
+            progress_bar.set_postfix({'loss': f'{last_loss:.4f}', 'lr': f'{curr_lr:.6f}'})
+        
+        return last_loss
 
     def log_metrics(self, epoch, loss, metrics):
         """Log training metrics"""
@@ -92,11 +94,10 @@ class Trainer:
         
         for epoch in range(1, self.cfg.num_epochs + 1):
             # Train and evaluate
-            loss = self.train_epoch()
+            epoch_loss = self.train_epoch(epoch)
             test_acc = self.evaluate("test")
             metrics = {
                 "epoch": epoch,
-                "loss": loss,
                 "test_acc": test_acc
             }
             
@@ -104,7 +105,7 @@ class Trainer:
                 metrics["train_acc"] = self.evaluate("train")
                 
             # Logging and checkpoints
-            self.log_metrics(epoch, loss, metrics)
+            self.log_metrics(epoch, epoch_loss, metrics)
             
             if self.cfg.log_checkpoints and epoch % self.cfg.checkpoint_interval == 0:
                 rprint(f"Saving checkpoint at epoch {epoch}...", style="setup")

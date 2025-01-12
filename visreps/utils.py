@@ -228,7 +228,6 @@ class Logger:
     def __init__(self, use_wandb=True, log_system_metrics=True, cfg=None):
         self.use_wandb = use_wandb
         self.log_system_metrics = log_system_metrics
-        self.global_step = 0  # Add global step counter
         
         if use_wandb:
             try:
@@ -246,14 +245,13 @@ class Logger:
                 
                 # Initialize wandb if config provided
                 if cfg is not None:
-                    project = "imagenet-train"  # Use specific project name
-                    group = getattr(cfg, 'group', None)
-                    name = f"seed_{cfg.seed}"
-                    tags = [cfg.model_name, f"lr_{cfg.learning_rate}"]
+                    group = f"seed_{cfg.seed}"
+                    name = f"{cfg.model_name}_{cfg.model_class}"
+                    tags = [cfg.model_class, f"lr_{cfg.learning_rate}"]
                     
                     self.wandb.init(
                         entity="visreps",  # Use team name
-                        project=project,
+                        project=cfg.dataset,
                         group=group,
                         name=name,
                         config=OmegaConf.to_container(cfg, resolve=True),
@@ -269,77 +267,14 @@ class Logger:
             except (ImportError, Exception) as e:
                 rprint(f"W&B import failed with error: {str(e)}\nFull error: {repr(e)}", style="error")
                 self.use_wandb = False
-        
-    def _get_system_metrics(self):
-        """Collect system metrics if enabled."""
-        if not self.log_system_metrics:
-            return {}
-            
-        try:
-            import psutil
-            import GPUtil
-            
-            metrics = {
-                'system/memory_usage': psutil.Process().memory_info().rss / 1024 / 1024,  # MB
-                'system/cpu_percent': psutil.cpu_percent()
-            }
-            
-            if torch.cuda.is_available():
-                metrics.update({
-                    'system/gpu_utilization': GPUtil.getGPUs()[0].load,
-                    'system/gpu_memory': torch.cuda.memory_allocated() / 1024 / 1024
-                })
                 
-            return metrics
-        except Exception:
-            return {}  # Fail silently on system metrics errors
-        
-    def log_batch(self, batch_idx, metrics):
-        """Log batch-level metrics with optional system stats."""
-        if not self.use_wandb:
-            return
-            
-        try:
-            combined_metrics = {
-                "global_step": self.global_step,
-                **metrics,
-                **self._get_system_metrics()
-            }
-            self.wandb.log(combined_metrics)
-            self.global_step += 1  # Increment global step
-        except Exception as e:
-            rprint(f"W&B batch logging failed: {str(e)}", style="warning")
-        
-    def log_epoch(self, metrics):
-        """Log epoch-level metrics with optional system stats."""
-        if not self.use_wandb:
-            return
-            
-        try:
-            combined_metrics = {
-                "global_step": self.global_step,
-                **metrics,
-                **self._get_system_metrics()
-            }
-            self.wandb.log(combined_metrics)
-        except Exception as e:
-            rprint(f"W&B epoch logging failed: {str(e)}", style="warning")
-        
-    def log_gradients(self, model, epoch):
-        """Log model gradient histograms."""
-        if not self.use_wandb:
-            return
-            
-        try:
-            gradient_dict = {
-                "global_step": self.global_step,
-                **{f'gradients/{name}': self.wandb.Histogram(param.grad.cpu().numpy())
-                   for name, param in model.named_parameters()
-                   if param.grad is not None}
-            }
-            self.wandb.log(gradient_dict)
-        except Exception as e:
-            rprint(f"W&B gradient logging failed: {str(e)}", style="warning")
+    def log(self, metrics):
+        """Log metrics to wandb."""
+        if self.use_wandb:
+            try:
+                self.wandb.log(metrics)
+            except Exception as e:
+                rprint(f"W&B logging failed: {str(e)}", style="warning")
 
 # Global logger instance
 _logger = None
@@ -379,10 +314,16 @@ def setup_scheduler(optimizer, cfg, steps_per_epoch):
         pct_start=warmup_epochs/cfg.num_epochs
     )
 
-def log_training_step(logger, cfg, batch_idx, loss, lr):
+def log_training_step(logger, cfg, epoch, batch_idx, loss, lr):
     """Log training step metrics."""
-    # No batch-level logging - progress bar will handle this
-    pass
+    if cfg.use_wandb:
+        # Convert batch_idx to fractional epoch for smooth curves
+        fractional_epoch = epoch - 1 + (batch_idx / logger.wandb.run.config.train_loader_len)
+        logger.log({
+            'epoch': fractional_epoch,
+            'training/loss': loss,
+            'training/learning_rate': lr
+        })
 
 def log_training_metrics(logger, cfg, epoch, loss, metrics, scheduler):
     """Log training metrics with rich console output."""
@@ -390,7 +331,6 @@ def log_training_metrics(logger, cfg, epoch, loss, metrics, scheduler):
         # Log all metrics under training namespace
         log_dict = {
             'epoch': epoch,
-            'training/loss': loss,
             'training/test-acc': metrics['test_acc']
         }
         
@@ -398,10 +338,10 @@ def log_training_metrics(logger, cfg, epoch, loss, metrics, scheduler):
         if 'train_acc' in metrics:
             log_dict['training/train-acc'] = metrics['train_acc']
             
-        logger.wandb.log(log_dict)
+        logger.log(log_dict)
         
     # Print metrics every epoch
-    status = f"Epoch [{epoch}/{cfg.num_epochs}] Loss: {loss:.6f} Test Acc: {metrics['test_acc']:.2f}%"
+    status = f"Epoch [{epoch}/{cfg.num_epochs}] Test Acc: {metrics['test_acc']:.2f}%"
     if 'train_acc' in metrics:
         status += f" Train Acc: {metrics['train_acc']:.2f}%"
     rprint(status, style="info")
