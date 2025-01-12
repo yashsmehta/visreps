@@ -13,7 +13,7 @@ urls = { Homepage = "https://github.com/yashsmehta/visreps", Repository = "https
 dependencies = [
     "torch>=2.5",
     "torchvision",
-    "torchaudio", 
+    "torchaudio",
     "pandas>=2.2.3",
     "numpy>=1.26.4",
     "omegaconf>=2.3.0",
@@ -25,7 +25,8 @@ dependencies = [
     "xarray>=2024.1.1",
     "rich>=13.7.0",
     "seaborn>=0.13.2",
-    "matplotlib>=3.10.0"
+    "matplotlib>=3.10.0",
+    "gputil>=1.4.0",
 ]
 
 [project.optional-dependencies]
