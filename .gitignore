@@ -14,5 +14,6 @@ playground/
 benchmarks/
 scripts/
 .venv/
+.env
 .vscode/
 settings.json
