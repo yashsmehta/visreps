@@ -203,7 +203,34 @@ def prepare_mnist_data(cfg: Dict) -> Tuple[Dict, Dict[str, DataLoader]]:
     
     return datasets_dict, loaders_dict
 
-def prepare_cifar10_data(cfg: Dict) -> Tuple[Dict, Dict[str, DataLoader]]:
+class CIFAR10PCADataset(Dataset):
+    """CIFAR10 dataset with PCA-derived labels"""
+    def __init__(self, base_dataset, pca_labels_path):
+        self.dataset = base_dataset
+        self.pca_labels = []  # Store labels in order they appear in CSV
+        
+        # Load PCA labels from CSV
+        with open(pca_labels_path, 'r') as f:
+            # Skip header
+            header = f.readline()
+            # Read label mappings
+            for line in f:
+                img_name, label = line.strip().split(',')
+                self.pca_labels.append(int(label))
+                
+        if len(self.pca_labels) != len(base_dataset):
+            print(f"Warning: Number of PCA labels ({len(self.pca_labels)}) does not match dataset size ({len(base_dataset)})")
+                
+    def __len__(self):
+        return len(self.dataset)
+    
+    def __getitem__(self, idx):
+        img, _ = self.dataset[idx]  # Ignore original label
+        # Use modulo to handle cases where dataset size doesn't match labels
+        pca_label = self.pca_labels[idx % len(self.pca_labels)]
+        return img, pca_label
+
+def prepare_cifar10_data(cfg: Dict, pca_labels: bool = False) -> Tuple[Dict, Dict[str, DataLoader]]:
     """Prepare CIFAR-10 datasets and dataloaders"""
     base_path = cfg.get("dataset_path") or os.path.join("datasets", "obj_cls", "cifar10")
     splits = ["train", "test"]
@@ -213,12 +240,24 @@ def prepare_cifar10_data(cfg: Dict) -> Tuple[Dict, Dict[str, DataLoader]]:
     
     for split in splits:
         transform = get_cifar10_transform(data_augment=(split == "train" and cfg.get("data_augment", True)))
-        dataset = datasets.CIFAR10(
+        base_dataset = datasets.CIFAR10(
             base_path,
             train=(split == "train"),
             transform=transform,
             download=True
         )
+        
+        if pca_labels:  # Apply PCA labels to both train and test
+            pca_labels_path = os.path.join(base_path, "pca_labels", "n_bits_3.csv")
+            if not os.path.exists(pca_labels_path):
+                print(f"Warning: PCA labels file not found at {pca_labels_path}, using original labels")
+                dataset = base_dataset
+            else:
+                dataset = CIFAR10PCADataset(base_dataset, pca_labels_path)
+                print(f"Using PCA labels for {split} set")
+        else:
+            dataset = base_dataset
+            
         datasets_dict[split] = dataset
         
         loader = DataLoader(
@@ -299,13 +338,14 @@ def prepare_imgnet_data(cfg: Dict) -> Tuple[Dict, Dict[str, DataLoader]]:
     
     return datasets_dict, loaders_dict
 
-def get_obj_cls_loader(cfg: Dict) -> Tuple[Dict, Dict[str, DataLoader]]:
+def get_obj_cls_loader(cfg, pca_labels=True):
     """
     Prepare object classification datasets and loaders based on config.
     Currently supports 'tiny-imagenet', 'imagenet', 'mnist', and 'cifar10'.
     
     Args:
         cfg: Configuration dictionary
+        pca_labels: Whether to use PCA-derived labels (currently only supported for CIFAR-10)
         
     Returns:
         Tuple of (datasets_dict, loaders_dict) where each dict maps split names to 
@@ -319,6 +359,6 @@ def get_obj_cls_loader(cfg: Dict) -> Tuple[Dict, Dict[str, DataLoader]]:
     elif dataset == "mnist":
         return prepare_mnist_data(cfg)
     elif dataset == "cifar10":
-        return prepare_cifar10_data(cfg)
+        return prepare_cifar10_data(cfg, pca_labels)
     else:
         raise ValueError(f"Unknown dataset: {dataset}")
