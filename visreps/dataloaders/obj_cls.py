@@ -10,10 +10,14 @@ from PIL import Image
 DS_MEAN = {
     "tiny-imagenet": [0.480, 0.448, 0.398],
     "imgnet": [0.485, 0.456, 0.406],
+    "mnist": [0.1307],
+    "cifar10": [0.4914, 0.4822, 0.4465],
 }
 DS_STD = {
     "tiny-imagenet": [0.272, 0.265, 0.274],
     "imgnet": [0.229, 0.224, 0.225],
+    "mnist": [0.3081],
+    "cifar10": [0.2023, 0.1994, 0.2010],
 }
 
 def get_transform(ds_stats="imgnet", data_augment=False, image_size=224):
@@ -140,6 +144,96 @@ def create_imgnet_dataloader(
         pin_memory=True
     )
 
+def get_mnist_transform(data_augment=False):
+    """Return a transform for MNIST dataset."""
+    transforms_list = []
+    if data_augment:
+        transforms_list.extend([
+            transforms.RandomRotation(10),
+            transforms.RandomAffine(degrees=0, translate=(0.1, 0.1)),
+        ])
+    transforms_list.extend([
+        transforms.ToTensor(),
+        transforms.Normalize(DS_MEAN["mnist"], DS_STD["mnist"]),
+    ])
+    return transforms.Compose(transforms_list)
+
+def get_cifar10_transform(data_augment=False):
+    """Return a transform for CIFAR-10 dataset."""
+    transforms_list = []
+    if data_augment:
+        transforms_list.extend([
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
+        ])
+    transforms_list.extend([
+        transforms.ToTensor(),
+        transforms.Normalize(DS_MEAN["cifar10"], DS_STD["cifar10"]),
+    ])
+    return transforms.Compose(transforms_list)
+
+def prepare_mnist_data(cfg: Dict) -> Tuple[Dict, Dict[str, DataLoader]]:
+    """Prepare MNIST datasets and dataloaders"""
+    base_path = cfg.get("dataset_path") or os.path.join("datasets", "obj_cls", "mnist")
+    splits = ["train", "test"]
+    
+    datasets_dict = {}
+    loaders_dict = {}
+    
+    for split in splits:
+        transform = get_mnist_transform(data_augment=(split == "train" and cfg.get("data_augment", True)))
+        dataset = datasets.MNIST(
+            base_path,
+            train=(split == "train"),
+            transform=transform,
+            download=True
+        )
+        datasets_dict[split] = dataset
+        
+        loader = DataLoader(
+            dataset,
+            batch_size=cfg.get("batchsize", 32),
+            shuffle=(split == "train"),
+            num_workers=cfg.get("num_workers", 8),
+            pin_memory=True
+        )
+        loaders_dict[split] = loader
+        
+        print(f"Created {split} dataset with {len(dataset)} samples")
+    
+    return datasets_dict, loaders_dict
+
+def prepare_cifar10_data(cfg: Dict) -> Tuple[Dict, Dict[str, DataLoader]]:
+    """Prepare CIFAR-10 datasets and dataloaders"""
+    base_path = cfg.get("dataset_path") or os.path.join("datasets", "obj_cls", "cifar10")
+    splits = ["train", "test"]
+    
+    datasets_dict = {}
+    loaders_dict = {}
+    
+    for split in splits:
+        transform = get_cifar10_transform(data_augment=(split == "train" and cfg.get("data_augment", True)))
+        dataset = datasets.CIFAR10(
+            base_path,
+            train=(split == "train"),
+            transform=transform,
+            download=True
+        )
+        datasets_dict[split] = dataset
+        
+        loader = DataLoader(
+            dataset,
+            batch_size=cfg.get("batchsize", 32),
+            shuffle=(split == "train"),
+            num_workers=cfg.get("num_workers", 8),
+            pin_memory=True
+        )
+        loaders_dict[split] = loader
+        
+        print(f"Created {split} dataset with {len(dataset)} samples")
+    
+    return datasets_dict, loaders_dict
+
 def prepare_tinyimgnet_data(cfg: Dict) -> Tuple[Dict, Dict[str, DataLoader]]:
     """Prepare Tiny ImageNet datasets and dataloaders"""
     base_path = cfg.get("dataset_path") or os.path.join("datasets", "obj_cls", "tiny-imagenet-200")
@@ -208,7 +302,7 @@ def prepare_imgnet_data(cfg: Dict) -> Tuple[Dict, Dict[str, DataLoader]]:
 def get_obj_cls_loader(cfg: Dict) -> Tuple[Dict, Dict[str, DataLoader]]:
     """
     Prepare object classification datasets and loaders based on config.
-    Currently supports 'tiny-imagenet' and 'imagenet'.
+    Currently supports 'tiny-imagenet', 'imagenet', 'mnist', and 'cifar10'.
     
     Args:
         cfg: Configuration dictionary
@@ -222,5 +316,9 @@ def get_obj_cls_loader(cfg: Dict) -> Tuple[Dict, Dict[str, DataLoader]]:
         return prepare_tinyimgnet_data(cfg)
     elif dataset == "imagenet":
         return prepare_imgnet_data(cfg)
+    elif dataset == "mnist":
+        return prepare_mnist_data(cfg)
+    elif dataset == "cifar10":
+        return prepare_cifar10_data(cfg)
     else:
         raise ValueError(f"Unknown dataset: {dataset}")
