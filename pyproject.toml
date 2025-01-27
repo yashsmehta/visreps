@@ -27,6 +27,7 @@ dependencies = [
     "seaborn>=0.13.2",
     "matplotlib>=3.10.0",
     "gputil>=1.4.0",
+    "scikit-learn>=1.6.1",
 ]
 
 [project.optional-dependencies]
