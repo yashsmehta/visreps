@@ -2,9 +2,8 @@ import xarray as xr
 import numpy as np
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
-import matplotlib.pyplot as plt
-import pandas as pd
 import os
+import pandas as pd
 
 # Number of bits for classification (will create 2^n classes)
 n_bits = 3  # This will create 2^n_bits classes. Change this to get different numbers of classes
@@ -65,9 +64,13 @@ print("\nClass distribution:")
 for i in range(2**n_bits):
     print(f"Class {i}: {np.sum(class_labels == i)} samples")
 
-# Save results in a text file
-output_file = os.path.join(labels_dir, f"n_bits_{n_bits}.txt")
-with open(output_file, 'w') as f:
-    for img_name, label in zip(image_names, class_labels):
-        f.write(f"{img_name} {label}\n")
+# Save results as DataFrame
+df = pd.DataFrame({
+    'image': image_names,
+    'label': class_labels
+})
+
+# Save DataFrame as CSV
+output_csv_file = os.path.join(labels_dir, f"n_bits_{n_bits}.csv")
+df.to_csv(output_csv_file, index=False)
 
