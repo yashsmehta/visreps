@@ -12,7 +12,6 @@ model_checkpoints/
 wandb/
 playground/
 benchmarks/
-scripts/
 .venv/
 .env
 .vscode/
