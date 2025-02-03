@@ -1,76 +1,105 @@
-import xarray as xr
+import os
 import numpy as np
+import pandas as pd
+import xarray as xr
+import argparse
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
-import os
-import pandas as pd
 
-# Number of bits for classification (will create 2^n classes)
-n_bits = 3  # This will create 2^n_bits classes. Change this to get different numbers of classes
 
-# Load the features
-features_path = "datasets/obj_cls/cifar10/classification_features.nc"
-base_dir = os.path.dirname(features_path)
-labels_dir = os.path.join(base_dir, "pca_labels")
-os.makedirs(labels_dir, exist_ok=True)
+def get_feature_layer_name(dataset):
+    """Return the appropriate feature layer name for each dataset."""
+    if dataset == "cifar10":
+        return "avgpool"
+    else:  # tiny-imagenet or imagenet
+        return "classifier.4"
 
-ds = xr.open_dataset(features_path)
 
-# Print dataset info
-print("Dataset structure:")
-print(ds)
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        '--dataset', type=str, required=True,
+        choices=['cifar10', 'tiny-imagenet', 'imagenet'],
+        help='Dataset to process features from'
+    )
+    parser.add_argument(
+        '--n_bits', type=int, default=2,
+        help='Number of bits for classification (will create 2^n_bits classes)'
+    )
+    args = parser.parse_args()
 
-# Get image names
-image_names = ds.image.values
+    # Load features from netCDF file
+    features_path = f"datasets/obj_cls/{args.dataset}/classification_features.nc"
+    base_dir = os.path.dirname(features_path)
+    labels_dir = os.path.join(base_dir, "pca_labels")
+    os.makedirs(labels_dir, exist_ok=True)
 
-# Convert to numpy array and reshape for PCA
-feature_array = ds.avgpool.values
-n_samples = feature_array.shape[0]
-features_2d = feature_array.reshape(n_samples, -1)
+    ds = xr.open_dataset(features_path)
+    print("Dataset structure:")
+    print(ds)
 
-# Print shape info
-print(f"\nFeature array shape: {feature_array.shape}")
-print(f"Reshaped features shape: {features_2d.shape}")
+    # Extract image names and features
+    image_names = ds.image.values
+    feature_layer = get_feature_layer_name(args.dataset)
+    feature_array = ds[feature_layer].values
+    n_samples = feature_array.shape[0]
+    features_2d = feature_array.reshape(n_samples, -1)
 
-# Standardize the features
-scaler = StandardScaler()
-features_scaled = scaler.fit_transform(features_2d)
+    print(f"\nFeature array shape: {feature_array.shape}")
+    print(f"Reshaped features shape: {features_2d.shape}")
 
-# Perform PCA
-pca = PCA()
-pc_scores = pca.fit_transform(features_scaled)
+    # Standardize the features
+    scaler = StandardScaler()
+    features_scaled = scaler.fit_transform(features_2d)
 
-# Get first n PC scores
-pc_scores_n = pc_scores[:, :n_bits]
+    # Perform PCA on the standardized features
+    pca = PCA()
+    pc_scores = pca.fit_transform(features_scaled)
 
-# Create binary classifications for each PC
-binary_labels = []
-for i in range(n_bits):
-    pc_i_scores = pc_scores[:, i]
-    median_pc = np.median(pc_i_scores)
-    binary_labels.append((pc_i_scores > median_pc).astype(int))
+    # Create binary classifications for the first n_bits principal components
+    binary_labels = []
+    for i in range(args.n_bits):
+        pc_i_scores = pc_scores[:, i]
+        median_pc = np.median(pc_i_scores)
+        binary_labels.append((pc_i_scores > median_pc).astype(int))
+    binary_labels = np.array(binary_labels).T  # shape: (n_samples, n_bits)
 
-# Convert binary labels to decimal class labels (0 to 2^n - 1)
-binary_labels = np.array(binary_labels).T  # Shape: (n_samples, n_bits)
-class_labels = np.zeros(n_samples, dtype=int)
-for i in range(n_bits):
-    class_labels += binary_labels[:, i] * (2 ** (n_bits - 1 - i))
+    # Convert binary labels (bits) to a single decimal class label (0 to 2^n_bits - 1)
+    class_labels = np.zeros(n_samples, dtype=int)
+    for i in range(args.n_bits):
+        class_labels += binary_labels[:, i] * (2 ** (args.n_bits - 1 - i))
 
-# Print statistics
-print(f"\nUsing first {n_bits} PCs to create {2**n_bits} classes")
-for i in range(n_bits):
-    print(f"PC{i+1} explains {pca.explained_variance_ratio_[i]*100:.2f}% of variance")
-print("\nClass distribution:")
-for i in range(2**n_bits):
-    print(f"Class {i}: {np.sum(class_labels == i)} samples")
+    print(f"\nUsing first {args.n_bits} PCs to create {2**args.n_bits} classes")
+    for i in range(args.n_bits):
+        explained_variance = pca.explained_variance_ratio_[i] * 100
+        print(f"PC{i+1} explains {explained_variance:.2f}% of variance")
 
-# Save results as DataFrame
-df = pd.DataFrame({
-    'image': image_names,
-    'label': class_labels
-})
+    print("\nClass distribution:")
+    for i in range(2**args.n_bits):
+        count = np.sum(class_labels == i)
+        print(f"Class {i}: {count} samples")
 
-# Save DataFrame as CSV
-output_csv_file = os.path.join(labels_dir, f"n_bits_{n_bits}.csv")
-df.to_csv(output_csv_file, index=False)
+    # For CIFAR-10, extract original class labels from image names
+    if args.dataset == "cifar10":
+        original_labels = np.array([int(name.split('_')[0]) for name in image_names])
+        df = pd.DataFrame({
+            'image': image_names,
+            'original_label': original_labels,
+            'pca_label': class_labels
+        })
+    else:
+        df = pd.DataFrame({
+            'image': image_names,
+            'pca_label': class_labels
+        })
 
+    output_csv_file = os.path.join(labels_dir, f"n_classes_{2**args.n_bits}.csv")
+    df.to_csv(output_csv_file, index=False)
+    print(f"\nSaved PCA labels to {output_csv_file}")
+
+    # Clean up: close the dataset
+    ds.close()
+
+
+if __name__ == '__main__':
+    main()
