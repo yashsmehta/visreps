@@ -1,5 +1,4 @@
 import os
-import csv
 import json
 from typing import Dict, Tuple
 import torch
@@ -7,6 +6,7 @@ from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
 from torchvision import datasets
 from PIL import Image
+import pandas as pd
 
 # Normalization statistics for each dataset.
 DS_MEAN = {
@@ -44,60 +44,67 @@ def get_transform(ds_stats="imgnet", data_augment=False, image_size=224):
 class PCADataset(Dataset):
     """
     A dataset wrapper that replaces the original labels with PCA-derived ones.
-    The CSV file is expected to have a header with columns:
-        - "image": image identifier
-        - "original_label": original class label
-        - "pca_label": PCA-derived label
-    
-    For file-based datasets (i.e. those with a .samples attribute), the PCA CSV is
-    matched to the file's basename. Otherwise, the CSV order is assumed to match
-    the order of the underlying dataset.
+    The CSV file must have a header with columns:
+        - "image": image identifier (filename only)
+        - "pca_label": PCA-derived label (integer)
     """
     def __init__(self, base_dataset: Dataset, pca_labels_path: str):
         self.dataset = base_dataset
-        # If the underlying dataset has a "samples" attribute, we can map file names
-        self.use_mapping = hasattr(base_dataset, "samples")
-        
-        # Read the CSV file
-        self.label_map = {}
-        with open(pca_labels_path, newline="") as csvfile:
-            reader = csv.DictReader(csvfile)
-            if self.use_mapping:
-                # For file-based datasets: create mapping using image identifier
-                for row in reader:
-                    self.label_map[row["image"]] = {
-                        'original': int(row["original_label"]),
-                        'pca': int(row["pca_label"])
-                    }
-            else:
-                # For ordered datasets: store labels in order
-                self.labels_list = []
-                for row in reader:
-                    self.labels_list.append({
-                        'original': int(row["original_label"]),
-                        'pca': int(row["pca_label"])
-                    })
-                if len(self.labels_list) != len(base_dataset):
-                    print(f"Warning: Number of PCA labels ({len(self.labels_list)}) "
-                          f"does not match dataset size ({len(base_dataset)})")
-    
+        self.label_map = self._load_pca_labels(pca_labels_path)
+        self._validate_label_coverage()
+
+    def _load_pca_labels(self, pca_labels_path: str) -> dict:
+        try:
+            df = pd.read_csv(pca_labels_path)
+        except Exception as e:
+            raise RuntimeError(f"Error reading PCA labels CSV at {pca_labels_path}: {e}")
+
+        required_cols = ["image", "pca_label"]
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            raise ValueError(f"PCA labels CSV must contain columns: {required_cols}. Missing: {missing_cols}")
+
+        # Ensure PCA labels are integers and non-negative.
+        if df["pca_label"].dtype.kind not in "iu":
+            raise ValueError("PCA labels must be integers")
+        if df["pca_label"].min() < 0:
+            raise ValueError("PCA labels must be non-negative")
+
+        label_map = {
+            os.path.basename(row["image"]): int(row["pca_label"])
+            for _, row in df.iterrows()
+        }
+        print(f"Loaded {len(label_map)} PCA labels from {pca_labels_path}")
+        distribution = pd.Series(list(label_map.values())).value_counts().sort_index().to_dict()
+        print(f"Label distribution: {distribution}")
+        return label_map
+
+    def _validate_label_coverage(self):
+        if hasattr(self.dataset, "samples"):
+            dataset_files = {os.path.basename(sample[0]) for sample in self.dataset.samples}
+            missing_files = dataset_files - set(self.label_map.keys())
+            if missing_files:
+                n_missing = len(missing_files)
+                examples = list(missing_files)[:3]
+                print(f"Warning: {n_missing} files missing PCA labels. Examples: {examples}")
+
     def __len__(self):
         return len(self.dataset)
-    
-    def __getitem__(self, idx):
-        if self.use_mapping:
-            # Get image, label, and image_id from the dataset
-            img, orig_label, img_id = self.dataset[idx]
-            # Use the full image identifier for mapping
-            labels = self.label_map.get(img_id, {'original': orig_label, 'pca': -1})
-        else:
-            # For datasets without image IDs, use the ordered list
-            img, orig_label = self.dataset[idx]
-            labels = self.labels_list[idx % len(self.labels_list)]
-            img_id = str(idx)  # Use index as image identifier
-        
-        return img, labels['pca'], labels['original'], img_id  # Return image ID as well
 
+    def __getitem__(self, idx):
+        image, _ = self.dataset[idx]
+
+        if hasattr(self.dataset, "samples"):
+            # Use the stored relative path (index 2) as the image identifier.
+            img_id = os.path.basename(self.dataset.samples[idx][2])
+        else:
+            img_id = str(idx)
+
+        label = self.label_map.get(img_id, -1)
+        if label == -1:
+            raise ValueError(f"No PCA label found for image {img_id}")
+
+        return image, label
 
 # -----------------------------------------------------------------------------
 # Dataset classes for ImageNet and Tiny ImageNet
@@ -150,7 +157,7 @@ class ImageNetDataset(Dataset):
         image = Image.open(img_path).convert("RGB")
         if self.transform:
             image = self.transform(image)
-        return image, label, img_id
+        return image, label
 
 
 class TinyImageNetDataset(Dataset):
@@ -161,6 +168,8 @@ class TinyImageNetDataset(Dataset):
         self.split_folder = "train" if split == "train" else "val"
         self.root = os.path.join(base_path, self.split_folder)
         self.dataset = datasets.ImageFolder(self.root, transform=transform)
+        self.loader = self.dataset.loader
+        self.transform = self.dataset.transform
         # Store original paths for image names
         self.samples = []
         for path, label in self.dataset.samples:
@@ -172,33 +181,21 @@ class TinyImageNetDataset(Dataset):
         return len(self.samples)
     
     def __getitem__(self, idx: int):
-        path, label, img_id = self.samples[idx]
-        image = self.dataset.loader(path)
-        if self.dataset.transform is not None:
-            image = self.dataset.transform(image)
-        return image, label, img_id
+        path, label, _ = self.samples[idx]
+        image = self.loader(path)
+        if self.transform is not None:
+            image = self.transform(image)
+        return image, label
 
 
 # -----------------------------------------------------------------------------
 # Helper functions to create/possibly wrap datasets with PCA labels
 # -----------------------------------------------------------------------------
 def create_collate_fn():
-    """Create a collate function that handles both standard and PCA dataset returns."""
+    """Create a simple collate function for (image, label) pairs."""
     def collate_fn(batch):
-        if len(batch[0]) == 4:  # (img, pca_label, orig_label, img_id)
-            images, pca_labels, orig_labels, img_ids = zip(*batch)
-            images = torch.stack(images)
-            pca_labels = torch.tensor(pca_labels)
-            orig_labels = torch.tensor(orig_labels)
-            return images, pca_labels, orig_labels, list(img_ids)
-        elif len(batch[0]) == 3:  # (img, label, img_id)
-            images, labels, img_ids = zip(*batch)
-            images = torch.stack(images)
-            labels = torch.tensor(labels)
-            return images, labels, list(img_ids)
-        else:  # (img, label)
-            images, labels = zip(*batch)
-            return torch.stack(images), torch.tensor(labels)
+        images, labels = zip(*batch)
+        return torch.stack(images), torch.tensor(labels)
     return collate_fn
 
 def create_dataloader(
@@ -225,8 +222,9 @@ def maybe_wrap_with_pca(dataset: Dataset, base_path: str, cfg: Dict, split: str,
     The CSV file is expected at: <base_path>/pca_labels/n_classes_{2**n_bits}.csv.
     """
     if pca_labels:
-        n_bits = cfg.get("n_bits", 2)
-        pca_file = f"n_classes_{2**n_bits}.csv"
+        n_classes = cfg.get("n_classes", 4)
+        print(f"Using {n_classes} classes for PCA labels")
+        pca_file = f"n_classes_{n_classes}.csv"
         pca_path = os.path.join(base_path, "pca_labels", pca_file)
         if not os.path.exists(pca_path):
             print(f"Warning: PCA labels file not found at {pca_path}. Using original labels.")
@@ -269,16 +267,21 @@ def prepare_cifar10_data(cfg: Dict, pca_labels: bool = False) -> Tuple[Dict, Dic
 
 
 def prepare_tinyimgnet_data(cfg: Dict, pca_labels: bool = False) -> Tuple[Dict, Dict[str, DataLoader]]:
-    base_path = cfg.get("dataset_path") or os.path.join("datasets", "obj_cls", "tiny-imagenet-200")
+    base_path = cfg.get("dataset_path") or os.path.join("/data/shared/datasets", "tiny-imagenet")
     splits = ["train", "test"]
     datasets_dict, loaders_dict = {}, {}
     
     for split in splits:
-        transform = get_transform(
-            ds_stats="tiny-imagenet",
-            data_augment=(split == "train" and cfg.get("data_augment", True)),
-            image_size=224
-        )
+        augment = cfg.get("data_augment", True) and split == "train"
+        transform = transforms.Compose([
+            transforms.Resize(64),
+            transforms.RandomHorizontalFlip() if augment else transforms.Lambda(lambda x: x),
+            transforms.RandomRotation(15) if augment else transforms.Lambda(lambda x: x),
+            transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1) if augment else transforms.Lambda(lambda x: x),
+            transforms.ToTensor(),
+            transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+        ])
+        
         base_dataset = TinyImageNetDataset(base_path, split, transform)
         dataset = maybe_wrap_with_pca(base_dataset, base_path, cfg, split, pca_labels)
         datasets_dict[split] = dataset
