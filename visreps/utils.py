@@ -36,7 +36,7 @@ rprint = setup_logging()
 def check_trainer_config(cfg):
     """
     Validates the trainer configuration for the number of elements and content in 'conv_trainable' and 'fc_trainable'.
-    Also validates and sets dataset-specific parameters like num_classes and default batch size.
+    Also validates and sets dataset-specific parameters like default batch size.
 
     Args:
         cfg (OmegaConf): The configuration object containing training parameters.
@@ -53,13 +53,8 @@ def check_trainer_config(cfg):
         "standard_cnn",
     ], "model_class must be one of 'custom_cnn', 'standard_cnn'!"
     
-    # Set dataset-specific num_classes
-    if cfg.dataset == "imagenet":
-        cfg.num_classes = 1000
-    elif cfg.dataset == "tiny-imagenet":
-        cfg.num_classes = 200
-    else:
-        raise ValueError(f"Unsupported dataset: {cfg.dataset}")
+    # Check dataset
+    assert cfg.dataset in ["imagenet", "tiny-imagenet"], f"Unsupported dataset: {cfg.dataset}"
     
     # Set default batch size if not specified
     if not hasattr(cfg, "batchsize"):
@@ -295,24 +290,65 @@ def log_epoch_metrics(epoch_metrics, use_wandb=True):
     get_logger(use_wandb).log_epoch(epoch_metrics)
 
 def setup_optimizer(model, cfg):
-    """Setup optimizer with weight decay."""
-    optimizer_cls = get_optimizer_class(cfg.optimizer)
-    param_groups = [
-        {'params': [p for n, p in model.named_parameters() if 'bias' not in n], 'weight_decay': 1e-4},
-        {'params': [p for n, p in model.named_parameters() if 'bias' in n], 'weight_decay': 0}
+    """Setup optimizer with proper weight decay and parameters."""
+    # Separate parameters that should and shouldn't use weight decay
+    decay = []
+    no_decay = []
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue
+        # Don't use weight decay on biases and batch norm parameters
+        if len(param.shape) == 1 or name.endswith(".bias"):
+            no_decay.append(param)
+        else:
+            decay.append(param)
+    
+    parameters = [
+        {'params': decay, 'weight_decay': cfg.get('weight_decay', 0.01)},
+        {'params': no_decay, 'weight_decay': 0.0}
     ]
-    return optimizer_cls(param_groups, lr=cfg.learning_rate)
+
+    # Setup optimizer
+    if cfg.optimizer.lower() == 'adam':
+        return torch.optim.Adam(parameters, lr=cfg.learning_rate)
+    elif cfg.optimizer.lower() == 'adamw':
+        return torch.optim.AdamW(parameters, lr=cfg.learning_rate)
+    elif cfg.optimizer.lower() == 'sgd':
+        return torch.optim.SGD(parameters, lr=cfg.learning_rate, momentum=0.9)
+    else:
+        raise ValueError(f"Unknown optimizer: {cfg.optimizer}")
 
 def setup_scheduler(optimizer, cfg, steps_per_epoch):
     """Setup learning rate scheduler with warmup."""
-    warmup_epochs = 5
-    return torch.optim.lr_scheduler.OneCycleLR(
+    # First set up the warmup
+    warmup_epochs = cfg.get('warmup_epochs', 0)
+    
+    # Create main scheduler
+    main_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer,
-        max_lr=cfg.learning_rate,
-        epochs=cfg.num_epochs,
-        steps_per_epoch=steps_per_epoch,
-        pct_start=warmup_epochs/cfg.num_epochs
+        T_max=cfg.num_epochs - warmup_epochs,  # Total epochs minus warmup epochs
+        eta_min=cfg.learning_rate * 0.01  # Minimum LR is 1% of initial LR
     )
+    
+    # If warmup is enabled, wrap with warmup scheduler
+    if warmup_epochs > 0:
+        scheduler = torch.optim.lr_scheduler.SequentialLR(
+            optimizer,
+            schedulers=[
+                torch.optim.lr_scheduler.LinearLR(
+                    optimizer,
+                    start_factor=0.1,  # Start at 10% of base LR
+                    end_factor=1.0,
+                    total_iters=warmup_epochs
+                ),
+                main_scheduler
+            ],
+            milestones=[warmup_epochs]
+        )
+    else:
+        scheduler = main_scheduler
+    
+    return scheduler
 
 def log_training_step(logger, cfg, epoch, batch_idx, loss, lr):
     """Log training step metrics."""
