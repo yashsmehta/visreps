@@ -181,7 +181,7 @@ def merge_checkpoint_config(cfg, checkpoint):
         cfg.epoch = checkpoint['epoch']
 
 
-def load_model(cfg, device):
+def load_model(cfg, device, num_classes=None):
     """
     Load a model from checkpoint or initialize a new model.
 
@@ -197,6 +197,7 @@ def load_model(cfg, device):
                 model_name,
                 checkpoint_path
         device: Torch device (e.g., 'cpu' or 'cuda').
+        num_classes: Number of output classes. If not provided, will use cfg.num_classes.
 
     Returns:
         torch.nn.Module: The loaded or newly-initialized model.
@@ -217,7 +218,7 @@ def load_model(cfg, device):
     if model_class == 'custom_cnn':
         custom_cfg = getattr(cfg, 'arch', {})
         model_params = {
-            'num_classes': getattr(cfg, 'num_classes', 200),
+            'num_classes': num_classes or getattr(cfg, 'num_classes', 200),
             'trainable_layers': {
                 'conv': getattr(custom_cfg, 'conv_trainable', '11111'),
                 'fc': getattr(custom_cfg, 'fc_trainable', '111')
@@ -235,27 +236,9 @@ def load_model(cfg, device):
         if model_fn is None:
             raise ValueError(f"Model '{model_name}' not found in standard_cnn.")
         pretrained_dataset = getattr(cfg, 'pretrained_dataset', "none")
-        num_classes = getattr(cfg, 'num_classes', 200)
         
         # Load model - classifier layer is already replaced in model_fn
-        model = model_fn(pretrained_dataset, num_classes)
-        
-        # Initialize the classifier weights if not using pretrained model
-        if pretrained_dataset == "none":
-            if hasattr(model, 'classifier') and isinstance(model.classifier, nn.Sequential):
-                # For models like AlexNet, VGG
-                nn.init.xavier_uniform_(model.classifier[-1].weight)
-                nn.init.zeros_(model.classifier[-1].bias)
-            elif hasattr(model, 'classifier') and isinstance(model.classifier, nn.Linear):
-                # For models like DenseNet
-                nn.init.xavier_uniform_(model.classifier.weight)
-                nn.init.zeros_(model.classifier.bias)
-            elif hasattr(model, 'fc') and isinstance(model.fc, nn.Linear):
-                # For models like ResNet
-                nn.init.xavier_uniform_(model.fc.weight)
-                nn.init.zeros_(model.fc.bias)
-            else:
-                raise ValueError(f"Unknown classifier structure for model {model_name}")
+        model = model_fn(pretrained_dataset, num_classes or getattr(cfg, 'num_classes', 200))
 
     return model.to(device)
 

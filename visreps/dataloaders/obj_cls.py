@@ -24,10 +24,23 @@ DS_STD = {
 def get_transform(ds_stats="imgnet", data_augment=False, image_size=224):
     """
     Create a composed transform with resizing, (optional) augmentation, and normalization.
+    
+    Args:
+        ds_stats: Dataset stats to use for normalization ('imgnet', 'tiny-imagenet', 'cifar10')
+        data_augment: Whether to apply data augmentation
+        image_size: Target image size. Note: For tiny-imagenet, this is ignored and 64 is used.
     """
+    # Handle dataset-specific sizes
+    if ds_stats == "tiny-imagenet":
+        resize_size = 64
+        crop_size = 64
+    else:
+        resize_size = 256
+        crop_size = image_size
+
     transform_list = [
-        transforms.Resize(256, interpolation=transforms.InterpolationMode.BILINEAR),
-        transforms.CenterCrop(image_size),
+        transforms.Resize(resize_size, interpolation=transforms.InterpolationMode.BILINEAR),
+        transforms.CenterCrop(crop_size),
     ]
     if data_augment:
         transform_list += [transforms.RandomHorizontalFlip(), transforms.RandomRotation(10)]
@@ -170,12 +183,40 @@ class TinyImageNetDataset(Dataset):
         self.dataset = datasets.ImageFolder(self.root, transform=transform)
         self.loader = self.dataset.loader
         self.transform = self.dataset.transform
+        self.num_classes = len(self.dataset.classes)  # Get number of classes from dataset
+        
+        # Debug: Print dataset information
+        print(f"\nTinyImageNet {split} Dataset Info:")
+        print(f"Root path: {self.root}")
+        print(f"Number of classes: {self.num_classes}")
+        print(f"Total samples: {len(self.dataset)}")
+        
+        # Validate class indices
+        class_to_idx = self.dataset.class_to_idx
+        print(f"Class index range: [{min(class_to_idx.values())}, {max(class_to_idx.values())}]")
+        
+        # Count samples per class
+        class_counts = {}
+        for _, label in self.dataset.samples:
+            class_counts[label] = class_counts.get(label, 0) + 1
+        print(f"Samples per class: min={min(class_counts.values())}, max={max(class_counts.values())}")
+        
+        # Validate transforms
+        if transform is not None:
+            print("\nTransform pipeline:")
+            for t in transform.transforms:
+                print(f"  {t.__class__.__name__}")
+        
         # Store original paths for image names
         self.samples = []
         for path, label in self.dataset.samples:
             # Get relative path from dataset root for consistent naming
             rel_path = os.path.relpath(path, self.root)
             self.samples.append((path, label, rel_path))
+            
+            # Validate label range
+            if not (0 <= label < self.num_classes):
+                raise ValueError(f"Invalid label {label} for image {path}. Must be in range [0, {self.num_classes})")
     
     def __len__(self) -> int:
         return len(self.samples)
@@ -185,6 +226,16 @@ class TinyImageNetDataset(Dataset):
         image = self.loader(path)
         if self.transform is not None:
             image = self.transform(image)
+            
+            # Debug: Validate transformed image (for first few samples)
+            if idx < 5:  # Only check first 5 samples to avoid slowdown
+                if not isinstance(image, torch.Tensor):
+                    raise ValueError(f"Transform did not produce a tensor for image {path}")
+                if image.dim() != 3:
+                    raise ValueError(f"Expected 3D tensor (C,H,W), got shape {image.shape} for image {path}")
+                if image.shape[0] != 3:
+                    raise ValueError(f"Expected 3 channels, got {image.shape[0]} for image {path}")
+        
         return image, label
 
 
@@ -219,10 +270,19 @@ def create_dataloader(
 def maybe_wrap_with_pca(dataset: Dataset, base_path: str, cfg: Dict, split: str, pca_labels: bool) -> Dataset:
     """
     If pca_labels is True, attempt to wrap the given dataset with PCA labels.
-    The CSV file is expected at: <base_path>/pca_labels/n_classes_{2**n_bits}.csv.
+    The CSV file is expected at: <base_path>/pca_labels/n_classes_{pca_n_classes}.csv.
+    
+    Args:
+        dataset: Base dataset to potentially wrap
+        base_path: Path to dataset directory
+        cfg: Config dict containing:
+            - pca_n_classes: Number of PCA-derived classes to use (for file selection)
+            - n_classes: Number of output classes for the model
+        split: Dataset split ('train' or 'test')
+        pca_labels: Whether to use PCA labels
     """
     if pca_labels:
-        n_classes = cfg.get("n_classes", 4)
+        n_classes = cfg.get("pca_n_classes", 4)  # Use pca_n_classes for file selection
         print(f"Using {n_classes} classes for PCA labels")
         pca_file = f"n_classes_{n_classes}.csv"
         pca_path = os.path.join(base_path, "pca_labels", pca_file)
@@ -268,22 +328,56 @@ def prepare_cifar10_data(cfg: Dict, pca_labels: bool = False) -> Tuple[Dict, Dic
 
 def prepare_tinyimgnet_data(cfg: Dict, pca_labels: bool = False) -> Tuple[Dict, Dict[str, DataLoader]]:
     base_path = cfg.get("dataset_path") or os.path.join("/data/shared/datasets", "tiny-imagenet")
+    pca_base_path = os.path.join("datasets", "obj_cls", "tiny-imagenet")  # Path for PCA labels
     splits = ["train", "test"]
     datasets_dict, loaders_dict = {}, {}
     
     for split in splits:
         augment = cfg.get("data_augment", True) and split == "train"
-        transform = transforms.Compose([
-            transforms.Resize(64),
-            transforms.RandomHorizontalFlip() if augment else transforms.Lambda(lambda x: x),
-            transforms.RandomRotation(15) if augment else transforms.Lambda(lambda x: x),
-            transforms.ColorJitter(brightness=0.4, contrast=0.4, saturation=0.4, hue=0.1) if augment else transforms.Lambda(lambda x: x),
+        transform_list = [
+            transforms.Resize(64),  # Tiny ImageNet is 64x64
+            transforms.CenterCrop(64),  # Ensure consistent size
+        ]
+        
+        # Add augmentation only for training
+        if augment:
+            transform_list.extend([
+                transforms.RandomHorizontalFlip(p=0.5),  # 50% chance of flip
+                transforms.RandomRotation(10),  # Reduced from 15 to 10 degrees
+                transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2)  # Reduced intensity, removed hue
+            ])
+            
+        # Add normalization
+        transform_list.extend([
             transforms.ToTensor(),
-            transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
+            transforms.Normalize(mean=DS_MEAN["tiny-imagenet"], std=DS_STD["tiny-imagenet"])
         ])
         
+        transform = transforms.Compose(transform_list)
+        
         base_dataset = TinyImageNetDataset(base_path, split, transform)
-        dataset = maybe_wrap_with_pca(base_dataset, base_path, cfg, split, pca_labels)
+        # Set n_classes in config based on dataset if not using PCA labels
+        if not pca_labels and "n_classes" not in cfg:
+            cfg["n_classes"] = base_dataset.num_classes
+            print(f"Setting n_classes to {base_dataset.num_classes} based on dataset")
+        
+        # Debug: Verify a batch of data
+        test_loader = DataLoader(
+            base_dataset,
+            batch_size=min(8, cfg.get("batchsize", 32)),  # Use smaller batch for testing
+            shuffle=False,
+            num_workers=0  # Use single worker for debugging
+        )
+        images, labels = next(iter(test_loader))
+        print(f"\nDebug batch for {split}:")
+        print(f"Image shape: {images.shape}, dtype: {images.dtype}")
+        print(f"Label shape: {labels.shape}, dtype: {labels.dtype}")
+        print(f"Label range: [{labels.min().item()}, {labels.max().item()}]")
+        print(f"Image range: [{images.min().item():.3f}, {images.max().item():.3f}]")
+        print(f"Image mean: {images.mean().item():.3f}")
+        print(f"Image std: {images.std().item():.3f}")
+        
+        dataset = maybe_wrap_with_pca(base_dataset, pca_base_path, cfg, split, pca_labels)
         datasets_dict[split] = dataset
         loaders_dict[split] = create_dataloader(
             dataset,
@@ -327,19 +421,20 @@ def prepare_imgnet_data(cfg: Dict, pca_labels: bool = False) -> Tuple[Dict, Dict
 # -----------------------------------------------------------------------------
 # Main loader function
 # -----------------------------------------------------------------------------
-def get_obj_cls_loader(cfg: Dict, pca_labels: bool = True) -> Tuple[Dict, Dict[str, DataLoader]]:
+def get_obj_cls_loader(cfg: Dict) -> Tuple[Dict, Dict[str, DataLoader]]:
     """
     Prepare object classification datasets and loaders.
     Supported datasets: 'tiny-imagenet', 'imagenet', and 'cifar10'.
     
     Args:
         cfg: Configuration dictionary.
-        pca_labels: Whether to replace original labels with PCA-derived ones.
         
     Returns:
         A tuple (datasets_dict, loaders_dict) mapping split names to the respective objects.
     """
     dataset_name = cfg.get("dataset", "tiny-imagenet")
+    pca_labels = cfg.get("pca_labels", False)  # Get from config with default False
+    
     if dataset_name == "tiny-imagenet":
         return prepare_tinyimgnet_data(cfg, pca_labels)
     elif dataset_name == "imagenet":
