@@ -102,7 +102,10 @@ def load_config(config_path, overrides):
             del cfg[other_key]
         merge_nested_config(cfg, source_key)
 
-    return OmegaConf.merge(cfg, OmegaConf.from_dotlist(overrides or []))
+    final_cfg = OmegaConf.merge(cfg, OmegaConf.from_dotlist(overrides or []))
+    formatted_cfg = OmegaConf.to_yaml(final_cfg, resolve=True)
+    print(f"Final Configuration:\n{formatted_cfg}\n\n")
+    return final_cfg
 
 
 def load_pickle(file_path):
@@ -179,7 +182,7 @@ def get_optimizer_class(optimizer_name):
 
 
 def calculate_cls_accuracy(data_loader, model, device):
-    """Calculate classification accuracy with proper device handling and numerical stability.
+    """Calculate top-1 and top-5 classification accuracies with proper device handling and numerical stability.
     
     Args:
         data_loader: PyTorch DataLoader
@@ -187,10 +190,11 @@ def calculate_cls_accuracy(data_loader, model, device):
         device: torch.device for computation
     
     Returns:
-        float: Classification accuracy as percentage (0-100)
+        tuple: (top1_accuracy, top5_accuracy) as percentages (0-100)
     """
     model.eval()  # Ensure model is in eval mode
-    correct = 0
+    top1_correct = 0
+    top5_correct = 0
     total = 0
     
     # Use autocast based on device type
@@ -205,18 +209,32 @@ def calculate_cls_accuracy(data_loader, model, device):
             
             # Forward pass
             outputs = model(images)
-            predicted = outputs.argmax(dim=1)
             
-            # Accumulate statistics without keeping autograd history
+            # Calculate top-k accuracies
+            _, predicted = outputs.topk(5, 1, True, True)
+            predicted = predicted.t()  # transpose to size [k, batch_size]
+            correct = predicted.eq(labels.view(1, -1).expand_as(predicted))
+            
+            # Top-1 accuracy
+            top1_correct += correct[0].sum().item()
+            
+            # Top-5 accuracy (only if num_classes >= 5)
+            if outputs.size(1) >= 5:
+                top5_correct += correct[:5].any(dim=0).sum().item()
+            else:
+                top5_correct += top1_correct  # if num_classes < 5, top5 = top1
+            
             total += labels.size(0)
-            correct += torch.eq(predicted, labels).sum().item()
     
-    # Handle edge case and ensure floating point division
+    # Handle edge case
     if total == 0:
-        return 0.0
+        return 0.0, 0.0
         
-    # Use float for stable division and percentage calculation
-    return (100.0 * correct) / total
+    # Calculate percentages
+    top1_acc = (100.0 * top1_correct) / total
+    top5_acc = (100.0 * top5_correct) / total
+    
+    return top1_acc, top5_acc
 
 class Logger:
     """Unified logging class for training metrics and system stats."""
@@ -367,17 +385,19 @@ def log_training_metrics(logger, cfg, epoch, loss, metrics, scheduler):
         # Log all metrics under training namespace
         log_dict = {
             'epoch': epoch,
-            'training/test-acc': metrics['test_acc']
+            'training/test-acc': metrics['test_acc'],
+            'training/test-top5': metrics['test_top5']
         }
         
-        # Add train accuracy if enabled
+        # Add train accuracy if available
         if 'train_acc' in metrics:
             log_dict['training/train-acc'] = metrics['train_acc']
+            log_dict['training/train-top5'] = metrics['train_top5']
             
         logger.log(log_dict)
         
     # Print metrics every epoch
-    status = f"Epoch [{epoch}/{cfg.num_epochs}] Test Acc: {metrics['test_acc']:.2f}%"
+    status = f"Epoch [{epoch}/{cfg.num_epochs}] Test Acc: {metrics['test_acc']:.2f}% (top5: {metrics['test_top5']:.2f}%)"
     if 'train_acc' in metrics:
-        status += f" Train Acc: {metrics['train_acc']:.2f}%"
+        status += f" Train Acc: {metrics['train_acc']:.2f}% (top5: {metrics['train_top5']:.2f}%)"
     rprint(status, style="info")

@@ -113,7 +113,6 @@ class ImageNetDataset(Dataset):
         indices = torch.randperm(total).tolist()
         split_idx = int(total * train_ratio)
         self.samples = [self.samples[i] for i in (indices[:split_idx] if split == "train" else indices[split_idx:])]
-        print(f"ImageNet: Loaded {len(self.samples)} samples for split '{split}'.")
 
     def __len__(self):
         return len(self.samples)
@@ -138,14 +137,9 @@ class TinyImageNetDataset(Dataset):
         self.transform = self.dataset.transform
         self.num_classes = len(self.dataset.classes)
 
-        print(f"  Class indices: [{min(self.dataset.class_to_idx.values())}, {max(self.dataset.class_to_idx.values())}]")
         class_counts = {}
         for _, label in self.dataset.samples:
             class_counts[label] = class_counts.get(label, 0) + 1
-        print(f"  Samples per class: min={min(class_counts.values())}, max={max(class_counts.values())}")
-        if transform is not None:
-            tfm_names = ", ".join(t.__class__.__name__ for t in transform.transforms)
-            print(f"  Transform pipeline: {tfm_names}")
 
         self.samples = [(path, label, os.path.relpath(path, self.root))
                         for path, label in self.dataset.samples]
@@ -239,7 +233,6 @@ def prepare_tinyimgnet_data(cfg: Dict, pca_labels: bool = False) -> Tuple[Dict, 
             num_workers=cfg.get("num_workers", 8),
             shuffle=(split == "train")
         )
-        print(f"Tiny ImageNet {split}: {len(dataset)} samples")
     return datasets_dict, loaders_dict
 
 def prepare_imgnet_data(cfg: Dict, pca_labels: bool = False) -> Tuple[Dict, Dict[str, DataLoader]]:
@@ -265,7 +258,6 @@ def prepare_imgnet_data(cfg: Dict, pca_labels: bool = False) -> Tuple[Dict, Dict
             num_workers=cfg.get("num_workers", 8),
             shuffle=(split == "train")
         )
-        print(f"ImageNet {split}: {len(dataset)} samples")
     return datasets_dict, loaders_dict
 
 def get_obj_cls_loader(cfg: Dict) -> Tuple[Dict, Dict[str, DataLoader]]:
