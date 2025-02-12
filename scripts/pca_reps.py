@@ -5,6 +5,7 @@ import xarray as xr
 import argparse
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
+from math import log2
 
 
 def get_feature_layer_name(dataset):
@@ -23,10 +24,17 @@ def main():
         help='Dataset to process features from'
     )
     parser.add_argument(
-        '--n_bits', type=int, default=2,
-        help='Number of bits for classification (will create 2^n_bits classes)'
+        '--n_classes', type=int, required=True,
+        help='Number of classes to create using PCA (must be a power of 2)'
     )
     args = parser.parse_args()
+
+    # Validate that n_classes is a power of 2
+    if not (args.n_classes & (args.n_classes - 1) == 0) or args.n_classes <= 0:
+        raise ValueError(f"n_classes must be a power of 2 (2^k), got {args.n_classes}")
+
+    # Calculate required number of bits
+    n_bits = int(log2(args.n_classes))  # Now we can use int instead of ceil since we know it's 2^k
 
     # Load features from netCDF file
     features_path = f"datasets/obj_cls/{args.dataset}/classification_features.nc"
@@ -56,26 +64,29 @@ def main():
     pca = PCA()
     pc_scores = pca.fit_transform(features_scaled)
 
-    # Create binary classifications for the first n_bits principal components
+    # Create binary classifications for the required number of principal components
     binary_labels = []
-    for i in range(args.n_bits):
+    for i in range(n_bits):
         pc_i_scores = pc_scores[:, i]
         median_pc = np.median(pc_i_scores)
         binary_labels.append((pc_i_scores > median_pc).astype(int))
     binary_labels = np.array(binary_labels).T  # shape: (n_samples, n_bits)
 
-    # Convert binary labels (bits) to a single decimal class label (0 to 2^n_bits - 1)
+    # Convert binary labels (bits) to a single decimal class label (0 to n_classes - 1)
     class_labels = np.zeros(n_samples, dtype=int)
-    for i in range(args.n_bits):
-        class_labels += binary_labels[:, i] * (2 ** (args.n_bits - 1 - i))
+    for i in range(n_bits):
+        class_labels += binary_labels[:, i] * (2 ** (n_bits - 1 - i))
+    
+    # Ensure labels are within the desired range
+    class_labels = class_labels % args.n_classes
 
-    print(f"\nUsing first {args.n_bits} PCs to create {2**args.n_bits} classes")
-    for i in range(args.n_bits):
+    print(f"\nUsing first {n_bits} PCs to create {args.n_classes} classes")
+    for i in range(n_bits):
         explained_variance = pca.explained_variance_ratio_[i] * 100
         print(f"PC{i+1} explains {explained_variance:.2f}% of variance")
 
     print("\nClass distribution:")
-    for i in range(2**args.n_bits):
+    for i in range(args.n_classes):
         count = np.sum(class_labels == i)
         print(f"Class {i}: {count} samples")
 
@@ -93,7 +104,7 @@ def main():
             'pca_label': class_labels
         })
 
-    output_csv_file = os.path.join(labels_dir, f"n_classes_{2**args.n_bits}.csv")
+    output_csv_file = os.path.join(labels_dir, f"n_classes_{args.n_classes}.csv")
     df.to_csv(output_csv_file, index=False)
     print(f"\nSaved PCA labels to {output_csv_file}")
 
