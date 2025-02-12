@@ -56,51 +56,51 @@ class CustomCNN(nn.Module):
         nonlin_fn = nn_ops.get_nonlinearity(nonlinearity, inplace=True)
         pool_fn = nn_ops.get_pooling_fn(pooling_type)
 
-        # Adjusted architecture for Tiny ImageNet (64x64 input)
+        # Adjusted architecture for Tiny ImageNet (64x64 input) following AlexNet structure
         self.features = nn.Sequential(
-            # conv1: 64x64 -> 32x32
-            nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=not batchnorm),
-            nn.BatchNorm2d(64) if batchnorm else nn.Identity(),
+            # conv1: 64x64 -> 15x15 (after pooling)
+            nn.Conv2d(3, 96, kernel_size=7, stride=4, padding=2, bias=not batchnorm),
+            nn.LocalResponseNorm(size=5, alpha=0.0001, beta=0.75, k=2.0) if not batchnorm else nn.BatchNorm2d(96),
             nonlin_fn,
-            pool_fn,  # 32x32
+            nn.MaxPool2d(kernel_size=3, stride=2),  # 15x15
             
-            # conv2: 32x32 -> 16x16
-            nn.Conv2d(64, 128, kernel_size=3, padding=1, bias=not batchnorm),
-            nn.BatchNorm2d(128) if batchnorm else nn.Identity(),
+            # conv2: 15x15 -> 7x7 (after pooling)
+            nn.Conv2d(96, 256, kernel_size=5, padding=2, groups=2, bias=not batchnorm),
+            nn.LocalResponseNorm(size=5, alpha=0.0001, beta=0.75, k=2.0) if not batchnorm else nn.BatchNorm2d(256),
             nonlin_fn,
-            pool_fn,  # 16x16
+            nn.MaxPool2d(kernel_size=3, stride=2),  # 7x7
             
-            # conv3: 16x16 -> 8x8
-            nn.Conv2d(128, 256, kernel_size=3, padding=1, bias=not batchnorm),
+            # conv3: 7x7 -> 7x7
+            nn.Conv2d(256, 384, kernel_size=3, padding=1, bias=not batchnorm),
+            nn.BatchNorm2d(384) if batchnorm else nn.Identity(),
+            nonlin_fn,
+            
+            # conv4: 7x7 -> 7x7
+            nn.Conv2d(384, 384, kernel_size=3, padding=1, groups=2, bias=not batchnorm),
+            nn.BatchNorm2d(384) if batchnorm else nn.Identity(),
+            nonlin_fn,
+            
+            # conv5: 7x7 -> 3x3 (after pooling)
+            nn.Conv2d(384, 256, kernel_size=3, padding=1, groups=2, bias=not batchnorm),
             nn.BatchNorm2d(256) if batchnorm else nn.Identity(),
             nonlin_fn,
-            pool_fn,  # 8x8
-            
-            # conv4: 8x8 -> 8x8
-            nn.Conv2d(256, 512, kernel_size=3, padding=1, bias=not batchnorm),
-            nn.BatchNorm2d(512) if batchnorm else nn.Identity(),
-            nonlin_fn,
-            
-            # conv5: 8x8 -> 8x8
-            nn.Conv2d(512, 512, kernel_size=3, padding=1, bias=not batchnorm),
-            nn.BatchNorm2d(512) if batchnorm else nn.Identity(),
-            nonlin_fn,
+            nn.MaxPool2d(kernel_size=3, stride=2),  # 3x3
         )
 
-        # Use 4x4 adaptive pooling for better feature extraction
-        self.adaptive_pool = nn.AdaptiveAvgPool2d((4, 4))
+        # Use 3x3 output size to match AlexNet's final feature map dimensions
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((3, 3))
 
-        # Adjusted classifier with better scaling
+        # Classifier matching AlexNet's structure with 4096 neurons
         self.classifier = nn.Sequential(
-            nn.Dropout(0.3) if dropout else nn.Identity(),  # Reduced dropout
-            nn.Linear(512 * 4 * 4, 2048),
-            nn.BatchNorm1d(2048) if batchnorm else nn.Identity(),
+            nn.Dropout(0.5) if dropout else nn.Identity(),  # Original AlexNet dropout
+            nn.Linear(256 * 3 * 3, 4096),
+            nn.BatchNorm1d(4096) if batchnorm else nn.Identity(),
             nonlin_fn,
-            nn.Dropout(0.3) if dropout else nn.Identity(),  # Reduced dropout
-            nn.Linear(2048, 512),
-            nn.BatchNorm1d(512) if batchnorm else nn.Identity(),  # Added BN
+            nn.Dropout(0.5) if dropout else nn.Identity(),  # Original AlexNet dropout
+            nn.Linear(4096, 4096),
+            nn.BatchNorm1d(4096) if batchnorm else nn.Identity(),
             nonlin_fn,
-            nn.Linear(512, num_classes),
+            nn.Linear(4096, num_classes),
         )
 
         self._set_trainable_layers(trainable_layers)
