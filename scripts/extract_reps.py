@@ -1,101 +1,55 @@
 import os
 import argparse
 import torch
-import xarray as xr
+import numpy as np
+from omegaconf import OmegaConf
 from visreps.models import standard_cnn
+from visreps.models.utils import configure_feature_extractor
 from visreps.dataloaders.obj_cls import get_obj_cls_loader
 
-def get_activation(name):
-    """Returns a hook that saves the output of a module."""
-    def hook(module, input, output):
-        get_activation.activations[name] = output.detach()
-    return hook
+def get_model_and_layers(dataset):
+    """Initializes the model and defines the layers to extract features from.
+    """
+    num_classes = 200 if dataset == "tiny-imagenet" else 1000
+    model = standard_cnn.AlexNet(pretrained_dataset="imagenet1k", num_classes=num_classes)
+    
+    layers = [
+        'conv3',
+        'conv4',
+        'conv5',
+        'fc1',
+        'fc2',
+        'fc3'
+    ]
+    return model, layers
 
-def get_model_and_layer_names(dataset):
-    """Returns a model and the layer names for feature extraction."""
-    model = standard_cnn.AlexNet(
-        pretrained_dataset="imagenet1k",
-        num_classes=200 if dataset == "tiny-imagenet" else 1000
-    )
-    return model, ['classifier.5']
-
-def extract_features(model, dataloader, device, layer_names, dataset):
-    """Extract features using forward hooks."""
-    get_activation.activations = {}
-    handles = []
-    for name in layer_names:
-        module = model
-        for part in name.split('.'):
-            module = module._modules[part]
-        handles.append(module.register_forward_hook(get_activation(name)))
-
-    activations_dict = {name: [] for name in layer_names}
+def extract_features(model, loader, device, layer_names):
+    """Extracts activations using the feature extractor."""
+    acts_dict = {name: [] for name in layer_names}
     all_image_names, all_labels = [], []
 
-    for batch_idx, (images, labels, image_names) in enumerate(dataloader):
-        print(f"Processing batch {batch_idx+1}/{len(dataloader)}", end='\r')
+    for batch_idx, (images, labels) in enumerate(loader):
+        print(f"Processing batch {batch_idx+1}/{len(loader)}", end='\r')
         images = images.to(device)
-        processed_names = [os.path.basename(name) for name in image_names]
+
+        # Get image names from dataset
+        start = batch_idx * loader.batch_size
+        end = start + images.size(0)
+        names = [os.path.basename(loader.dataset.samples[i][2]) for i in range(start, end)]
         
         with torch.no_grad():
-            model(images)
+            features = model(images)  # Returns dict of layer activations
 
+        # Save each layer's activation
         for name in layer_names:
-            activations_dict[name].append(get_activation.activations[name].cpu())
-        all_image_names.extend(processed_names)
+            acts_dict[name].append(features[name].cpu().numpy())
+        all_image_names.extend(names)
         all_labels.extend(labels.cpu().numpy())
 
-    for h in handles:
-        h.remove()
+    # Concatenate activations from all batches
     for name in layer_names:
-        activations_dict[name] = torch.cat(activations_dict[name], dim=0)
-    return activations_dict, all_image_names, all_labels
-
-def create_xarray_dataset(activations_dict, image_names, labels, layer_names):
-    """Converts activations and metadata into an xarray Dataset."""
-    data_vars = {}
-    for layer in layer_names:
-        acts = activations_dict[layer]
-        if acts.ndim > 2:
-            acts = acts.reshape(acts.shape[0], -1)
-        data_vars[layer] = xr.DataArray(acts.numpy(), dims=['image', 'features'], coords={'image': image_names})
-    data_vars['labels'] = xr.DataArray(labels, dims=['image'], coords={'image': image_names})
-    return xr.Dataset(data_vars)
-
-class UniformDataLoader:
-    """
-    Wraps a DataLoader to ensure output in the format (images, labels, image_names).
-    Requires original image names from the dataset's samples attribute.
-    Raises ValueError if original names are not available.
-    """
-    def __init__(self, dataloader, dataset_type):
-        self.dataloader = dataloader
-        self.dataset_type = dataset_type
-        self.length = len(dataloader)
-        self.current_idx = 0
-        
-        # Validate that we can get original image names
-        if not hasattr(self.dataloader.dataset, 'samples'):
-            raise ValueError("Dataset must have 'samples' attribute containing original image names")
-        if len(self.dataloader.dataset.samples[0]) <= 2:
-            raise ValueError("Dataset samples must contain image paths/names (expected tuple of length > 2)")
-
-    def __len__(self):
-        return self.length
-
-    def __iter__(self):
-        self.current_idx = 0
-        for batch in self.dataloader:
-            if len(batch) == 2:
-                images, labels = batch
-                batch_size = len(images)
-                # Get original image names from the dataset's samples
-                dataset = self.dataloader.dataset
-                image_names = [os.path.basename(dataset.samples[self.current_idx + i][2]) for i in range(batch_size)]
-                self.current_idx += batch_size
-                yield images, labels, image_names
-            else:
-                yield batch
+        acts_dict[name] = np.concatenate(acts_dict[name], axis=0)
+    return acts_dict, all_image_names, all_labels
 
 def main():
     parser = argparse.ArgumentParser()
@@ -104,8 +58,12 @@ def main():
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, layer_names = get_model_and_layer_names(args.dataset)
-    model.to(device).eval()
+    model, layers = get_model_and_layers(args.dataset)
+    
+    # Configure feature extractor with OmegaConf
+    cfg = OmegaConf.create({"return_nodes": layers})
+    feature_extractor = configure_feature_extractor(cfg, model)
+    feature_extractor.to(device).eval()
 
     data_cfg = {
         "dataset": args.dataset,
@@ -113,31 +71,46 @@ def main():
         "num_workers": 8,
         "data_augment": False
     }
-    _, loaders = get_obj_cls_loader(data_cfg)
-    uniform_loaders = {split: UniformDataLoader(loader, args.dataset) for split, loader in loaders.items()}
+    # Important to set shuffle to False, so that the order of the features is the same as the order of the images!
+    _, loaders = get_obj_cls_loader(data_cfg, shuffle=False)
 
-    combined_acts = {name: [] for name in layer_names}
-    combined_names, combined_labels = [], []
+    combined_features = {}
+    combined_names = []
+    combined_labels = []
 
-    for split, loader in uniform_loaders.items():
+    # Extract features from all splits
+    for split, loader in loaders.items():
         print(f"\nProcessing {split} split...")
-        acts, img_names, labels = extract_features(model, loader, device, layer_names, args.dataset)
-        for name in layer_names:
-            combined_acts[name].append(acts[name])
-        combined_names.extend(img_names)
+        acts, names, labels = extract_features(feature_extractor, loader, device, layers)
+        
+        # First time initialization
+        if not combined_features:
+            combined_features = {layer: [] for layer in acts.keys()}
+        
+        # Append features from this split
+        for layer in acts:
+            combined_features[layer].append(acts[layer])
+        combined_names.extend(names)
         combined_labels.extend(labels)
 
-    for name in layer_names:
-        combined_acts[name] = torch.cat(combined_acts[name], dim=0)
+    # Concatenate all splits
+    for layer in combined_features:
+        combined_features[layer] = np.concatenate(combined_features[layer], axis=0)
+        print(f"{layer}: {combined_features[layer].shape}")
 
-    print("\nConverting to xarray format...")
-    ds = create_xarray_dataset(combined_acts, combined_names, combined_labels, layer_names)
-    
     output_dir = os.path.join("datasets", "obj_cls", args.dataset)
     os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, "classification_features.nc")
-    print(f"Saving to {output_path}")
-    ds.to_netcdf(output_path)
+    output_path = os.path.join(output_dir, "features.npz")
+    
+    # Save combined features
+    save_dict = {
+        'image_names': combined_names,
+        'labels': combined_labels
+    }
+    save_dict.update(combined_features)
+    
+    np.savez(output_path, **save_dict)
+    print(f"Features saved to {output_path}")
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
