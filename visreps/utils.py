@@ -182,7 +182,10 @@ def get_optimizer_class(optimizer_name):
 
 
 def calculate_cls_accuracy(data_loader, model, device):
-    """Calculate top-1 and top-5 classification accuracies with proper device handling and numerical stability.
+    """Calculate classification accuracies with proper device handling and numerical stability.
+    
+    For models with fewer than 5 classes, only top-1 accuracy is computed (top-5 is returned as an empty string).
+    For models with 5 or more classes, both top-1 and top-5 accuracies are computed.
     
     Args:
         data_loader: PyTorch DataLoader
@@ -190,50 +193,53 @@ def calculate_cls_accuracy(data_loader, model, device):
         device: torch.device for computation
     
     Returns:
-        tuple: (top1_accuracy, top5_accuracy) as percentages (0-100)
+        tuple: (top1_accuracy, top5_accuracy) as percentages (0-100). For small number of classes, top5_accuracy = ""
     """
-    model.eval()  # Ensure model is in eval mode
+    model.eval()
+    total = 0
     top1_correct = 0
     top5_correct = 0
-    total = 0
-    
-    # Use autocast based on device type
+
+    # Choose autocast settings based on device type
     autocast_device = "cuda" if device.type == "cuda" else "cpu"
     autocast_dtype = torch.float16 if device.type == "cuda" else torch.bfloat16
-    
+
+    # This flag will be set based on the model's output dimension (only once)
+    use_top5 = None
+
     with torch.no_grad(), torch.autocast(device_type=autocast_device, dtype=autocast_dtype):
         for images, labels in data_loader:
-            # Move data to device efficiently
             images = images.to(device, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
-            
-            # Forward pass
             outputs = model(images)
-            
-            # Calculate top-k accuracies
-            _, predicted = outputs.topk(5, 1, True, True)
-            predicted = predicted.t()  # transpose to size [k, batch_size]
-            correct = predicted.eq(labels.view(1, -1).expand_as(predicted))
-            
-            # Top-1 accuracy
-            top1_correct += correct[0].sum().item()
-            
-            # Top-5 accuracy (only if num_classes >= 5)
-            if outputs.size(1) >= 5:
-                top5_correct += correct[:5].any(dim=0).sum().item()
+            batch_size = labels.size(0)
+            total += batch_size
+
+            # Determine if we should compute top-5 accuracy (if there are at least 5 classes)
+            if use_top5 is None:
+                use_top5 = outputs.size(1) >= 5
+
+            if not use_top5:
+                # Only top-1 is relevant
+                _, preds = outputs.max(dim=1)
+                top1_correct += (preds == labels).sum().item()
             else:
-                top5_correct += top1_correct  # if num_classes < 5, top5 = top1
-            
-            total += labels.size(0)
-    
-    # Handle edge case
+                # Compute top-1 and top-5
+                maxk = 5
+                _, preds = outputs.topk(maxk, dim=1, largest=True, sorted=True)
+                preds = preds.t()  # shape: [maxk, batch_size]
+                correct = preds.eq(labels.view(1, -1).expand_as(preds))
+                top1_correct += correct[0].sum().item()
+                # For top-5, an instance is correct if any of the top-5 predictions match the label
+                top5_correct += correct.sum(dim=0).gt(0).sum().item()
+
     if total == 0:
         return 0.0, 0.0
-        
-    # Calculate percentages
-    top1_acc = (100.0 * top1_correct) / total
-    top5_acc = (100.0 * top5_correct) / total
-    
+
+    top1_acc = 100.0 * top1_correct / total
+    if not use_top5:
+        return top1_acc, ""
+    top5_acc = 100.0 * top5_correct / total
     return top1_acc, top5_acc
 
 class Logger:
@@ -385,19 +391,33 @@ def log_training_metrics(logger, cfg, epoch, loss, metrics, scheduler):
         # Log all metrics under training namespace
         log_dict = {
             'epoch': epoch,
-            'training/test-acc': metrics['test_acc'],
-            'training/test-top5': metrics['test_top5']
+            'training/test-acc': metrics['test_acc']
         }
         
         # Add train accuracy if available
         if 'train_acc' in metrics:
             log_dict['training/train-acc'] = metrics['train_acc']
-            log_dict['training/train-top5'] = metrics['train_top5']
+        
+        # Add top5 metrics if available and not using PCA labels
+        if not cfg.pca_labels:
+            if 'test_top5' in metrics:
+                log_dict['training/test-top5'] = metrics['test_top5']
+            if 'train_top5' in metrics:
+                log_dict['training/train-top5'] = metrics['train_top5']
             
         logger.log(log_dict)
         
     # Print metrics every epoch
-    status = f"Epoch [{epoch}/{cfg.num_epochs}] Test Acc: {metrics['test_acc']:.2f}% (top5: {metrics['test_top5']:.2f}%)"
-    if 'train_acc' in metrics:
-        status += f" Train Acc: {metrics['train_acc']:.2f}% (top5: {metrics['train_top5']:.2f}%)"
+    if cfg.pca_labels:
+        status = f"Epoch [{epoch}/{cfg.num_epochs}] Test Acc: {metrics['test_acc']:.2f}%"
+        if 'train_acc' in metrics:
+            status += f" Train Acc: {metrics['train_acc']:.2f}%"
+    else:
+        status = f"Epoch [{epoch}/{cfg.num_epochs}] Test Acc: {metrics['test_acc']:.2f}%"
+        if 'test_top5' in metrics:
+            status += f" (top5: {metrics['test_top5']:.2f}%)"
+        if 'train_acc' in metrics:
+            status += f" Train Acc: {metrics['train_acc']:.2f}%"
+            if 'train_top5' in metrics:
+                status += f" (top5: {metrics['train_top5']:.2f}%)"
     rprint(status, style="info")
