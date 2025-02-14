@@ -1,6 +1,5 @@
 import os
 import json
-from typing import Dict, Tuple
 import torch
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
@@ -42,12 +41,12 @@ class PCADataset(Dataset):
     Wraps a base dataset to substitute its labels with PCA-derived ones.
     Expects a CSV with 'image' and 'pca_label' columns.
     """
-    def __init__(self, base_dataset: Dataset, pca_labels_path: str):
+    def __init__(self, base_dataset, pca_labels_path):
         self.dataset = base_dataset
         self.label_map = self._load_pca_labels(pca_labels_path)
         self._validate_label_coverage()
 
-    def _load_pca_labels(self, csv_path: str) -> dict:
+    def _load_pca_labels(self, csv_path):
         try:
             df = pd.read_csv(csv_path)
         except Exception as e:
@@ -182,85 +181,71 @@ def create_dataloader(dataset: Dataset, batch_size: int = 32, num_workers: int =
         collate_fn=collate_fn or create_collate_fn()
     )
 
-def maybe_wrap_with_pca(dataset: Dataset, base_path: str, cfg: Dict, split: str, pca_labels: bool) -> Dataset:
-    """Wrap the dataset with PCA labels if enabled in the config."""
-    if pca_labels:
-        n_classes = cfg.get("pca_n_classes", 4)
-        print(f"Using {n_classes} classes for PCA labels")
-        pca_file = f"n_classes_{n_classes}.csv"
-        pca_path = os.path.join(base_path, "pca_labels", pca_file)
-        if not os.path.exists(pca_path):
-            print(f"Warning: PCA file not found at {pca_path}. Using original labels.")
-            return dataset
-        print(f"Applying PCA labels for {split} from {pca_path}")
-        return PCADataset(dataset, pca_path)
-    return dataset
+def wrap_with_pca(dataset, base_path, cfg, split):
+    """Wrap the dataset with PCA labels"""
+    n_classes = cfg.get("pca_n_classes")
+    pca_file = f"n_classes_{n_classes}.csv"
+    pca_path = os.path.join(base_path, "pca_labels", pca_file)
+    if not os.path.exists(pca_path):
+        print(f"Warning: PCA file not found at {pca_path}. Using original labels.")
+        return dataset
+    print(f"Applying PCA labels for {split} from {pca_path}")
+    return PCADataset(dataset, pca_path)
 
 # -----------------------------------------------------------------------------
 # Dataset preparation functions
 # -----------------------------------------------------------------------------
-def prepare_tinyimgnet_data(cfg: Dict, pca_labels: bool = False) -> Tuple[Dict, Dict[str, DataLoader]]:
+def prepare_tinyimgnet_data(cfg, pca_labels, shuffle):
     base_path = cfg.get("dataset_path", os.path.join("/data/shared/datasets", "tiny-imagenet"))
     pca_base_path = os.path.join("datasets", "obj_cls", "tiny-imagenet")
-    datasets_dict, loaders_dict = {}, {}
+    datasets, loaders = {}, {}
     for split in ["train", "test"]:
         augment = cfg.get("data_augment", True) and split == "train"
-        tfms = [
-            transforms.Resize(64),
-            transforms.CenterCrop(64)
-        ]
-        if augment:
-            tfms += [
-                transforms.RandomHorizontalFlip(p=0.5),
+        tfms = (
+            [transforms.Resize(64), transforms.CenterCrop(64)]
+            + ([
+                transforms.RandomHorizontalFlip(0.5),
                 transforms.RandomRotation(10),
-                transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2)
-            ]
-        tfms += [
-            transforms.ToTensor(),
-            transforms.Normalize(DS_MEAN["tiny-imagenet"], DS_STD["tiny-imagenet"])
-        ]
+                transforms.ColorJitter(0.2, 0.2, 0.2)
+              ] if augment else [])
+            + [transforms.ToTensor(), transforms.Normalize(DS_MEAN["tiny-imagenet"], DS_STD["tiny-imagenet"])]
+        )
         transform = transforms.Compose(tfms)
-
-        base_dataset = TinyImageNetDataset(base_path, split, transform)
+        dataset = TinyImageNetDataset(base_path, split, transform)
         if not pca_labels and "n_classes" not in cfg:
-            cfg["n_classes"] = base_dataset.num_classes
-            print(f"Setting n_classes to {base_dataset.num_classes} based on dataset")
-        dataset = maybe_wrap_with_pca(base_dataset, pca_base_path, cfg, split, pca_labels)
-        datasets_dict[split] = dataset
-        loaders_dict[split] = create_dataloader(
+            cfg["n_classes"] = dataset.num_classes
+            print(f"Setting n_classes to {dataset.num_classes} based on dataset")
+        dataset = wrap_with_pca(dataset, pca_base_path, cfg, split) if pca_labels else dataset
+        datasets[split] = dataset
+        loaders[split] = create_dataloader(
             dataset,
             batch_size=cfg.get("batchsize", 32),
             num_workers=cfg.get("num_workers", 8),
-            shuffle=(split == "train")
+            shuffle=shuffle
         )
-    return datasets_dict, loaders_dict
+    return datasets, loaders
 
-def prepare_imgnet_data(cfg: Dict, pca_labels: bool = False) -> Tuple[Dict, Dict[str, DataLoader]]:
+def prepare_imgnet_data(cfg, pca_labels, shuffle):
     base_path = cfg.get("dataset_path", os.path.join("datasets", "obj_cls", "imagenet"))
     datasets_dict, loaders_dict = {}, {}
+
     for split in ["train", "test"]:
-        transform = get_transform(
-            ds_stats="imgnet",
-            data_augment=(split == "train" and cfg.get("data_augment", True)),
-            image_size=224
-        )
-        base_dataset = ImageNetDataset(
-            base_path,
-            split=split,
-            transform=transform,
-            train_ratio=cfg.get("train_ratio", 0.8)
-        )
-        dataset = maybe_wrap_with_pca(base_dataset, base_path, cfg, split, pca_labels)
+        augment = split == "train" and cfg.get("data_augment", True)
+        transform = get_transform(ds_stats="imgnet", data_augment=augment, image_size=224)
+        dataset = ImageNetDataset(base_path, split=split, transform=transform, train_ratio=cfg.get("train_ratio", 0.8))
+        dataset = wrap_with_pca(dataset, base_path, cfg, split) if pca_labels else dataset
+
         datasets_dict[split] = dataset
         loaders_dict[split] = create_dataloader(
             dataset,
             batch_size=cfg.get("batchsize", 32),
             num_workers=cfg.get("num_workers", 8),
-            shuffle=(split == "train")
+            shuffle=shuffle
         )
+
     return datasets_dict, loaders_dict
 
-def get_obj_cls_loader(cfg: Dict) -> Tuple[Dict, Dict[str, DataLoader]]:
+def get_obj_cls_loader(cfg, shuffle=True):
     """
     Prepares object classification datasets and loaders.
     Supported datasets: 'tiny-imagenet' and 'imagenet'.
@@ -268,8 +253,8 @@ def get_obj_cls_loader(cfg: Dict) -> Tuple[Dict, Dict[str, DataLoader]]:
     dataset_name = cfg.get("dataset", "tiny-imagenet")
     pca_labels = cfg.get("pca_labels", False)
     if dataset_name == "tiny-imagenet":
-        return prepare_tinyimgnet_data(cfg, pca_labels)
+        return prepare_tinyimgnet_data(cfg, pca_labels, shuffle)
     elif dataset_name == "imagenet":
-        return prepare_imgnet_data(cfg, pca_labels)
+        return prepare_imgnet_data(cfg, pca_labels, shuffle)
     else:
         raise ValueError(f"Unknown dataset: {dataset_name}")
