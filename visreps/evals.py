@@ -11,7 +11,8 @@ def eval(cfg):
     
     # 1. Setup
     rprint("Loading model...", style="setup")
-    model = model_utils.load_model(cfg, device)
+    num_classes = cfg.pca_n_classes if cfg.pca_labels else cfg.n_classes
+    model = model_utils.load_model(cfg, device, num_classes)
     model = model_utils.configure_feature_extractor(cfg, model)
     
     # 2. Load data

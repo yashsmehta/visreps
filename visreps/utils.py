@@ -136,7 +136,7 @@ def save_results(df, cfg, timeout=60):
 
     # Add random delay
     random.seed(os.urandom(10))
-    time.sleep(random.uniform(0, 5))
+    time.sleep(random.uniform(0, 3))
     
     # Setup paths and lock
     save_dir = Path('logs') / cfg.mode / cfg.load_model_from
@@ -328,7 +328,7 @@ def setup_optimizer(model, cfg):
             decay.append(param)
     
     parameters = [
-        {'params': decay, 'weight_decay': cfg.get('weight_decay', 0.01)},
+        {'params': decay, 'weight_decay': cfg.get('weight_decay', 0.0)},
         {'params': no_decay, 'weight_decay': 0.0}
     ]
 
@@ -342,7 +342,7 @@ def setup_optimizer(model, cfg):
     else:
         raise ValueError(f"Unknown optimizer: {cfg.optimizer}")
 
-def setup_scheduler(optimizer, cfg, steps_per_epoch):
+def setup_scheduler(optimizer, cfg):
     """Setup learning rate scheduler with warmup."""
     # First set up the warmup
     warmup_epochs = cfg.get('warmup_epochs', 0)
