@@ -4,7 +4,6 @@ from typing import Dict, List
 import torch
 from visreps.analysis.rsa import compute_rsa_alignment
 from visreps.analysis.regression.linear_regression import compute_linear_regression_alignment
-from visreps.utils import rprint
 
 def compute_neural_alignment(
     cfg: Dict,

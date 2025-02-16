@@ -24,13 +24,12 @@ class CustomCNN(nn.Module):
         pooling_type="max",
     ):
         super(CustomCNN, self).__init__()
-        # Default all layers to trainable if not specified
-        trainable_layers = trainable_layers or {"conv": "11111", "fc": "111"}
         
         # Validate trainable_layers length matches architecture
         n_conv_layers = 5  # We have 5 conv layers
         n_fc_layers = 3    # We have 3 fc layers
-        
+        self.num_classes = num_classes
+
         # Ensure conv_trainable has correct length
         if len(trainable_layers["conv"]) < n_conv_layers:
             print(f"Warning: conv_trainable length {len(trainable_layers['conv'])} is less than number of conv layers {n_conv_layers}")
@@ -107,25 +106,29 @@ class CustomCNN(nn.Module):
         self._initialize_weights()
 
     def _initialize_weights(self):
-        """Initialize model weights properly"""
+        """Initialize model weights properly."""
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                # Use He initialization with fan_out mode for ReLU networks
+                # Use He initialization for Conv layers (ReLU networks)
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
-            elif isinstance(m, nn.BatchNorm1d):
+            elif isinstance(m, (nn.BatchNorm2d, nn.BatchNorm1d)):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
             elif isinstance(m, nn.Linear):
-                # Use larger initialization for final layers
-                gain = nn.init.calculate_gain('relu')
-                fan_in = m.weight.size(1)
-                std = gain / math.sqrt(fan_in)
-                nn.init.normal_(m.weight, 0, std)
+                # Check if this is the final layer by comparing out_features to num_classes.
+                if m.out_features == self.num_classes:
+                    # Final classification layer: use a smaller std.
+                    fan_in = m.weight.size(1)
+                    std = 1.0 / math.sqrt(fan_in)
+                    nn.init.normal_(m.weight, 0, std)
+                else:
+                    # Hidden layers: use He initialization (gain for ReLU).
+                    gain = nn.init.calculate_gain('relu')
+                    fan_in = m.weight.size(1)
+                    std = gain / math.sqrt(fan_in)
+                    nn.init.normal_(m.weight, 0, std)
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
 
@@ -163,30 +166,8 @@ class CustomCNN(nn.Module):
 
     def forward(self, x):
         """Forward pass through the network."""
-        # Feature extraction
         x = self.features(x)
-        
-        # Debug shape before pooling
-        if not hasattr(self, '_shape_checked'):
-            print(f"Feature shape before pooling: {x.shape}")
-            self._shape_checked = True
-            
-        # Adaptive pooling
         x = self.adaptive_pool(x)
-        
-        # Debug shape after pooling
-        if not hasattr(self, '_pool_checked'):
-            print(f"Shape after adaptive pooling: {x.shape}")
-            self._pool_checked = True
-            
-        # Flatten for classifier
         x = torch.flatten(x, 1)
-        
-        # Debug shape before classifier
-        if not hasattr(self, '_flatten_checked'):
-            print(f"Shape after flattening: {x.shape}")
-            self._flatten_checked = True
-            
-        # Classification
         x = self.classifier(x)
         return x

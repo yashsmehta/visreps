@@ -85,9 +85,10 @@ class ImageNetDataset(Dataset):
     Custom loader for ImageNet with a flat folder structure.
     Folder-to-label mapping is read from a JSON file.
     """
-    def __init__(self, base_path: str, split: str = "train", transform=None, train_ratio: float = 0.8):
+    def __init__(self, base_path, split = "train", transform=None, train_ratio= 0.8):
         self.transform = transform
         label_file = os.path.join("datasets", "obj_cls", "imagenet", "folder_labels.json")
+        self.num_classes = 1000
         with open(label_file, "r") as f:
             self.folder_labels = json.load(f)
 
@@ -104,7 +105,7 @@ class ImageNetDataset(Dataset):
             for fname in os.listdir(folder_path):
                 if fname.lower().endswith((".jpeg", ".jpg")):
                     img_path = os.path.join(folder_path, fname)
-                    img_id = f"{folder}/{fname}"
+                    img_id = f"{fname}"
                     self.samples.append((img_path, label, img_id))
         if skipped:
             print(f"Warning: Skipped {len(skipped)} folders not in folder labels, e.g. {list(skipped)[:5]}")
@@ -226,7 +227,7 @@ def prepare_tinyimgnet_data(cfg, pca_labels, shuffle):
     return datasets, loaders
 
 def prepare_imgnet_data(cfg, pca_labels, shuffle):
-    base_path = cfg.get("dataset_path", os.path.join("datasets", "obj_cls", "imagenet"))
+    base_path = cfg.get("dataset_path", "/data/shared/datasets/imagenet")
     datasets_dict, loaders_dict = {}, {}
 
     for split in ["train", "test"]:

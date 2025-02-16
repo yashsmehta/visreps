@@ -181,7 +181,7 @@ def merge_checkpoint_config(cfg, checkpoint):
         cfg.epoch = checkpoint['epoch']
 
 
-def load_model(cfg, device, num_classes=None):
+def load_model(cfg, device, num_classes):
     """
     Load a model from checkpoint or initialize a new model.
 
@@ -197,7 +197,7 @@ def load_model(cfg, device, num_classes=None):
                 model_name,
                 checkpoint_path
         device: Torch device (e.g., 'cpu' or 'cuda').
-        num_classes: Number of output classes. If not provided, will use cfg.num_classes.
+        num_classes: Number of output classes.
 
     Returns:
         torch.nn.Module: The loaded or newly-initialized model.
@@ -218,7 +218,7 @@ def load_model(cfg, device, num_classes=None):
     if model_class == 'custom_cnn':
         custom_cfg = getattr(cfg, 'arch', {})
         model_params = {
-            'num_classes': num_classes or getattr(cfg, 'num_classes', 200),
+            'num_classes': num_classes,
             'trainable_layers': {
                 'conv': getattr(custom_cfg, 'conv_trainable', '11111'),
                 'fc': getattr(custom_cfg, 'fc_trainable', '111')

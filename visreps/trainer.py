@@ -30,7 +30,7 @@ class Trainer:
         self.model = model_utils.load_model(self.cfg, self.device, num_classes=num_classes)
         self.criterion = nn.CrossEntropyLoss()
         self.optimizer = utils.setup_optimizer(self.model, self.cfg)
-        self.scheduler = utils.setup_scheduler(self.optimizer, self.cfg, len(self.loaders["train"]))
+        self.scheduler = utils.setup_scheduler(self.optimizer, self.cfg)
         if self.cfg.use_wandb:
             self.cfg.train_loader_len = len(self.loaders["train"])
             self.logger = get_logger(use_wandb=True, log_system_metrics=True, cfg=self.cfg)
@@ -54,7 +54,6 @@ class Trainer:
             self.optimizer.zero_grad()
             outputs = self.model(images)
             loss = self.criterion(outputs, labels)
-
             epoch_stats['batch_loss'] += loss.item()
             epoch_stats['n_batches'] = i + 1
 
@@ -92,8 +91,15 @@ class Trainer:
                 'test/accuracy': metrics['test_acc'],
                 'train/loss': loss,
             }
+            # Add train accuracy if available
             if 'train_acc' in metrics:
                 combined_metrics['train/accuracy'] = metrics['train_acc']
+            # Add top5 metrics only if not using PCA labels
+            if not self.cfg.pca_labels and 'test_top5' in metrics:
+                combined_metrics['test/top5'] = metrics['test_top5']
+                if 'train_top5' in metrics:
+                    combined_metrics['train/top5'] = metrics['train_top5']
+            # Add other epoch metrics
             if 'epoch_metrics' in metrics:
                 for k, v in metrics['epoch_metrics'].items():
                     combined_metrics[f'train/{k}'] = v
@@ -108,14 +114,25 @@ class Trainer:
             metrics = {
                 "epoch": epoch,
                 "test_acc": test_top1,
-                "test_top5": test_top5,
                 "train_acc": train_top1,
-                "train_top5": train_top5,
                 "epoch_metrics": epoch_metrics
             }
+            
+            # Only add top5 metrics if not using PCA labels
+            if not self.cfg.pca_labels:
+                metrics.update({
+                    "test_top5": test_top5,
+                    "train_top5": train_top5
+                })
+                
             self.log_metrics(epoch, epoch_loss, metrics)
-            # Print a concise epoch summary.
-            print(f"Epoch {epoch} | Train Loss: {epoch_loss:.4f} | Train Acc: {train_top1:.2f}% (top5: {train_top5:.2f}%) | Test Acc: {test_top1:.2f}% (top5: {test_top5:.2f}%) | LR: {epoch_metrics['learning_rate']:.6f}")
+            
+            # Print a concise epoch summary
+            if self.cfg.pca_labels:
+                print(f"Epoch {epoch} | Train Loss: {epoch_loss:.4f} | Train Acc: {train_top1:.2f}% | Test Acc: {test_top1:.2f}% | LR: {epoch_metrics['learning_rate']:.6f}")
+            else:
+                print(f"Epoch {epoch} | Train Loss: {epoch_loss:.4f} | Train Acc: {train_top1:.2f}% (top5: {train_top5:.2f}%) | Test Acc: {test_top1:.2f}% (top5: {test_top5:.2f}%) | LR: {epoch_metrics['learning_rate']:.6f}")
+                
             if self.cfg.log_checkpoints and epoch % self.cfg.checkpoint_interval == 0:
                 model_utils.save_checkpoint(
                     self.checkpoint_dir, epoch, self.model, self.optimizer, metrics, self.cfg_dict
