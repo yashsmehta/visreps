@@ -123,7 +123,16 @@ class Trainer:
                     "epoch_metrics": epoch_metrics
                 }
                 self.log_metrics(epoch, epoch_loss, metrics)
-                print(f"Epoch {epoch} | Train Loss: {epoch_loss:.4f} | Train Acc: {train_top1:.2f}% (top5: {train_top5:.2f}%) | Test Acc: {test_top1:.2f}% (top5: {test_top5:.2f}%) | LR: {epoch_metrics['learning_rate']:.6f}")
+                
+                # Build status string based on available metrics
+                status = f"Epoch {epoch} | Train Loss: {epoch_loss:.4f} | Train Acc: {train_top1:.2f}%"
+                if isinstance(train_top5, (int, float)):
+                    status += f" (top5: {train_top5:.2f}%)"
+                status += f" | Test Acc: {test_top1:.2f}%"
+                if isinstance(test_top5, (int, float)):
+                    status += f" (top5: {test_top5:.2f}%)"
+                status += f" | LR: {epoch_metrics['learning_rate']:.6f}"
+                print(status)
                 
             if self.cfg.log_checkpoints and epoch % self.cfg.checkpoint_interval == 0:
                 model_utils.save_checkpoint(
