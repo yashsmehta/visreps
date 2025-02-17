@@ -109,28 +109,20 @@ class Trainer:
         for epoch in range(1, self.cfg.num_epochs + 1):
             epoch_loss, epoch_metrics = self.train_epoch(epoch)
             self.scheduler.step()
-            test_top1, test_top5 = self.evaluate("test")
-            train_top1, train_top5 = self.evaluate("train")
-            metrics = {
-                "epoch": epoch,
-                "test_acc": test_top1,
-                "train_acc": train_top1,
-                "epoch_metrics": epoch_metrics
-            }
-            
-            # Only add top5 metrics if not using PCA labels
-            if not self.cfg.pca_labels:
-                metrics.update({
+
+            if epoch % self.cfg.log_interval == 0:
+                test_top1, test_top5 = self.evaluate("test")
+                train_top1, train_top5 = self.evaluate("train")
+
+                metrics = {
+                    "epoch": epoch,
+                    "test_acc": test_top1,
                     "test_top5": test_top5,
-                    "train_top5": train_top5
-                })
-                
-            self.log_metrics(epoch, epoch_loss, metrics)
-            
-            # Print a concise epoch summary
-            if self.cfg.pca_labels:
-                print(f"Epoch {epoch} | Train Loss: {epoch_loss:.4f} | Train Acc: {train_top1:.2f}% | Test Acc: {test_top1:.2f}% | LR: {epoch_metrics['learning_rate']:.6f}")
-            else:
+                    "train_acc": train_top1,
+                    "train_top5": train_top5,
+                    "epoch_metrics": epoch_metrics
+                }
+                self.log_metrics(epoch, epoch_loss, metrics)
                 print(f"Epoch {epoch} | Train Loss: {epoch_loss:.4f} | Train Acc: {train_top1:.2f}% (top5: {train_top5:.2f}%) | Test Acc: {test_top1:.2f}% (top5: {test_top5:.2f}%) | LR: {epoch_metrics['learning_rate']:.6f}")
                 
             if self.cfg.log_checkpoints and epoch % self.cfg.checkpoint_interval == 0:
