@@ -7,7 +7,7 @@ import torch.nn as nn
 from typing import Dict
 
 from visreps.models import standard_cnn
-from visreps.models.custom_cnn import CustomCNN
+from visreps.models.custom_cnn import CustomCNN, TinyCustomCNN
 
 class FeatureExtractor(nn.Module):
     def __init__(self, model: nn.Module, return_nodes: Dict[str, str] = None):
@@ -228,7 +228,10 @@ def load_model(cfg, device, num_classes):
             'batchnorm': getattr(custom_cfg, 'batchnorm', True),
             'pooling_type': getattr(custom_cfg, 'pooling_type', 'max')
         }
-        model = CustomCNN(**model_params)
+        if 'tiny' in model_name.lower():
+            model = TinyCustomCNN(**model_params)
+        else:
+            model = CustomCNN(**model_params)
         
     else:
         # Initialize standard CNN
