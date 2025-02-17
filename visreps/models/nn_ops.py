@@ -59,14 +59,15 @@ def get_nonlinearity(nonlin_type="relu", inplace=True):
             raise ValueError(f"Unsupported non-linearity: {nonlin_type}")
 
 
-def get_pooling_fn(pooling_type, pooling_kernel_size=2):
+def get_pooling_fn(pooling_type, kernel_size=2, stride=2):
     """
     Retrieve a pooling layer based on the specified type and kernel size.
 
     Args:
         pool_type (str): The type of pooling to use. Supported types are "max", "avg", "globalmax",
                          "globalavg", and "none". An unsupported type raises a ValueError.
-        pool_kernel_size (int or tuple): The size of the pooling kernel. Not applicable for global pooling types.
+        kernel_size (int or tuple): The size of the pooling kernel. Default is 2.
+        stride (int or tuple): The stride of the pooling operation. Default is 2.
 
     Returns:
         torch.nn.Module: A pooling layer corresponding to the specified type and kernel size.
@@ -76,9 +77,9 @@ def get_pooling_fn(pooling_type, pooling_kernel_size=2):
     """
     match pooling_type:
         case "max":
-            return nn.MaxPool2d(kernel_size=pooling_kernel_size)
+            return nn.MaxPool2d(kernel_size=kernel_size, stride=stride)
         case "avg":
-            return nn.AvgPool2d(kernel_size=pooling_kernel_size)
+            return nn.AvgPool2d(kernel_size=kernel_size, stride=stride)
         case "adaptivemax":
             return nn.AdaptiveMaxPool2d((3, 3))
         case "adaptiveavg":
