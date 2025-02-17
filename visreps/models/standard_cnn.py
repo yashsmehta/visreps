@@ -1,7 +1,7 @@
 import torchvision.models as models
 import torch
 
-def AlexNet(pretrained_dataset="imagenet1k", num_classes=200):
+def AlexNet(pretrained_dataset="imagenet1k", num_classes=1000):
     """AlexNet with optional ImageNet pretraining."""
     if pretrained_dataset == "imagenet1k":
         model = models.alexnet(weights=models.AlexNet_Weights.IMAGENET1K_V1)
@@ -10,11 +10,9 @@ def AlexNet(pretrained_dataset="imagenet1k", num_classes=200):
     else:
         raise ValueError(f"Invalid pretrained dataset: {pretrained_dataset}")
     
-    # Replace classifier
-    model.classifier[-1] = torch.nn.Linear(4096, num_classes)
-    
-    # Initialize the classifier weights if not using pretrained model
-    if pretrained_dataset == "none":
+    # replace classifier if not using ImageNet (1000 classes)
+    if num_classes != 1000:
+        model.classifier[-1] = torch.nn.Linear(4096, num_classes)
         torch.nn.init.xavier_uniform_(model.classifier[-1].weight)
         torch.nn.init.zeros_(model.classifier[-1].bias)
     
