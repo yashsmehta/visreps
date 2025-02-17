@@ -19,7 +19,7 @@ class CustomCNN(nn.Module):
         num_classes=200,
         trainable_layers=None,
         nonlinearity="relu",
-        dropout=True,
+        dropout=0.5,
         batchnorm=True,
         pooling_type="max",
     ):
@@ -80,8 +80,8 @@ class CustomCNN(nn.Module):
             nonlin_fn,
             
             # conv5: 7x7 -> 3x3 (after pooling)
-            nn.Conv2d(384, 256, kernel_size=3, padding=1, groups=2, bias=not batchnorm),
-            nn.BatchNorm2d(256) if batchnorm else nn.Identity(),
+            nn.Conv2d(384, 512, kernel_size=3, padding=1, groups=2, bias=not batchnorm),
+            nn.BatchNorm2d(512) if batchnorm else nn.Identity(),
             nonlin_fn,
             nn.MaxPool2d(kernel_size=3, stride=2),  # 3x3
         )
@@ -91,11 +91,11 @@ class CustomCNN(nn.Module):
 
         # Classifier matching AlexNet's structure with 4096 neurons
         self.classifier = nn.Sequential(
-            nn.Dropout(0.5) if dropout else nn.Identity(),  # Original AlexNet dropout
-            nn.Linear(256 * 3 * 3, 4096),
+            nn.Dropout(p=dropout),  # Original AlexNet dropout
+            nn.Linear(512 * 3 * 3, 4096),
             nn.BatchNorm1d(4096) if batchnorm else nn.Identity(),
             nonlin_fn,
-            nn.Dropout(0.5) if dropout else nn.Identity(),  # Original AlexNet dropout
+            nn.Dropout(p=dropout),  # Original AlexNet dropout
             nn.Linear(4096, 4096),
             nn.BatchNorm1d(4096) if batchnorm else nn.Identity(),
             nonlin_fn,
