@@ -76,8 +76,8 @@ def test_imagenet_loader():
         print("✓ Both train and test splits present")
         
         # Verify label consistency
-        train_labels = set(label for _, label in datasets["train"].samples)
-        test_labels = set(label for _, label in datasets["test"].samples)
+        train_labels = set(label for _, label, img_id in datasets["train"].samples)
+        test_labels = set(label for _, label, img_id in datasets["test"].samples)
         all_labels = train_labels.union(test_labels)
         assert all(isinstance(label, int) for label in all_labels), "All labels should be integers"
         assert max(all_labels) < 1000 and min(all_labels) >= 0, "Labels should be in range [0, 999]"

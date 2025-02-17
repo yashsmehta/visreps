@@ -109,7 +109,7 @@ def test_tiny_imagenet_loader() -> None:
     # Test cases: with and without PCA labels
     test_configs = [
         {**base_cfg, "pca_labels": False},
-        {**base_cfg, "pca_labels": True, "pca_n_classes": 2},
+        {**base_cfg, "pca_labels": True, "pca_n_classes": 4},
     ]
 
     for cfg in test_configs:
