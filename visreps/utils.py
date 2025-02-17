@@ -347,32 +347,31 @@ def setup_scheduler(optimizer, cfg):
     # First set up the warmup
     warmup_epochs = cfg.get('warmup_epochs', 0)
     
-    # Create main scheduler
-    main_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer,
-        T_max=cfg.num_epochs - warmup_epochs,  # Total epochs minus warmup epochs
-        eta_min=cfg.learning_rate * 0.01  # Minimum LR is 1% of initial LR
-    )
-    
-    # If warmup is enabled, wrap with warmup scheduler
     if warmup_epochs > 0:
-        scheduler = torch.optim.lr_scheduler.SequentialLR(
+        # Create warmup scheduler that linearly increases LR from 10% to 100% of base LR
+        warmup = torch.optim.lr_scheduler.LinearLR(
             optimizer,
-            schedulers=[
-                torch.optim.lr_scheduler.LinearLR(
-                    optimizer,
-                    start_factor=0.1,  # Start at 10% of base LR
-                    end_factor=1.0,
-                    total_iters=warmup_epochs
-                ),
-                main_scheduler
-            ],
-            milestones=[warmup_epochs]
+            start_factor=0.1,  # Start at 10% of base LR
+            end_factor=1.0,
+            total_iters=warmup_epochs
         )
+        
+        # Main cosine scheduler that goes from 100% to 1% of base LR
+        main = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=cfg.num_epochs - warmup_epochs,  # Remaining epochs after warmup
+            eta_min=cfg.learning_rate * 0.05  # Minimum LR is 5% of initial LR
+        )
+        
+        # Combine schedulers
+        return torch.optim.lr_scheduler.ChainedScheduler([warmup, main])
     else:
-        scheduler = main_scheduler
-    
-    return scheduler
+        # If no warmup, just use cosine annealing
+        return torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer,
+            T_max=cfg.num_epochs,
+            eta_min=cfg.learning_rate * 0.05
+        )
 
 def log_training_step(logger, cfg, epoch, batch_idx, loss, lr):
     """Log training step metrics."""
