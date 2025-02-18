@@ -1,11 +1,15 @@
 import os
 import json
 import torch
+import warnings
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
 from torchvision import datasets
 from PIL import Image
 import pandas as pd
+
+# Filter out PIL TiffImagePlugin truncated file warnings
+warnings.filterwarnings('ignore', category=UserWarning, module='PIL.TiffImagePlugin')
 
 # Global normalization statistics.
 DS_MEAN = {
@@ -44,7 +48,7 @@ class PCADataset(Dataset):
     def __init__(self, base_dataset, pca_labels_path):
         self.dataset = base_dataset
         self.label_map = self._load_pca_labels(pca_labels_path)
-        self._validate_label_coverage()
+        self._filter_samples()
 
     def _load_pca_labels(self, csv_path):
         try:
@@ -59,22 +63,29 @@ class PCADataset(Dataset):
             raise ValueError("PCA labels must be non-negative integers")
         return {os.path.basename(row["image"]): int(row["pca_label"]) for _, row in df.iterrows()}
 
-    def _validate_label_coverage(self):
-        if hasattr(self.dataset, "samples"):
-            ds_files = {os.path.basename(s[0]) for s in self.dataset.samples}
-            missing = ds_files - set(self.label_map.keys())
-            if missing:
-                raise ValueError(f"{len(missing)} files missing PCA labels: {list(missing)[:3]}")
+    def _filter_samples(self):
+        """Filter samples to only those with PCA labels."""
+        if not hasattr(self.dataset, "samples"):
+            return
+        
+        filtered_samples = []
+        for sample in self.dataset.samples:
+            img_id = os.path.basename(sample[2])
+            if img_id in self.label_map:
+                filtered_samples.append(sample)
+        
+        total = len(self.dataset.samples)
+        kept = len(filtered_samples)
+        print(f"Filtered dataset from {total} to {kept} samples with PCA labels ({kept/total*100:.1f}%)")
+        self.dataset.samples = filtered_samples
 
     def __len__(self):
         return len(self.dataset)
 
     def __getitem__(self, idx):
         image, _ = self.dataset[idx]
-        img_id = os.path.basename(self.dataset.samples[idx][2]) if hasattr(self.dataset, "samples") else str(idx)
-        label = self.label_map.get(img_id, -1)
-        if label == -1:
-            raise ValueError(f"No PCA label found for image {img_id}")
+        img_id = os.path.basename(self.dataset.samples[idx][2])
+        label = self.label_map[img_id]
         return image, label
 
 # -----------------------------------------------------------------------------
@@ -105,21 +116,26 @@ class ImageNetDataset(Dataset):
             for fname in os.listdir(folder_path):
                 if fname.lower().endswith((".jpeg", ".jpg")):
                     img_path = os.path.join(folder_path, fname)
-                    img_id = f"{fname}"
+                    img_id = fname  # Just use filename for PCA matching
                     self.samples.append((img_path, label, img_id))
+                    
         if skipped:
-            print(f"Warning: Skipped {len(skipped)} folders not in folder labels, e.g. {list(skipped)[:5]}")
+            print(f"Warning: Skipped {len(skipped)} folders not in folder labels")
+        
         total = len(self.samples)
         indices = torch.randperm(total).tolist()
         split_idx = int(total * train_ratio)
         self.samples = [self.samples[i] for i in (indices[:split_idx] if split == "train" else indices[split_idx:])]
+        print(f"{split.capitalize()} split: {len(self.samples)} samples")
 
     def __len__(self):
         return len(self.samples)
 
     def __getitem__(self, idx: int):
         img_path, label, _ = self.samples[idx]
-        image = Image.open(img_path).convert("RGB")
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', UserWarning)
+            image = Image.open(img_path).convert("RGB")
         if self.transform:
             image = self.transform(image)
         return image, label
@@ -152,7 +168,9 @@ class TinyImageNetDataset(Dataset):
 
     def __getitem__(self, idx: int):
         path, label, _ = self.samples[idx]
-        image = self.loader(path)
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', UserWarning)
+            image = Image.open(path).convert("RGB")
         if self.transform:
             image = self.transform(image)
             if idx < 5:
@@ -228,13 +246,19 @@ def prepare_tinyimgnet_data(cfg, pca_labels, shuffle):
 
 def prepare_imgnet_data(cfg, pca_labels, shuffle):
     base_path = cfg.get("dataset_path", "/data/shared/datasets/imagenet")
+    pca_base_path = os.path.join("datasets", "obj_cls", "imagenet")
     datasets_dict, loaders_dict = {}, {}
 
     for split in ["train", "test"]:
         augment = split == "train" and cfg.get("data_augment", True)
         transform = get_transform(ds_stats="imgnet", data_augment=augment, image_size=224)
         dataset = ImageNetDataset(base_path, split=split, transform=transform, train_ratio=cfg.get("train_ratio", 0.8))
-        dataset = wrap_with_pca(dataset, base_path, cfg, split) if pca_labels else dataset
+        
+        if not pca_labels and "n_classes" not in cfg:
+            cfg["n_classes"] = dataset.num_classes
+            print(f"Setting n_classes to {dataset.num_classes} based on dataset")
+        
+        dataset = wrap_with_pca(dataset, pca_base_path, cfg, split) if pca_labels else dataset
 
         datasets_dict[split] = dataset
         loaders_dict[split] = create_dataloader(
