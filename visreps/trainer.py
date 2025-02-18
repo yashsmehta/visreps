@@ -110,18 +110,21 @@ class Trainer:
             epoch_loss, epoch_metrics = self.train_epoch(epoch)
             self.scheduler.step()
 
+            metrics = {
+                "epoch": epoch,
+                "epoch_metrics": epoch_metrics
+            }
+
             if epoch % self.cfg.log_interval == 0:
                 test_top1, test_top5 = self.evaluate("test")
                 train_top1, train_top5 = self.evaluate("train")
 
-                metrics = {
-                    "epoch": epoch,
+                metrics.update({
                     "test_acc": test_top1,
                     "test_top5": test_top5,
                     "train_acc": train_top1,
                     "train_top5": train_top5,
-                    "epoch_metrics": epoch_metrics
-                }
+                })
                 self.log_metrics(epoch, epoch_loss, metrics)
                 
                 # Build status string based on available metrics
