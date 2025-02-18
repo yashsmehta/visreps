@@ -7,14 +7,14 @@ BASE_CONFIG = "configs/train/base.json"
 
 # Define the parameter grid for training
 PARAM_GRID = {
-    "exp_name": ["dropout"],
-    "arch.nonlinearity": ["sigmoid"],
-    "arch.dropout": [0.0, 0.3],
+    "exp_name": ["imagenet_pca"],
+    "arch.nonlinearity": ["relu"],
+    "seed": [1],
+    "arch.dropout": [0.3],
     "arch.batchnorm": [True],
-    "learning_rate": [0.0005],
-    "weight_decay": [0.001],
-    "pca_labels": [False],
-    "pca_n_classes": [2],
+    "model_name": ["CustomCNN"],
+    "pca_labels": [True],
+    "pca_n_classes": [2, 4, 8],
 }
 
 def flatten_config(config, parent_key="", sep="."):
