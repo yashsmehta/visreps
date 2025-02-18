@@ -58,17 +58,16 @@ class TinyCustomCNN(nn.Module):
 
         # Adjusted architecture for Tiny ImageNet (64x64 input)
         self.features = nn.Sequential(
-            # conv1: 64x64 -> 32x32
-            nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=not batchnorm),
+            # conv1: 64x64 -> 16x16
+            nn.Conv2d(3, 64, kernel_size=5, stride=2, padding=2, bias=not batchnorm),
             nn.BatchNorm2d(64) if batchnorm else nn.Identity(),
             nonlin_fn,
-            pool_fn,  # 32x32
+            pool_fn,  # 16x16
 
-            # conv2: 32x32 -> 16x16
+            # conv2: 16x16 -> 16x16
             nn.Conv2d(64, 128, kernel_size=3, padding=1, bias=not batchnorm),
             nn.BatchNorm2d(128) if batchnorm else nn.Identity(),
             nonlin_fn,
-            pool_fn,  # 16x16
 
             # conv3: 16x16 -> 8x8
             nn.Conv2d(128, 256, kernel_size=3, padding=1, bias=not batchnorm),
@@ -97,10 +96,10 @@ class TinyCustomCNN(nn.Module):
             nn.BatchNorm1d(2048) if batchnorm else nn.Identity(),
             nonlin_fn,
             nn.Dropout(p=dropout) if dropout else nn.Identity(),
-            nn.Linear(2048, 512),
-            nn.BatchNorm1d(512) if batchnorm else nn.Identity(),
+            nn.Linear(2048, 2048),
+            nn.BatchNorm1d(2048) if batchnorm else nn.Identity(),
             nonlin_fn,
-            nn.Linear(512, num_classes),
+            nn.Linear(2048, num_classes),
         )
 
         self._set_trainable_layers(trainable_layers)
@@ -229,7 +228,7 @@ class CustomCNN(nn.Module):
         # Adjusted architecture for Tiny ImageNet (64x64 input) following AlexNet structure
         self.features = nn.Sequential(
             # conv1: 64x64 -> 15x15 (after pooling)
-            nn.Conv2d(3, 96, kernel_size=7, stride=4, padding=2, bias=not batchnorm),
+            nn.Conv2d(3, 96, kernel_size=11, stride=4, padding=2, bias=not batchnorm),
             nn.LocalResponseNorm(size=5, alpha=0.0001, beta=0.75, k=2.0) if not batchnorm else nn.BatchNorm2d(96),
             nonlin_fn,
             pool_fn,  # 15x15
