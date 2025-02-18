@@ -127,7 +127,7 @@ def create_comparison_plots(tinyimagenet_df, regions, layer_order, layer_colors)
     return region_images
 
 # Read the CSV file
-tinyimagenet_df = pd.read_csv('logs/eval/checkpoint/tiny_imagenet_cnn.csv')
+tinyimagenet_df = pd.read_csv('logs/eval/checkpoint/tiny_custom_cnn.csv')
 
 # Create output directory if it doesn't exist
 os.makedirs('plots/rsa_by_epoch', exist_ok=True)
