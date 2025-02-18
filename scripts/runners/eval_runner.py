@@ -30,8 +30,8 @@ def load_config(filepath):
     with open(filepath, "r") as file:
         return json.load(file)
 
-def get_checkpoint_files(directory, pattern="checkpoint_epoch_*.pth"):
-    """Returns a list of checkpoint files sorted by epoch number."""
+def get_checkpoint_files(directory, pattern="checkpoint_epoch_*.pth", eval_epochs=None):
+    """Returns a list of checkpoint files filtered by specified epochs."""
     def get_epoch_num(filepath):
         # Extract epoch number from filename like 'checkpoint_epoch_X.pth'
         try:
@@ -39,11 +39,19 @@ def get_checkpoint_files(directory, pattern="checkpoint_epoch_*.pth"):
         except (IndexError, ValueError):
             return -1
     
-    return sorted(glob.glob(os.path.join(directory, pattern)), key=get_epoch_num)
+    all_checkpoints = glob.glob(os.path.join(directory, pattern))
+    if eval_epochs is None:
+        return sorted(all_checkpoints, key=get_epoch_num)
+    
+    # Filter checkpoints by specified epochs
+    filtered_checkpoints = [ckpt for ckpt in all_checkpoints 
+                          if get_epoch_num(ckpt) in eval_epochs]
+    return sorted(filtered_checkpoints, key=get_epoch_num)
 
 def main():
     exp_name = "dropout"
-    config_folders = ["cfg1"]
+    config_folders = ["cfg1", "cfg2", "cfg3"]
+    eval_epochs = [20]
     for config_folder in config_folders:
         CHECKPOINT_DIR = f"model_checkpoints/{exp_name}/{config_folder}"
         
@@ -58,8 +66,8 @@ def main():
         param_names = list(PARAM_GRID.keys())
         param_combos = list(product(*PARAM_GRID.values()))
 
-        # Get all checkpoints
-        checkpoint_files = get_checkpoint_files(CHECKPOINT_DIR)
+        # Get checkpoints filtered by eval_epochs
+        checkpoint_files = get_checkpoint_files(CHECKPOINT_DIR, eval_epochs=eval_epochs)
 
         total_runs = len(param_combos) * len(checkpoint_files)
         print(f"Running {total_runs} configurations "
@@ -81,9 +89,7 @@ def main():
                        "--config", BASE_CONFIG,
                        "--override"] + overrides
 
-                cmd_str = " ".join(cmd)
-                print(f"\nExecuting: {cmd_str}")
-                # Uncomment the line below to actually run the command
+                print(f"\nExecuting next command")
                 subprocess.run(cmd)
 
 if __name__ == "__main__":
