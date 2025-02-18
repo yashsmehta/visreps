@@ -4,6 +4,7 @@ from typing import Dict, List
 import torch
 from visreps.analysis.rsa import compute_rsa_alignment
 from visreps.analysis.regression.linear_regression import compute_linear_regression_alignment
+from visreps.analysis.cross_decomposition import compute_cross_decomposition_alignment
 
 def compute_neural_alignment(
     cfg: Dict,
@@ -32,6 +33,7 @@ def compute_neural_alignment(
     analysis_functions = {
         'rsa': compute_rsa_alignment,
         'linear_regression': compute_linear_regression_alignment,
+        'cross_decomposition': compute_cross_decomposition_alignment,
         # Add more analysis types here as needed
         # 'cka': compute_cka_alignment,
     }
