@@ -4,6 +4,7 @@ from pathlib import Path
 import os
 import pickle
 import warnings
+import numpy as np
 import torch
 import torch.optim as optim
 from filelock import FileLock, Timeout
@@ -33,45 +34,65 @@ def setup_logging():
 # Initialize Rich print globally as rprint
 rprint = setup_logging()
 
-def check_trainer_config(cfg):
+def validate_config(cfg):
     """
-    Validates the trainer configuration for the number of elements and content in 'conv_trainable' and 'fc_trainable'.
-    Also validates and sets dataset-specific parameters like default batch size.
+    Validates the configuration for both training and evaluation modes.
+    Performs comprehensive validation of model class, dataset, architecture parameters,
+    and mode-specific requirements.
 
     Args:
-        cfg (OmegaConf): The configuration object containing training parameters.
+        cfg (OmegaConf): The configuration object containing all parameters.
 
     Returns:
         OmegaConf: The validated and potentially modified configuration object.
 
     Raises:
-        AssertionError: If any of the configuration conditions are not met.
+        AssertionError: If any configuration conditions are not met.
+        Warning: For potential mismatches in model/dataset combinations.
     """
-    # Check model class
-    assert cfg.model_class in [
-        "custom_cnn",
-        "standard_cnn",
-    ], "model_class must be one of 'custom_cnn', 'standard_cnn'!"
+    # Validate mode
+    assert cfg.mode in ["train", "eval"], "mode must be train or eval"
     
-    # Check dataset
+    # Common validations
     assert cfg.dataset in ["imagenet", "tiny-imagenet"], f"Unsupported dataset: {cfg.dataset}"
     
-    # Set default batch size if not specified
-    if not hasattr(cfg, "batchsize"):
-        cfg.batchsize = 32
-        rprint(f"Using default batch size: {cfg.batchsize}", style="info")
-    
-    # Check custom CNN architecture parameters if applicable
-    if cfg.model_class == "custom_cnn":
-        assert all(
-            char in "01" for char in cfg.arch.conv_trainable
-        ), "conv_trainable must only contain '0's and '1's!"
-        assert all(
-            char in "01" for char in cfg.arch.fc_trainable
-        ), "fc_trainable must only contain '0's and '1's!"
+    if cfg.mode == "train":
+        # Model class validation
+        assert cfg.model_class in ["custom_cnn", "standard_cnn"], "model_class must be custom_cnn or standard_cnn"
+        assert hasattr(cfg, "pca_labels"), "pca_labels flag must be specified"
+        
+        # Model-specific validations
+        if cfg.model_class == "standard_cnn":
+            assert not hasattr(cfg, "custom_cnn"), "custom_cnn key should not be present in standard_cnn mode"
+        elif cfg.model_class == "custom_cnn":
+            assert not hasattr(cfg, "standard_cnn"), "standard_cnn key should not be present in custom_cnn mode"
+            
+            # Validate custom CNN architecture parameters
+            assert all(char in "01" for char in cfg.arch.conv_trainable), "conv_trainable must only contain '0's and '1's!"
+            assert all(char in "01" for char in cfg.arch.fc_trainable), "fc_trainable must only contain '0's and '1's!"
+            
+            # Model-dataset compatibility warnings
+            if cfg.dataset == "imagenet" and "tiny" in cfg.model_name.lower():
+                warnings.warn("Training TinyCustomCNN on ImageNet-1k. This model is designed for TinyImageNet.")
+            elif cfg.dataset == "tiny-imagenet" and "tiny" not in cfg.model_name.lower():
+                warnings.warn("Training CustomCNN on TinyImageNet. This model is designed for ImageNet-1k.")
+        
+        # PCA classes validation
+        assert cfg.pca_n_classes == 2**int(np.log2(cfg.n_classes)), "pca_n_classes must be a power of 2 and equal to n_classes"
+        
+        # Set default batch size if not specified
+        if not hasattr(cfg, "batchsize"):
+            cfg.batchsize = 64 
+            rprint(f"Using default batch size: {cfg.batchsize}", style="info")
+            
+    else:  # eval mode
+        assert cfg.load_model_from in ["checkpoint", "torchvision"], "load_model_from must be checkpoint or torchvision"
+        if cfg.load_model_from == "checkpoint":
+            assert not hasattr(cfg, "torchvision"), "torchvision key should not be present in checkpoint mode"
+        elif cfg.load_model_from == "torchvision":
+            assert not hasattr(cfg, "checkpoint"), "checkpoint key should not be present in torchvision mode"
     
     return cfg
-
 
 def merge_nested_config(cfg, source_key):
     """Merge nested config into root."""

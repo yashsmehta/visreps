@@ -13,7 +13,7 @@ from visreps.utils import calculate_cls_accuracy, get_logger
 class Trainer:
     """Trainer class for object classification models."""
     def __init__(self, cfg):
-        self.cfg = utils.check_trainer_config(cfg)
+        self.cfg = cfg
         self.logger = None
         self.setup_environment()
         self.setup_training()
