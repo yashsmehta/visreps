@@ -13,8 +13,8 @@ def main():
                         help='Dataset to process features from (default: tiny-imagenet)')
     args = parser.parse_args()
 
-    # Use 5 PCA components (i.e. n_bits=5)
-    n_bits = 5
+    # Use first n_bits PCA components (i.e. n_bits=6)
+    n_bits = 6 
 
     # Load features.
     features_path = f"datasets/obj_cls/{args.dataset}/features.npz"
@@ -75,9 +75,9 @@ def main():
         for i in range(n_bits)
     ]).T  # Shape: (n_samples, 5)
 
-    # For each target number of classes (2, 4, 8, 16, 32),
     # use the first log2(n_classes) bits to form integer labels.
-    targets = [2, 4, 8, 16, 32]
+    targets = [2 ** i for i in range(1, n_bits + 1)]  # e.g. creates [2, 4, 8, 16, 32, 64] for n_bits=6
+
     for target in targets:
         n_req = int(log2(target))
         # Combine the first n_req bits into an integer label.
