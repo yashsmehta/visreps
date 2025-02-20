@@ -204,7 +204,7 @@ def load_model(cfg, device, num_classes):
     """
     # If loading from checkpoint, merge configs and return
     if getattr(cfg, 'load_model_from', None) == 'checkpoint':
-        checkpoint_path = cfg.checkpoint_path
+        checkpoint_path = f"model_checkpoints/{cfg.exp_name}/cfg{cfg.cfg_id}/{cfg.checkpoint_model}"
         checkpoint = torch.load(checkpoint_path, map_location=device)
         print(f"Loaded model from checkpoint: {checkpoint_path}")
         merge_checkpoint_config(cfg, checkpoint)

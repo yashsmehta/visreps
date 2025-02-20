@@ -6,7 +6,7 @@
   "neural_dataset": "nsd",
   "log_expdata": true,
   "cfg_id": 1,
-  "exp_name": "imagenet_cnn",
+  "exp_name": "seeds",
   "batchsize": 32,
   "num_workers": 8,
   "return_nodes": ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2", "fc3"],
@@ -18,6 +18,6 @@
   },
   "checkpoint":
   {
-    "checkpoint_path": "model_checkpoints/imagenet_cnn/cfg1/checkpoint_epoch_25.pth"
+    "checkpoint_model": "checkpoint_epoch_20.pth"
   }
 }

@@ -3,13 +3,17 @@ import visreps.models.utils as model_utils
 from visreps.dataloaders.neural import get_neural_loader
 from visreps.utils import save_results, rprint
 from visreps.analysis.alignment import compute_neural_alignment
-
+from omegaconf import OmegaConf
 
 def eval(cfg):
     """Evaluate model's neural alignment with brain data"""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     rprint(f"\nStarting model evaluation on {device}", style="info")
 
+    if cfg.load_model_from == "checkpoint":
+        train_cfg = OmegaConf.load(f"model_checkpoints/{cfg.exp_name}/cfg{cfg.cfg_id}/config.json")
+        train_cfg.pop("mode")
+        cfg.update(train_cfg)
     # Load model
     rprint("Loading model...", style="setup")
     num_classes = (

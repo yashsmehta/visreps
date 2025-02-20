@@ -48,50 +48,84 @@ def validate_config(cfg):
 
     Raises:
         AssertionError: If any configuration conditions are not met.
-        Warning: For potential mismatches in model/dataset combinations.
     """
     # Validate mode
-    assert cfg.mode in ["train", "eval"], "mode must be train or eval"
-    
-    # Common validations
-    assert cfg.dataset in ["imagenet", "tiny-imagenet"], f"Unsupported dataset: {cfg.dataset}"
-    
+    if cfg.mode not in ["train", "eval"]:
+        rprint(f"[red]Invalid mode: {cfg.mode}. Must be 'train' or 'eval'[/red]", style="error")
+        raise AssertionError("mode must be train or eval")
+
     if cfg.mode == "train":
+        if cfg.dataset not in ["imagenet", "tiny-imagenet"]:
+            rprint(f"[red]Invalid dataset: {cfg.dataset}. Must be 'imagenet' or 'tiny-imagenet'[/red]", style="error")
+            raise AssertionError(f"Unsupported dataset: {cfg.dataset}")
+
         # Model class validation
-        assert cfg.model_class in ["custom_cnn", "standard_cnn"], "model_class must be custom_cnn or standard_cnn"
-        assert hasattr(cfg, "pca_labels"), "pca_labels flag must be specified"
+        if cfg.model_class not in ["custom_cnn", "standard_cnn"]:
+            rprint("[red]Invalid model_class. Must be 'custom_cnn' or 'standard_cnn'[/red]", style="error")
+            raise AssertionError("model_class must be custom_cnn or standard_cnn")
+            
+        if not hasattr(cfg, "pca_labels"):
+            rprint("[red]Missing required config: pca_labels[/red]", style="error")
+            raise AssertionError("pca_labels flag must be specified")
         
         # Model-specific validations
         if cfg.model_class == "standard_cnn":
-            assert not hasattr(cfg, "custom_cnn"), "custom_cnn key should not be present in standard_cnn mode"
+            if hasattr(cfg, "custom_cnn"):
+                rprint("[red]Invalid config: custom_cnn key present in standard_cnn mode[/red]", style="error")
+                raise AssertionError("custom_cnn key should not be present in standard_cnn mode")
         elif cfg.model_class == "custom_cnn":
-            assert not hasattr(cfg, "standard_cnn"), "standard_cnn key should not be present in custom_cnn mode"
+            if hasattr(cfg, "standard_cnn"):
+                rprint("[red]Invalid config: standard_cnn key present in custom_cnn mode[/red]", style="error")
+                raise AssertionError("standard_cnn key should not be present in custom_cnn mode")
             
             # Validate custom CNN architecture parameters
-            assert all(char in "01" for char in cfg.arch.conv_trainable), "conv_trainable must only contain '0's and '1's!"
-            assert all(char in "01" for char in cfg.arch.fc_trainable), "fc_trainable must only contain '0's and '1's!"
+            if not all(char in "01" for char in cfg.arch.conv_trainable):
+                rprint("[red]Invalid conv_trainable string. Must only contain '0's and '1's[/red]", style="error")
+                raise AssertionError("conv_trainable must only contain '0's and '1's!")
+                
+            if not all(char in "01" for char in cfg.arch.fc_trainable):
+                rprint("[red]Invalid fc_trainable string. Must only contain '0's and '1's[/red]", style="error")
+                raise AssertionError("fc_trainable must only contain '0's and '1's!")
             
             # Model-dataset compatibility warnings
             if cfg.dataset == "imagenet" and "tiny" in cfg.model_name.lower():
-                warnings.warn("Training TinyCustomCNN on ImageNet-1k. This model is designed for TinyImageNet.")
+                rprint("⚠️  Training TinyCustomCNN on ImageNet-1k. This model is designed for TinyImageNet.", style="warning")
             elif cfg.dataset == "tiny-imagenet" and "tiny" not in cfg.model_name.lower():
-                warnings.warn("Training CustomCNN on TinyImageNet. This model is designed for ImageNet-1k.")
+                rprint("⚠️  Training CustomCNN on TinyImageNet. This model is designed for ImageNet-1k.", style="warning")
         
         # PCA classes validation
-        assert cfg.pca_n_classes == 2**int(np.log2(cfg.n_classes)), "pca_n_classes must be a power of 2 and equal to n_classes"
+        if cfg.pca_labels:
+            if cfg.pca_n_classes <= 1:
+                rprint("[red]Invalid pca_n_classes. Must be greater than 1 when pca_labels is True[/red]", style="error")
+                raise AssertionError("pca_n_classes must be greater than 1 when pca_labels is True")
+            if (cfg.pca_n_classes & (cfg.pca_n_classes - 1)) != 0:
+                rprint("[red]Invalid pca_n_classes. Must be a power of 2[/red]", style="error")
+                raise AssertionError("pca_n_classes must be a power of 2")
         
         # Set default batch size if not specified
         if not hasattr(cfg, "batchsize"):
             cfg.batchsize = 64 
-            rprint(f"Using default batch size: {cfg.batchsize}", style="info")
+            rprint("ℹ️  Using default batch size: 64", style="info")
             
     else:  # eval mode
-        assert cfg.load_model_from in ["checkpoint", "torchvision"], "load_model_from must be checkpoint or torchvision"
+        if cfg.load_model_from not in ["checkpoint", "torchvision"]:
+            rprint("[red]Invalid load_model_from. Must be 'checkpoint' or 'torchvision'[/red]", style="error")
+            raise AssertionError("load_model_from must be checkpoint or torchvision")
+            
         if cfg.load_model_from == "checkpoint":
-            assert not hasattr(cfg, "torchvision"), "torchvision key should not be present in checkpoint mode"
-        elif cfg.load_model_from == "torchvision":
-            assert not hasattr(cfg, "checkpoint"), "checkpoint key should not be present in torchvision mode"
+            if hasattr(cfg, "torchvision"):
+                rprint("[red]Invalid config: torchvision key present in checkpoint mode[/red]", style="error")
+                raise AssertionError("torchvision key should not be present in checkpoint mode")
+
+            if not Path(f"model_checkpoints/{cfg.exp_name}/cfg{cfg.cfg_id}/{cfg.checkpoint_model}").exists():
+                rprint(f"[red]Checkpoint model not found: {cfg.checkpoint_model}[/red]", style="error")
+                raise AssertionError(f"Checkpoint model not found: {cfg.checkpoint_model}")
+
+        elif cfg.load_model_from == "torchvision" and hasattr(cfg, "checkpoint"):
+            rprint("[red]Invalid config: checkpoint key present in torchvision mode[/red]", style="error")
+            raise AssertionError("checkpoint key should not be present in torchvision mode")
     
+    rprint("✅ Configuration validation successful", style="success")
     return cfg
 
 def merge_nested_config(cfg, source_key):
@@ -108,7 +142,6 @@ def load_config(config_path, overrides):
     """Load config from file and apply CLI overrides."""
     if not Path(config_path).exists():
         raise FileNotFoundError(f"Config file not found: {config_path}")
-
     cfg = OmegaConf.load(config_path)
     
     if cfg.mode == "train":
