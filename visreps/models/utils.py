@@ -1,5 +1,6 @@
 import json
 import os
+import warnings
 import torch
 import torchvision
 from omegaconf import OmegaConf
@@ -8,6 +9,7 @@ from typing import Dict
 
 from visreps.models import standard_cnn
 from visreps.models.custom_cnn import CustomCNN, TinyCustomCNN
+from visreps.utils import rprint
 
 class FeatureExtractor(nn.Module):
     def __init__(self, model: nn.Module, return_nodes: Dict[str, str] = None):
@@ -181,7 +183,7 @@ def merge_checkpoint_config(cfg, checkpoint):
         cfg.epoch = checkpoint['epoch']
 
 
-def load_model(cfg, device, num_classes):
+def load_model(cfg, device, num_classes=None):
     """
     Load a model from checkpoint or initialize a new model.
 
@@ -204,6 +206,8 @@ def load_model(cfg, device, num_classes):
     """
     # If loading from checkpoint, merge configs and return
     if getattr(cfg, 'load_model_from', None) == 'checkpoint':
+        if num_classes is not None:
+            rprint("WARNING: num_classes is ignored when loading from checkpoint", style="warning")
         checkpoint_path = f"model_checkpoints/{cfg.exp_name}/cfg{cfg.cfg_id}/{cfg.checkpoint_model}"
         checkpoint = torch.load(checkpoint_path, map_location=device)
         print(f"Loaded model from checkpoint: {checkpoint_path}")
@@ -241,7 +245,7 @@ def load_model(cfg, device, num_classes):
         pretrained_dataset = getattr(cfg, 'pretrained_dataset', "none")
         
         # Load model - classifier layer is already replaced in model_fn
-        model = model_fn(pretrained_dataset, num_classes or getattr(cfg, 'num_classes', 200))
+        model = model_fn(pretrained_dataset, num_classes)
 
     return model.to(device)
 
