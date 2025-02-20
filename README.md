@@ -1,4 +1,4 @@
-# VisReps: How do cortex-like representations emerge in deep neural networks during training?
+# VisReps: At What Level of Categorization Do Neural Networks Capture Ventral Stream Representations?
 
 <p align="left">
 <a href="https://docs.python.org/3/whatsnew/3.12.html"><img src="https://img.shields.io/badge/python-3.12-blue.svg?style=for-the-badge&logo=python" alt="Python Version"></a> <a href="https://www.pytorch.com/"><img src="https://img.shields.io/badge/PyTorch-2.5-blue?style=for-the-badge&logo=pytorch&labelColor=gray&color=orange" alt="PyTorch Version"></a> <a href="https://opensource.org/license/mit/"><img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge&logo=open-source-initiative" alt="License"></a>
@@ -7,7 +7,7 @@
 
 ## Introduction
 
-How do neural representations in the human visual cortex and deep neural networks become similar during training? This repository contains code to explore how representational similarities between artificial neural networks and the human visual system develop over time. It includes a training pipeline (focused on object classification tasks, using standard CNNs or customizable CNNs with configurable trainable layers) and an evaluation pipeline (offering metrics like RSA, encoding scores, and cross-correlation to measure similarity to the visual cortex).
+Artificial neural networks trained on large-scale object classification tasks exhibit high representational similarity to the human brain. This similarity is typically attributed to training with hundreds or thousands of object categories. In this study, we investigate an alternative question: Can coarse-grained categorization alone achieve similar brain alignment? Using the same dataset (ImageNet/Tiny-ImageNet), we construct broad classification labels based on the principal components of extracted representations from the penultimate layer of a trained AlexNet. We experiment with varying levels of granularity (2, 4, 8, and 16 categories) and analyze how representational similarity analysis (RSA) scores evolve throughout training and across different regions of the ventral stream (early, mid, and higher visual areas) using fMRI responses to natural scenes. Surprisingly, we find that even broad, coarse-grained classification is sufficient to achieve RSA scores comparable to those obtained from networks trained on fine-grained object categories. Additionally, we perform cross-decomposition analysis and further investigate the shared latent dimensions between these networks and the brain. Our findings suggest that high-level ventral stream representations may be driven more by global structure than specific object categories, providing new insights into the nature of neural encoding in artificial and biological vision systems.
 
 ## Installation
 
@@ -43,12 +43,12 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 If you use this code in your research, please cite:
 ```bibtex
-@software{Mehta_VisReps_2024,
-  author = {Mehta, Yash},
-  title = {{VisReps: How do cortex-like representations emerge in deep neural networks during training?}},
-  year = {2024},
+@software{Mehta_VisReps_2025,
+  author = {Mehta, Yash and Bonner, Michael F.},
+  title = {{VisReps: At What Level of Categorization Do Neural Networks Capture Ventral Stream Representations?}},
+  year = {2025},
   url = {https://github.com/yashsmehta/visreps},
-  note = {Accessed: 2024-10-01}
+  note = {Accessed: 2025-02-20}
 }
 ```
 
