@@ -32,7 +32,7 @@ def eval(cfg):
     activations_dict, keys = model_utils.get_activations(model, dataloader, device)
     results_df = compute_neural_alignment(cfg, activations_dict, neural_data, keys)
 
-    if cfg.log_expdata:
+    if cfg.log_expdata and cfg.analysis != "cross_decomposition":
         save_results(results_df, cfg)
 
     rprint("Evaluation complete!", style="success")
