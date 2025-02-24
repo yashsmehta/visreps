@@ -1,97 +1,86 @@
 import os
 import json
-import glob
 import subprocess
 from itertools import product
+from typing import Dict, Any
 
-# Base configuration file and parameter grid
+# Configuration
 BASE_CONFIG_PATH = "configs/eval/base.json"
+CHECKPOINTS_DIR = "model_checkpoints"
 
+# Evaluation parameter grid
 PARAM_GRID = {
-    "exp_name": ["imagenet_cnn"],
-    "config_folders": ["cfg1"],
+    "exp_name": ["seeds"],
+    "config_folders": ["cfg1", "cfg2"],
+    "eval_epochs": [0, 10],
     "region": [
         "early visual stream",
-        "midventral visual stream",
-        "ventral visual stream"
+        "ventral visual stream",
     ],
-    "eval_epochs": [0, 10],
     "analysis": ["rsa"],
-    "subject_idx": [0, 1, 2, 3, 4, 5, 6, 7],
-    "return_nodes": [["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2", "fc3"]]
+    "subject_idx": [0, 1],
+    "return_nodes": [["conv4", "fc2"]],
 }
 
-def load_json_config(filepath):
-    """Load JSON configuration from a file."""
-    with open(filepath, "r") as file:
-        return json.load(file)
 
-def get_epoch_number(filepath):
-    """Extract the epoch number from a checkpoint filename."""
-    try:
-        # Expected format: checkpoint_epoch_X.pth
-        return int(os.path.basename(filepath).split('_')[2].split('.')[0])
-    except (IndexError, ValueError):
-        return -1
+def get_checkpoint_path(exp_name: str, config_folder: str, epoch: int) -> str:
+    return os.path.join(
+        CHECKPOINTS_DIR, exp_name, config_folder, f"checkpoint_epoch_{epoch}.pth"
+    )
 
-def list_checkpoint_files(directory, pattern="checkpoint_epoch_*.pth", epochs=None):
-    """
-    List checkpoint files in a directory.
-    If 'epochs' is provided, only return checkpoints matching the epoch numbers.
-    """
-    files = glob.glob(os.path.join(directory, pattern))
-    if epochs is not None:
-        # Allow single int input for epochs
-        if isinstance(epochs, (int, float)):
-            epochs = [epochs]
-        files = [f for f in files if get_epoch_number(f) in epochs]
-    return sorted(files, key=get_epoch_number)
 
-def run_experiment():
-    # Load the base configuration
-    base_config = load_json_config(BASE_CONFIG_PATH)
+def run_evaluation(params: Dict[str, Any], checkpoint_path: str):
+    """Run a single evaluation with the given parameters and checkpoint."""
+    checkpoint_name = os.path.basename(checkpoint_path)
+    config_id = params["config_folders"].replace("cfg", "")
 
-    # Generate all combinations of parameters from the grid
+    # Print configuration
+    print(f"\nRunning evaluation for {checkpoint_name}:")
+    print(f"  Experiment: {params['exp_name']}")
+    print(f"  Config:     {params['config_folders']}")
+    print(f"  Region:     {params['region']}")
+    print(f"  Analysis:   {params['analysis']}")
+    print(f"  Subject:    {params['subject_idx']}")
+
+    # Create command with all necessary overrides
+    overrides = [f"{k}={json.dumps(v)}" for k, v in params.items()] + [
+        "mode=eval",
+        "neural_dataset=nsd",
+        "log_expdata=true",
+        f"cfg_id={config_id}",
+        "load_model_from=checkpoint",
+        f"checkpoint_model={checkpoint_name}",
+    ]
+
+    cmd = [
+        "python",
+        "-m",
+        "visreps.run",
+        "--config",
+        BASE_CONFIG_PATH,
+        "--override",
+    ] + overrides
+
+    # Execute command
+    subprocess.run(cmd)
+
+
+def main():
+    """Run all evaluations defined in the parameter grid."""
+    # Generate parameter combinations
     keys = list(PARAM_GRID.keys())
     combinations = product(*(PARAM_GRID[key] for key in keys))
 
     for combo in combinations:
         params = dict(zip(keys, combo))
-        exp_name = params["exp_name"]
-        config_folder = params["config_folders"]
 
-        checkpoint_dir = os.path.join("model_checkpoints", exp_name, config_folder)
-        checkpoint_files = list_checkpoint_files(checkpoint_dir, epochs=params["eval_epochs"])
+        # Get checkpoint path for the current epoch
+        checkpoint_path = get_checkpoint_path(
+            params["exp_name"], params["config_folders"], params["eval_epochs"]
+        )
 
-        # Display current configuration details
-        print("\nConfiguration:")
-        print(f"  Experiment      : {exp_name}")
-        print(f"  Config Folder   : {config_folder}")
-        print(f"  Region          : {params['region']}")
-        print(f"  Analysis        : {params['analysis']}")
-        print(f"  Subject Index   : {params['subject_idx']}")
+        run_evaluation(params, checkpoint_path)
 
-        for checkpoint in checkpoint_files:
-            rel_checkpoint = os.path.relpath(checkpoint)
-
-            # Create command-line overrides from parameters
-            overrides = [f"{key}={json.dumps(value)}" for key, value in params.items()]
-            overrides += [
-                "mode=eval",
-                "neural_dataset=nsd",
-                "log_expdata=true",
-                f"cfg_id={config_folder.replace('cfg', '')}",
-                "load_model_from=checkpoint",
-                f"checkpoint_model={os.path.basename(rel_checkpoint)}"
-            ]
-
-            cmd = ["python", "-m", "visreps.run",
-                   "--config", BASE_CONFIG_PATH,
-                   "--override"] + overrides
-
-            print(f"\nExecuting command for checkpoint {rel_checkpoint}:")
-            print(" ".join(cmd))
-            subprocess.run(cmd)
 
 if __name__ == "__main__":
-    run_experiment()
+    main()
