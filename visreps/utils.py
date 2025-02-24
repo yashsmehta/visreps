@@ -4,7 +4,6 @@ from pathlib import Path
 import os
 import pickle
 import warnings
-import numpy as np
 import torch
 import torch.optim as optim
 from filelock import FileLock, Timeout
@@ -13,126 +12,192 @@ from rich.theme import Theme
 from omegaconf import OmegaConf
 
 # Suppress specific torch.load FutureWarning
-warnings.filterwarnings("ignore", category=FutureWarning, 
-                       message="You are using `torch.load` with `weights_only=False`.*")
-warnings.filterwarnings("ignore", category=UserWarning,
-                       message="Corrupt EXIF data.*")
+warnings.filterwarnings(
+    "ignore",
+    category=FutureWarning,
+    message="You are using `torch.load` with `weights_only=False`.*",
+)
+warnings.filterwarnings("ignore", category=UserWarning, message="Corrupt EXIF data.*")
+
 
 def setup_logging():
     """Initialize Rich with custom theme and return themed print function"""
-    custom_theme = Theme({
-        "info": "bold white",
-        "success": "green",
-        "warning": "bold yellow",
-        "error": "bold red",
-        "highlight": "bold magenta",
-        "setup": "cyan"
-    })
+    custom_theme = Theme(
+        {
+            "info": "bold white",
+            "success": "green",
+            "warning": "bold yellow",
+            "error": "bold red",
+            "highlight": "bold magenta",
+            "setup": "cyan",
+        }
+    )
     console = Console(theme=custom_theme)
     return console.print
 
-# Initialize Rich print globally as rprint
+
 rprint = setup_logging()
 
-def validate_config(cfg):
-    """
-    Validates the configuration for both training and evaluation modes.
-    Performs comprehensive validation of model class, dataset, architecture parameters,
-    and mode-specific requirements.
-
-    Args:
-        cfg (OmegaConf): The configuration object containing all parameters.
-
-    Returns:
-        OmegaConf: The validated and potentially modified configuration object.
-
-    Raises:
-        AssertionError: If any configuration conditions are not met.
-    """
-    # Validate mode
-    if cfg.mode not in ["train", "eval"]:
-        rprint(f"[red]Invalid mode: {cfg.mode}. Must be 'train' or 'eval'[/red]", style="error")
-        raise AssertionError("mode must be train or eval")
-
-    if cfg.mode == "train":
-        if cfg.dataset not in ["imagenet", "tiny-imagenet"]:
-            rprint(f"[red]Invalid dataset: {cfg.dataset}. Must be 'imagenet' or 'tiny-imagenet'[/red]", style="error")
-            raise AssertionError(f"Unsupported dataset: {cfg.dataset}")
-
+class ConfigVerifier:
+    """Validates configuration for both training and evaluation modes."""
+    
+    VALID_MODES = {"train", "eval"}
+    VALID_DATASETS = {"imagenet", "tiny-imagenet"}
+    VALID_MODEL_CLASSES = {"custom_cnn", "standard_cnn"}
+    VALID_MODEL_SOURCES = {"checkpoint", "torchvision"}
+    VALID_REGIONS = {"early visual stream", "midventral visual stream", "ventral visual stream"}
+    VALID_ANALYSES = {"rsa", "cross_decomposition"}
+    VALID_NEURAL_DATASETS = {"nsd"}
+    VALID_LAYERS = {"conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2", "fc3"}
+    
+    def __init__(self, cfg: OmegaConf):
+        """Initialize verifier with configuration."""
+        self.cfg = cfg
+        self.rprint = setup_logging()
+    
+    def verify(self) -> OmegaConf:
+        """Main verification method that routes to appropriate validator."""
+        self._verify_mode()
+        return self._verify_train() if self.cfg.mode == "train" else self._verify_eval()
+    
+    def _verify_mode(self) -> None:
+        """Verify the configuration mode."""
+        if self.cfg.mode not in self.VALID_MODES:
+            self.rprint(f"[red]Invalid mode: {self.cfg.mode}. Must be in {self.VALID_MODES}[/red]", style="error")
+            raise AssertionError(f"Invalid mode: {self.cfg.mode}")
+    
+    def _verify_train(self) -> OmegaConf:
+        """Verify training configuration."""
+        self.rprint("Validating training configuration...", style="setup")
+        
+        # Dataset validation
+        if self.cfg.dataset not in self.VALID_DATASETS:
+            self.rprint(f"[red]Invalid dataset: {self.cfg.dataset}. Must be in {self.VALID_DATASETS}[/red]", style="error")
+            raise AssertionError(f"Invalid dataset: {self.cfg.dataset}")
+        
         # Model class validation
-        if cfg.model_class not in ["custom_cnn", "standard_cnn"]:
-            rprint("[red]Invalid model_class. Must be 'custom_cnn' or 'standard_cnn'[/red]", style="error")
-            raise AssertionError("model_class must be custom_cnn or standard_cnn")
-            
-        if not hasattr(cfg, "pca_labels"):
-            rprint("[red]Missing required config: pca_labels[/red]", style="error")
+        if self.cfg.model_class not in self.VALID_MODEL_CLASSES:
+            self.rprint(f"[red]Invalid model_class. Must be in {self.VALID_MODEL_CLASSES}[/red]", style="error")
+            raise AssertionError(f"Invalid model_class: {self.cfg.model_class}")
+        
+        # PCA validation
+        if not hasattr(self.cfg, "pca_labels"):
+            self.rprint("[red]Missing required config: pca_labels[/red]", style="error")
             raise AssertionError("pca_labels flag must be specified")
         
         # Model-specific validations
-        if cfg.model_class == "standard_cnn":
-            if hasattr(cfg, "custom_cnn"):
-                rprint("[red]Invalid config: custom_cnn key present in standard_cnn mode[/red]", style="error")
+        self._verify_model_config()
+        
+        # PCA classes validation
+        if self.cfg.pca_labels:
+            self._verify_pca_config()
+        
+        # Set default batch size if not specified
+        if not hasattr(self.cfg, "batchsize"):
+            self.cfg.batchsize = 64
+            self.rprint("ℹ️  Using default batch size: 64", style="info")
+        
+        self.rprint("✅ Training configuration validation successful", style="success")
+        return self.cfg
+    
+    def _verify_eval(self) -> OmegaConf:
+        """Verify evaluation configuration."""
+        self.rprint("Validating evaluation configuration...", style="setup")
+        
+        # Neural parameters validation
+        if self.cfg.region.lower() not in self.VALID_REGIONS:
+            self.rprint(f"[red]Invalid region: {self.cfg.region}. Must be in {self.VALID_REGIONS}[/red]", style="error")
+            raise AssertionError(f"Invalid region: {self.cfg.region}")
+        
+        if not 0 <= self.cfg.subject_idx < 8:
+            self.rprint(f"[red]Invalid subject index: {self.cfg.subject_idx}. Must be in range [0, 7][/red]", style="error")
+            raise AssertionError(f"Invalid subject index: {self.cfg.subject_idx}")
+        
+        if self.cfg.analysis.lower() not in self.VALID_ANALYSES:
+            self.rprint(f"[red]Invalid analysis: {self.cfg.analysis}. Must be in {self.VALID_ANALYSES}[/red]", style="error")
+            raise AssertionError(f"Invalid analysis: {self.cfg.analysis}")
+        
+        if self.cfg.neural_dataset.lower() not in self.VALID_NEURAL_DATASETS:
+            self.rprint("[red]Currently only NSD dataset is supported[/red]", style="error")
+            raise AssertionError("Currently only NSD dataset is supported")
+        
+        # Model layers validation
+        if not hasattr(self.cfg.return_nodes, "__iter__"):
+            self.rprint(f"[red]return_nodes must be a list-like object[/red]", style="error")
+            raise AssertionError("return_nodes must be a list-like object")
+        
+        if not self.cfg.return_nodes:
+            self.rprint("[red]return_nodes list cannot be empty[/red]", style="error")
+            raise AssertionError("return_nodes list cannot be empty")
+        
+        if not all(node in self.VALID_LAYERS for node in self.cfg.return_nodes):
+            self.rprint(f"[red]Invalid return nodes: {self.cfg.return_nodes}. Must be in {self.VALID_LAYERS}[/red]", style="error")
+            raise AssertionError(f"Invalid return nodes: {self.cfg.return_nodes}")
+        
+        # Model loading validation
+        if self.cfg.load_model_from not in self.VALID_MODEL_SOURCES:
+            self.rprint(f"[red]load_model_from must be in {self.VALID_MODEL_SOURCES}[/red]", style="error")
+            raise AssertionError(f"load_model_from must be in {self.VALID_MODEL_SOURCES}")
+        
+        if self.cfg.load_model_from == "checkpoint":
+            if hasattr(self.cfg, "torchvision"):
+                self.rprint("[red]torchvision key present in checkpoint mode[/red]", style="error")
+                raise AssertionError("torchvision key not allowed in checkpoint mode")
+            checkpoint_path = Path(f"model_checkpoints/{self.cfg.exp_name}/cfg{self.cfg.cfg_id}/{self.cfg.checkpoint_model}")
+            if not checkpoint_path.exists():
+                self.rprint(f"[red]Checkpoint not found: {checkpoint_path}[/red]", style="error")
+                raise AssertionError(f"Checkpoint not found: {checkpoint_path}")
+        
+        self.rprint("✅ Evaluation configuration validation successful", style="success")
+        return self.cfg
+    
+    def _verify_model_config(self) -> None:
+        """Verify model-specific configuration."""
+        if self.cfg.model_class == "standard_cnn":
+            if hasattr(self.cfg, "custom_cnn"):
+                self.rprint("[red]Invalid config: custom_cnn key present in standard_cnn mode[/red]", style="error")
                 raise AssertionError("custom_cnn key should not be present in standard_cnn mode")
-        elif cfg.model_class == "custom_cnn":
-            if hasattr(cfg, "standard_cnn"):
-                rprint("[red]Invalid config: standard_cnn key present in custom_cnn mode[/red]", style="error")
+        else:  # custom_cnn
+            if hasattr(self.cfg, "standard_cnn"):
+                self.rprint("[red]Invalid config: standard_cnn key present in custom_cnn mode[/red]", style="error")
                 raise AssertionError("standard_cnn key should not be present in custom_cnn mode")
             
             # Validate custom CNN architecture parameters
-            if not all(char in "01" for char in cfg.arch.conv_trainable):
-                rprint("[red]Invalid conv_trainable string. Must only contain '0's and '1's[/red]", style="error")
-                raise AssertionError("conv_trainable must only contain '0's and '1's!")
-                
-            if not all(char in "01" for char in cfg.arch.fc_trainable):
-                rprint("[red]Invalid fc_trainable string. Must only contain '0's and '1's[/red]", style="error")
-                raise AssertionError("fc_trainable must only contain '0's and '1's!")
+            if not all(char in "01" for char in self.cfg.arch.conv_trainable):
+                self.rprint("[red]Invalid conv_trainable string. Must only contain '0's and '1's[/red]", style="error")
+                raise AssertionError("conv_trainable must only contain '0's and '1's")
+            
+            if not all(char in "01" for char in self.cfg.arch.fc_trainable):
+                self.rprint("[red]Invalid fc_trainable string. Must only contain '0's and '1's[/red]", style="error")
+                raise AssertionError("fc_trainable must only contain '0's and '1's")
             
             # Model-dataset compatibility warnings
-            if cfg.dataset == "imagenet" and "tiny" in cfg.model_name.lower():
-                rprint("⚠️  Training TinyCustomCNN on ImageNet-1k. This model is designed for TinyImageNet.", style="warning")
-            elif cfg.dataset == "tiny-imagenet" and "tiny" not in cfg.model_name.lower():
-                rprint("⚠️  Training CustomCNN on TinyImageNet. This model is designed for ImageNet-1k.", style="warning")
-        
-        # PCA classes validation
-        if cfg.pca_labels:
-            if cfg.pca_n_classes <= 1:
-                rprint("[red]Invalid pca_n_classes. Must be greater than 1 when pca_labels is True[/red]", style="error")
-                raise AssertionError("pca_n_classes must be greater than 1 when pca_labels is True")
-            if (cfg.pca_n_classes & (cfg.pca_n_classes - 1)) != 0:
-                rprint("[red]Invalid pca_n_classes. Must be a power of 2[/red]", style="error")
-                raise AssertionError("pca_n_classes must be a power of 2")
-        
-        # Set default batch size if not specified
-        if not hasattr(cfg, "batchsize"):
-            cfg.batchsize = 64 
-            rprint("ℹ️  Using default batch size: 64", style="info")
-            
-    else:  # eval mode
-        if cfg.load_model_from not in ["checkpoint", "torchvision"]:
-            rprint("[red]Invalid load_model_from. Must be 'checkpoint' or 'torchvision'[/red]", style="error")
-            raise AssertionError("load_model_from must be checkpoint or torchvision")
-            
-        if cfg.load_model_from == "checkpoint":
-            if hasattr(cfg, "torchvision"):
-                rprint("[red]Invalid config: torchvision key present in checkpoint mode[/red]", style="error")
-                raise AssertionError("torchvision key should not be present in checkpoint mode")
-
-            if not Path(f"model_checkpoints/{cfg.exp_name}/cfg{cfg.cfg_id}/{cfg.checkpoint_model}").exists():
-                rprint(f"[red]Checkpoint model not found: {cfg.checkpoint_model}[/red]", style="error")
-                raise AssertionError(f"Checkpoint model not found: {cfg.checkpoint_model}")
-
-        elif cfg.load_model_from == "torchvision" and hasattr(cfg, "checkpoint"):
-            rprint("[red]Invalid config: checkpoint key present in torchvision mode[/red]", style="error")
-            raise AssertionError("checkpoint key should not be present in torchvision mode")
+            if self.cfg.dataset == "imagenet" and "tiny" in self.cfg.model_name.lower():
+                self.rprint("⚠️  Training TinyCustomCNN on ImageNet-1k. This model is designed for TinyImageNet.", style="warning")
+            elif self.cfg.dataset == "tiny-imagenet" and "tiny" not in self.cfg.model_name.lower():
+                self.rprint("⚠️  Training CustomCNN on TinyImageNet. This model is designed for ImageNet-1k.", style="warning")
     
-    rprint("✅ Configuration validation successful", style="success")
-    return cfg
+    def _verify_pca_config(self) -> None:
+        """Verify PCA-specific configuration."""
+        if self.cfg.pca_n_classes <= 1:
+            self.rprint("[red]Invalid pca_n_classes. Must be greater than 1 when pca_labels is True[/red]", style="error")
+            raise AssertionError("pca_n_classes must be greater than 1 when pca_labels is True")
+        
+        if (self.cfg.pca_n_classes & (self.cfg.pca_n_classes - 1)) != 0:
+            self.rprint("[red]Invalid pca_n_classes. Must be a power of 2[/red]", style="error")
+            raise AssertionError("pca_n_classes must be a power of 2")
+
+def validate_config(cfg: OmegaConf) -> OmegaConf:
+    """Validate configuration using ConfigVerifier."""
+    verifier = ConfigVerifier(cfg)
+    return verifier.verify()
+
 
 def merge_nested_config(cfg, source_key):
     """Merge nested config into root."""
     if source_key not in cfg:
         return
-    
+
     source = OmegaConf.to_container(cfg[source_key], resolve=True)
     cfg.update(source)
     del cfg[source_key]
@@ -143,18 +208,18 @@ def load_config(config_path, overrides):
     if not Path(config_path).exists():
         raise FileNotFoundError(f"Config file not found: {config_path}")
     cfg = OmegaConf.load(config_path)
-    
-    if cfg.mode == "train":
-        assert cfg.model_class in ["custom_cnn", "standard_cnn"], "model_class must be custom_cnn or standard_cnn"
-    else:
-        assert cfg.load_model_from in ["checkpoint", "torchvision"], "load_model_from must be checkpoint or torchvision"
-    
+
     if source_key := (cfg.load_model_from if cfg.mode == "eval" else cfg.model_class):
-        other_key = {"eval": {"torchvision": "checkpoint", "checkpoint": "torchvision"},
-                    "train": {"custom_cnn": "standard_cnn", "standard_cnn": "custom_cnn"}}[cfg.mode][source_key]
+        other_key = {
+            "eval": {"torchvision": "checkpoint", "checkpoint": "torchvision"},
+            "train": {"custom_cnn": "standard_cnn", "standard_cnn": "custom_cnn"},
+        }[cfg.mode][source_key]
         if other_key in cfg:
             del cfg[other_key]
         merge_nested_config(cfg, source_key)
+
+    if cfg.mode == "eval" and cfg.load_model_from == "torchvision":
+        del cfg.cfg_id
 
     final_cfg = OmegaConf.merge(cfg, OmegaConf.from_dotlist(overrides or []))
     formatted_cfg = OmegaConf.to_yaml(final_cfg, resolve=True)
@@ -170,7 +235,9 @@ def load_pickle(file_path):
     except FileNotFoundError:
         raise FileNotFoundError(f"Pickle file not found at path: {file_path}")
     except pickle.UnpicklingError:
-        raise pickle.UnpicklingError(f"Error unpickling file at {file_path}. File may be corrupted.")
+        raise pickle.UnpicklingError(
+            f"Error unpickling file at {file_path}. File may be corrupted."
+        )
     except Exception as e:
         raise RuntimeError(f"Error loading pickle file at {file_path}: {str(e)}")
 
@@ -180,25 +247,25 @@ def save_results(df, cfg, timeout=60):
     Adds all config parameters from OmegaConf while avoiding metadata."""
     # Create a clean DataFrame without the metadata
     clean_df = df.copy()
-    
+
     # Convert OmegaConf to primitive container and add all config params
     config_dict = OmegaConf.to_container(cfg, resolve=True)
     if isinstance(config_dict, dict):
         for key, value in config_dict.items():
-            if not key.startswith('_') and not isinstance(value, (dict, list)):
+            if not key.startswith("_") and not isinstance(value, (dict, list)):
                 clean_df[key] = value
 
     # Add random delay
     random.seed(os.urandom(10))
     time.sleep(random.uniform(0, 3))
-    
+
     # Setup paths and lock
-    save_dir = Path('logs') / cfg.mode / cfg.load_model_from
+    save_dir = Path("logs") / cfg.mode / cfg.load_model_from
     save_dir.mkdir(parents=True, exist_ok=True)
     results_path = save_dir / f"{cfg.exp_name}.csv"
     lock_path = results_path.with_suffix(".lock")
     lock = FileLock(str(lock_path), timeout=timeout)
-    
+
     try:
         with lock:
             write_header = not results_path.exists()
@@ -208,44 +275,56 @@ def save_results(df, cfg, timeout=60):
         if lock_path.exists():
             lock_path.unlink()
     except Timeout:
-        rprint(f"ERROR: Could not acquire lock for {results_path} after {timeout}s", style="error")
+        rprint(
+            f"ERROR: Could not acquire lock for {results_path} after {timeout}s",
+            style="error",
+        )
         raise
     except Exception as e:
-        rprint(f"ERROR: Failed to save results to {results_path}: {str(e)}", style="error")
+        rprint(
+            f"ERROR: Failed to save results to {results_path}: {str(e)}", style="error"
+        )
         raise
-        
+
     return str(results_path)
 
 
 def get_optimizer_class(optimizer_name):
     """Get optimizer class by name with exact or fuzzy matching."""
-    available_optimizers = {name.lower(): getattr(optim, name) 
-                          for name in dir(optim) 
-                          if name[0].isupper() and not name.startswith('_')}
-    
+    available_optimizers = {
+        name.lower(): getattr(optim, name)
+        for name in dir(optim)
+        if name[0].isupper() and not name.startswith("_")
+    }
+
     opt_name = optimizer_name.lower()
     if opt_name in available_optimizers:
         return available_optimizers[opt_name]
-    
-    matches = [name for name in available_optimizers.keys() 
-              if name.startswith(opt_name) or opt_name.startswith(name)]
+
+    matches = [
+        name
+        for name in available_optimizers.keys()
+        if name.startswith(opt_name) or opt_name.startswith(name)
+    ]
     if matches:
         return available_optimizers[matches[0]]
-    
-    raise ValueError(f"Could not find optimizer '{optimizer_name}'. Available optimizers: {list(available_optimizers.keys())}")
+
+    raise ValueError(
+        f"Could not find optimizer '{optimizer_name}'. Available optimizers: {list(available_optimizers.keys())}"
+    )
 
 
 def calculate_cls_accuracy(data_loader, model, device):
     """Calculate classification accuracies with proper device handling and numerical stability.
-    
+
     For models with fewer than 5 classes, only top-1 accuracy is computed (top-5 is returned as an empty string).
     For models with 5 or more classes, both top-1 and top-5 accuracies are computed.
-    
+
     Args:
         data_loader: PyTorch DataLoader
         model: PyTorch model
         device: torch.device for computation
-    
+
     Returns:
         tuple: (top1_accuracy, top5_accuracy) as percentages (0-100). For small number of classes, top5_accuracy = ""
     """
@@ -261,7 +340,10 @@ def calculate_cls_accuracy(data_loader, model, device):
     # This flag will be set based on the model's output dimension (only once)
     use_top5 = None
 
-    with torch.no_grad(), torch.autocast(device_type=autocast_device, dtype=autocast_dtype):
+    with (
+        torch.no_grad(),
+        torch.autocast(device_type=autocast_device, dtype=autocast_dtype),
+    ):
         for images, labels in data_loader:
             images = images.to(device, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
@@ -296,32 +378,38 @@ def calculate_cls_accuracy(data_loader, model, device):
     top5_acc = 100.0 * top5_correct / total
     return top1_acc, top5_acc
 
+
 class Logger:
     """Unified logging class for training metrics and system stats."""
+
     def __init__(self, use_wandb=True, log_system_metrics=True, cfg=None):
         self.use_wandb = use_wandb
         self.log_system_metrics = log_system_metrics
-        
+
         if use_wandb:
             try:
                 import wandb
+
                 self.wandb = wandb
-                
+
                 # Check if wandb is logged in
                 if not wandb.api.api_key:
-                    rprint("WandB not authenticated. Please run 'wandb login' first.", style="error")
+                    rprint(
+                        "WandB not authenticated. Please run 'wandb login' first.",
+                        style="error",
+                    )
                     self.use_wandb = False
                     return
-                
+
                 # Set environment variables for minimal output
-                os.environ['WANDB_SILENT'] = 'true'
-                
+                os.environ["WANDB_SILENT"] = "true"
+
                 # Initialize wandb if config provided
                 if cfg is not None:
                     group = f"seed_{cfg.seed}"
                     name = f"{cfg.model_name}_{cfg.model_class}"
                     tags = [cfg.model_class, f"lr_{cfg.learning_rate}"]
-                    
+
                     self.wandb.init(
                         entity="visreps",  # Use team name
                         project=cfg.dataset,
@@ -330,17 +418,23 @@ class Logger:
                         config=OmegaConf.to_container(cfg, resolve=True),
                         tags=tags,
                         notes=f"Training {cfg.model_name} with seed {cfg.seed}",
-                        settings=wandb.Settings(start_method="thread")
+                        settings=wandb.Settings(start_method="thread"),
                     )
-                    rprint(f"WandB initialized. View results at: {wandb.run.get_url()}", style="info")
-                
+                    rprint(
+                        f"WandB initialized. View results at: {wandb.run.get_url()}",
+                        style="info",
+                    )
+
                     # Use epoch as x-axis for all metrics
                     wandb.define_metric("*", step_metric="epoch")
-                
+
             except (ImportError, Exception) as e:
-                rprint(f"W&B import failed with error: {str(e)}\nFull error: {repr(e)}", style="error")
+                rprint(
+                    f"W&B import failed with error: {str(e)}\nFull error: {repr(e)}",
+                    style="error",
+                )
                 self.use_wandb = False
-                
+
     def log(self, metrics):
         """Log metrics to wandb."""
         if self.use_wandb:
@@ -349,8 +443,10 @@ class Logger:
             except Exception as e:
                 rprint(f"W&B logging failed: {str(e)}", style="warning")
 
+
 # Global logger instance
 _logger = None
+
 
 def get_logger(use_wandb=True, log_system_metrics=True, cfg=None):
     """Get or create the global logger instance."""
@@ -359,13 +455,16 @@ def get_logger(use_wandb=True, log_system_metrics=True, cfg=None):
         _logger = Logger(use_wandb, log_system_metrics, cfg)
     return _logger
 
+
 def log_batch_metrics(batch_idx, metrics, use_wandb=True):
     """Log batch-level training metrics to W&B."""
     get_logger(use_wandb).log_batch(batch_idx, metrics)
 
+
 def log_epoch_metrics(epoch_metrics, use_wandb=True):
     """Log epoch-level training metrics to W&B."""
     get_logger(use_wandb).log_epoch(epoch_metrics)
+
 
 def setup_optimizer(model, cfg):
     """Setup optimizer with proper weight decay and parameters."""
@@ -380,97 +479,103 @@ def setup_optimizer(model, cfg):
             no_decay.append(param)
         else:
             decay.append(param)
-    
+
     parameters = [
-        {'params': decay, 'weight_decay': cfg.get('weight_decay', 0.0)},
-        {'params': no_decay, 'weight_decay': 0.0}
+        {"params": decay, "weight_decay": cfg.get("weight_decay", 0.0)},
+        {"params": no_decay, "weight_decay": 0.0},
     ]
 
     # Setup optimizer
-    if cfg.optimizer.lower() == 'adam':
+    if cfg.optimizer.lower() == "adam":
         return torch.optim.Adam(parameters, lr=cfg.learning_rate)
-    elif cfg.optimizer.lower() == 'adamw':
+    elif cfg.optimizer.lower() == "adamw":
         return torch.optim.AdamW(parameters, lr=cfg.learning_rate)
-    elif cfg.optimizer.lower() == 'sgd':
+    elif cfg.optimizer.lower() == "sgd":
         return torch.optim.SGD(parameters, lr=cfg.learning_rate, momentum=0.9)
     else:
         raise ValueError(f"Unknown optimizer: {cfg.optimizer}")
 
+
 def setup_scheduler(optimizer, cfg):
     """Setup learning rate scheduler with warmup."""
     # First set up the warmup
-    warmup_epochs = cfg.get('warmup_epochs', 0)
-    
+    warmup_epochs = cfg.get("warmup_epochs", 0)
+
     if warmup_epochs > 0:
         # Create warmup scheduler that linearly increases LR from 10% to 100% of base LR
         warmup = torch.optim.lr_scheduler.LinearLR(
             optimizer,
             start_factor=0.1,  # Start at 10% of base LR
             end_factor=1.0,
-            total_iters=warmup_epochs
+            total_iters=warmup_epochs,
         )
-        
+
         # Main cosine scheduler that goes from 100% to 1% of base LR
         main = torch.optim.lr_scheduler.CosineAnnealingLR(
             optimizer,
             T_max=cfg.num_epochs - warmup_epochs,  # Remaining epochs after warmup
-            eta_min=cfg.learning_rate * 0.05  # Minimum LR is 5% of initial LR
+            eta_min=cfg.learning_rate * 0.05,  # Minimum LR is 5% of initial LR
         )
-        
+
         # Combine schedulers
         return torch.optim.lr_scheduler.ChainedScheduler([warmup, main])
     else:
         # If no warmup, just use cosine annealing
         return torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer,
-            T_max=cfg.num_epochs,
-            eta_min=cfg.learning_rate * 0.05
+            optimizer, T_max=cfg.num_epochs, eta_min=cfg.learning_rate * 0.05
         )
+
 
 def log_training_step(logger, cfg, epoch, batch_idx, loss, lr):
     """Log training step metrics."""
     if cfg.use_wandb:
         # Convert batch_idx to fractional epoch for smooth curves
-        fractional_epoch = epoch - 1 + (batch_idx / logger.wandb.run.config.train_loader_len)
-        logger.log({
-            'epoch': fractional_epoch,
-            'training/loss': loss,
-            'training/learning_rate': lr
-        })
+        fractional_epoch = (
+            epoch - 1 + (batch_idx / logger.wandb.run.config.train_loader_len)
+        )
+        logger.log(
+            {
+                "epoch": fractional_epoch,
+                "training/loss": loss,
+                "training/learning_rate": lr,
+            }
+        )
+
 
 def log_training_metrics(logger, cfg, epoch, loss, metrics, scheduler):
     """Log training metrics with rich console output."""
     if cfg.use_wandb:
         # Log all metrics under training namespace
-        log_dict = {
-            'epoch': epoch,
-            'training/test-acc': metrics['test_acc']
-        }
-        
+        log_dict = {"epoch": epoch, "training/test-acc": metrics["test_acc"]}
+
         # Add train accuracy if available
-        if 'train_acc' in metrics:
-            log_dict['training/train-acc'] = metrics['train_acc']
-        
+        if "train_acc" in metrics:
+            log_dict["training/train-acc"] = metrics["train_acc"]
+
         # Add top5 metrics if available and not using PCA labels
         if not cfg.pca_labels:
-            if 'test_top5' in metrics:
-                log_dict['training/test-top5'] = metrics['test_top5']
-            if 'train_top5' in metrics:
-                log_dict['training/train-top5'] = metrics['train_top5']
-            
+            if "test_top5" in metrics:
+                log_dict["training/test-top5"] = metrics["test_top5"]
+            if "train_top5" in metrics:
+                log_dict["training/train-top5"] = metrics["train_top5"]
+
         logger.log(log_dict)
-        
+
     # Print metrics every epoch
     if cfg.pca_labels:
-        status = f"Epoch [{epoch}/{cfg.num_epochs}] Test Acc: {metrics['test_acc']:.2f}%"
-        if 'train_acc' in metrics:
+        status = (
+            f"Epoch [{epoch}/{cfg.num_epochs}] Test Acc: {metrics['test_acc']:.2f}%"
+        )
+        if "train_acc" in metrics:
             status += f" Train Acc: {metrics['train_acc']:.2f}%"
     else:
-        status = f"Epoch [{epoch}/{cfg.num_epochs}] Test Acc: {metrics['test_acc']:.2f}%"
-        if 'test_top5' in metrics:
+        status = (
+            f"Epoch [{epoch}/{cfg.num_epochs}] Test Acc: {metrics['test_acc']:.2f}%"
+        )
+        if "test_top5" in metrics:
             status += f" (top5: {metrics['test_top5']:.2f}%)"
-        if 'train_acc' in metrics:
+        if "train_acc" in metrics:
             status += f" Train Acc: {metrics['train_acc']:.2f}%"
-            if 'train_top5' in metrics:
+            if "train_top5" in metrics:
                 status += f" (top5: {metrics['train_top5']:.2f}%)"
     rprint(status, style="info")
