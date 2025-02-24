@@ -10,18 +10,13 @@ def eval(cfg):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     rprint(f"\nStarting model evaluation on {device}", style="info")
 
+    rprint("Loading model...", style="setup")
     if cfg.load_model_from == "checkpoint":
         train_cfg = OmegaConf.load(f"model_checkpoints/{cfg.exp_name}/cfg{cfg.cfg_id}/config.json")
         train_cfg.pop("mode")
         cfg.update(train_cfg)
-    # Load model
-    rprint("Loading model...", style="setup")
-    num_classes = (
-        cfg.pca_n_classes
-        if cfg.get("pca_labels", False)
-        else (1000 if cfg.dataset == "imagenet" else 200)
-    )
-    model = model_utils.load_model(cfg, device, num_classes)
+
+    model = model_utils.load_model(cfg, device)
     model = model_utils.configure_feature_extractor(cfg, model)
 
     # Get neural data and compute alignment

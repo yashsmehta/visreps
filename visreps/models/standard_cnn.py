@@ -11,7 +11,7 @@ def AlexNet(pretrained_dataset="imagenet1k", num_classes=1000):
         raise ValueError(f"Invalid pretrained dataset: {pretrained_dataset}")
     
     # replace classifier if not using ImageNet (1000 classes)
-    if num_classes != 1000:
+    if num_classes != 1000 and num_classes is not None:
         model.classifier[-1] = torch.nn.Linear(4096, num_classes)
         torch.nn.init.xavier_uniform_(model.classifier[-1].weight)
         torch.nn.init.zeros_(model.classifier[-1].bias)
@@ -28,7 +28,8 @@ def VGG16(pretrained_dataset="imagenet1k", num_classes=200):
         raise ValueError(f"Invalid pretrained dataset: {pretrained_dataset}")
     
     # Replace classifier
-    model.classifier[-1] = torch.nn.Linear(4096, num_classes)
+    if num_classes is not None:
+        model.classifier[-1] = torch.nn.Linear(4096, num_classes)
     
     # Initialize the classifier weights if not using pretrained model
     if pretrained_dataset == "none":
@@ -47,7 +48,8 @@ def ResNet18(pretrained_dataset="imagenet1k", num_classes=200):
         raise ValueError(f"Invalid pretrained dataset: {pretrained_dataset}")
     
     # Replace fc layer
-    model.fc = torch.nn.Linear(512, num_classes)
+    if num_classes is not None:
+        model.fc = torch.nn.Linear(512, num_classes)
     
     # Initialize the fc weights if not using pretrained model
     if pretrained_dataset == "none":
@@ -66,10 +68,11 @@ def ResNet50(pretrained_dataset="imagenet1k", num_classes=200):
         raise ValueError(f"Invalid pretrained dataset: {pretrained_dataset}")
     
     # Replace fc layer
-    model.fc = torch.nn.Linear(2048, num_classes)
+    if num_classes is not None:
+        model.fc = torch.nn.Linear(2048, num_classes)
     
     # Initialize the fc weights if not using pretrained model
-    if pretrained_dataset == "none":
+    if pretrained_dataset == "none" and num_classes is not None:
         torch.nn.init.xavier_uniform_(model.fc.weight)
         torch.nn.init.zeros_(model.fc.bias)
     
