@@ -8,6 +8,8 @@ from torchvision import datasets
 from PIL import Image
 import pandas as pd
 
+import visreps.utils as utils
+
 # Filter out PIL TiffImagePlugin truncated file warnings
 warnings.filterwarnings('ignore', category=UserWarning, module='PIL.TiffImagePlugin')
 
@@ -98,7 +100,7 @@ class ImageNetDataset(Dataset):
     """
     def __init__(self, base_path, split = "train", transform=None, train_ratio= 0.8):
         self.transform = transform
-        label_file = os.path.join("datasets", "obj_cls", "imagenet", "folder_labels.json")
+        label_file = os.path.join(utils.get_env_var("IMAGENET_LOCAL_DIR"), "folder_labels.json")
         self.num_classes = 1000
         with open(label_file, "r") as f:
             self.folder_labels = json.load(f)
@@ -204,7 +206,7 @@ def wrap_with_pca(dataset, base_path, cfg, split):
     """Wrap the dataset with PCA labels"""
     n_classes = cfg.get("pca_n_classes")
     pca_file = f"n_classes_{n_classes}.csv"
-    pca_path = os.path.join(base_path, "pca_labels", pca_file)
+    pca_path = os.path.join(base_path, cfg.get("pca_labels_folder"), pca_file)
     if not os.path.exists(pca_path):
         print(f"Warning: PCA file not found at {pca_path}. Using original labels.")
         return dataset
@@ -215,8 +217,8 @@ def wrap_with_pca(dataset, base_path, cfg, split):
 # Dataset preparation functions
 # -----------------------------------------------------------------------------
 def prepare_tinyimgnet_data(cfg, pca_labels, shuffle):
-    base_path = cfg.get("dataset_path", os.path.join("/data/shared/datasets", "tiny-imagenet"))
-    pca_base_path = os.path.join("datasets", "obj_cls", "tiny-imagenet")
+    base_path = cfg.get("dataset_path", utils.get_env_var("TINY_IMAGENET_DATA_DIR"))
+    pca_base_path = utils.get_env_var("TINY_IMAGENET_LOCAL_DIR") + cfg.get("pca_labels_folder")
     datasets, loaders = {}, {}
     for split in ["train", "test"]:
         augment = cfg.get("data_augment", True) and split == "train"
@@ -245,8 +247,8 @@ def prepare_tinyimgnet_data(cfg, pca_labels, shuffle):
     return datasets, loaders
 
 def prepare_imgnet_data(cfg, pca_labels, shuffle):
-    base_path = cfg.get("dataset_path", "/data/shared/datasets/imagenet")
-    pca_base_path = os.path.join("datasets", "obj_cls", "imagenet")
+    base_path = cfg.get("dataset_path", utils.get_env_var("IMAGENET_DATA_DIR"))
+    pca_base_path = utils.get_env_var("IMAGENET_LOCAL_DIR") + cfg.get("pca_labels_folder")
     datasets_dict, loaders_dict = {}, {}
 
     for split in ["train", "test"]:

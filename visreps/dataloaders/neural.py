@@ -4,6 +4,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 from torchvision import transforms
+import os
 
 import visreps.utils as utils
 from visreps.dataloaders.obj_cls import get_transform
@@ -25,10 +26,10 @@ def select_nsd_subset(nsd_data, cfg):
 
 def load_nsd_data(cfg):
     """Loads neural responses and stimuli data"""
-    folder = "datasets/neural/nsd"
-    fmri_path = f"{folder}/fmri_responses.pkl"
+    folder = utils.get_env_var("NSD_DATA_DIR")
+    fmri_path = os.path.join(folder, "fmri_responses.pkl")
     nsd_data = utils.load_pickle(fmri_path)
-    stimuli_path = f"{folder}/stimuli.pkl"
+    stimuli_path = os.path.join(folder, "stimuli.pkl")
     stimuli = utils.load_pickle(stimuli_path)
     return select_nsd_subset(nsd_data, cfg), stimuli
 
