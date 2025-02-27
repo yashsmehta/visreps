@@ -10,6 +10,7 @@ from filelock import FileLock, Timeout
 from rich.console import Console
 from rich.theme import Theme
 from omegaconf import OmegaConf
+from dotenv import load_dotenv
 
 # Suppress specific torch.load FutureWarning
 warnings.filterwarnings(
@@ -38,154 +39,231 @@ def setup_logging():
 
 rprint = setup_logging()
 
+
 class ConfigVerifier:
     """Validates configuration for both training and evaluation modes."""
-    
+
     VALID_MODES = {"train", "eval"}
     VALID_DATASETS = {"imagenet", "tiny-imagenet"}
     VALID_MODEL_CLASSES = {"custom_cnn", "standard_cnn"}
     VALID_MODEL_SOURCES = {"checkpoint", "torchvision"}
-    VALID_REGIONS = {"early visual stream", "midventral visual stream", "ventral visual stream"}
+    VALID_REGIONS = {
+        "early visual stream",
+        "midventral visual stream",
+        "ventral visual stream",
+    }
     VALID_ANALYSES = {"rsa", "cross_decomposition"}
     VALID_NEURAL_DATASETS = {"nsd"}
     VALID_LAYERS = {"conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2", "fc3"}
-    
+
     def __init__(self, cfg: OmegaConf):
         """Initialize verifier with configuration."""
         self.cfg = cfg
         self.rprint = setup_logging()
-    
+
     def verify(self) -> OmegaConf:
         """Main verification method that routes to appropriate validator."""
         self._verify_mode()
         return self._verify_train() if self.cfg.mode == "train" else self._verify_eval()
-    
+
     def _verify_mode(self) -> None:
         """Verify the configuration mode."""
         if self.cfg.mode not in self.VALID_MODES:
-            self.rprint(f"[red]Invalid mode: {self.cfg.mode}. Must be in {self.VALID_MODES}[/red]", style="error")
+            self.rprint(
+                f"[red]Invalid mode: {self.cfg.mode}. Must be in {self.VALID_MODES}[/red]",
+                style="error",
+            )
             raise AssertionError(f"Invalid mode: {self.cfg.mode}")
-    
+
     def _verify_train(self) -> OmegaConf:
         """Verify training configuration."""
         self.rprint("Validating training configuration...", style="setup")
-        
+
         # Dataset validation
         if self.cfg.dataset not in self.VALID_DATASETS:
-            self.rprint(f"[red]Invalid dataset: {self.cfg.dataset}. Must be in {self.VALID_DATASETS}[/red]", style="error")
+            self.rprint(
+                f"[red]Invalid dataset: {self.cfg.dataset}. Must be in {self.VALID_DATASETS}[/red]",
+                style="error",
+            )
             raise AssertionError(f"Invalid dataset: {self.cfg.dataset}")
-        
+
         # Model class validation
         if self.cfg.model_class not in self.VALID_MODEL_CLASSES:
-            self.rprint(f"[red]Invalid model_class. Must be in {self.VALID_MODEL_CLASSES}[/red]", style="error")
+            self.rprint(
+                f"[red]Invalid model_class. Must be in {self.VALID_MODEL_CLASSES}[/red]",
+                style="error",
+            )
             raise AssertionError(f"Invalid model_class: {self.cfg.model_class}")
-        
+
         # PCA validation
         if not hasattr(self.cfg, "pca_labels"):
             self.rprint("[red]Missing required config: pca_labels[/red]", style="error")
             raise AssertionError("pca_labels flag must be specified")
-        
+
         # Model-specific validations
         self._verify_model_config()
-        
+
         # PCA classes validation
         if self.cfg.pca_labels:
             self._verify_pca_config()
-        
+
         # Set default batch size if not specified
         if not hasattr(self.cfg, "batchsize"):
             self.cfg.batchsize = 64
             self.rprint("ℹ️  Using default batch size: 64", style="info")
-        
+
         self.rprint("✅ Training configuration validation successful", style="success")
         return self.cfg
-    
+
     def _verify_eval(self) -> OmegaConf:
         """Verify evaluation configuration."""
         self.rprint("Validating evaluation configuration...", style="setup")
-        
+
         # Neural parameters validation
         if self.cfg.region.lower() not in self.VALID_REGIONS:
-            self.rprint(f"[red]Invalid region: {self.cfg.region}. Must be in {self.VALID_REGIONS}[/red]", style="error")
+            self.rprint(
+                f"[red]Invalid region: {self.cfg.region}. Must be in {self.VALID_REGIONS}[/red]",
+                style="error",
+            )
             raise AssertionError(f"Invalid region: {self.cfg.region}")
-        
+
         if not 0 <= self.cfg.subject_idx < 8:
-            self.rprint(f"[red]Invalid subject index: {self.cfg.subject_idx}. Must be in range [0, 7][/red]", style="error")
+            self.rprint(
+                f"[red]Invalid subject index: {self.cfg.subject_idx}. Must be in range [0, 7][/red]",
+                style="error",
+            )
             raise AssertionError(f"Invalid subject index: {self.cfg.subject_idx}")
-        
+
         if self.cfg.analysis.lower() not in self.VALID_ANALYSES:
-            self.rprint(f"[red]Invalid analysis: {self.cfg.analysis}. Must be in {self.VALID_ANALYSES}[/red]", style="error")
+            self.rprint(
+                f"[red]Invalid analysis: {self.cfg.analysis}. Must be in {self.VALID_ANALYSES}[/red]",
+                style="error",
+            )
             raise AssertionError(f"Invalid analysis: {self.cfg.analysis}")
-        
+
         if self.cfg.neural_dataset.lower() not in self.VALID_NEURAL_DATASETS:
-            self.rprint("[red]Currently only NSD dataset is supported[/red]", style="error")
+            self.rprint(
+                "[red]Currently only NSD dataset is supported[/red]", style="error"
+            )
             raise AssertionError("Currently only NSD dataset is supported")
-        
+
         # Model layers validation
         if not hasattr(self.cfg.return_nodes, "__iter__"):
-            self.rprint(f"[red]return_nodes must be a list-like object[/red]", style="error")
+            self.rprint(
+                f"[red]return_nodes must be a list-like object[/red]", style="error"
+            )
             raise AssertionError("return_nodes must be a list-like object")
-        
+
         if not self.cfg.return_nodes:
             self.rprint("[red]return_nodes list cannot be empty[/red]", style="error")
             raise AssertionError("return_nodes list cannot be empty")
-        
+
         if not all(node in self.VALID_LAYERS for node in self.cfg.return_nodes):
-            self.rprint(f"[red]Invalid return nodes: {self.cfg.return_nodes}. Must be in {self.VALID_LAYERS}[/red]", style="error")
+            self.rprint(
+                f"[red]Invalid return nodes: {self.cfg.return_nodes}. Must be in {self.VALID_LAYERS}[/red]",
+                style="error",
+            )
             raise AssertionError(f"Invalid return nodes: {self.cfg.return_nodes}")
-        
+
         # Model loading validation
         if self.cfg.load_model_from not in self.VALID_MODEL_SOURCES:
-            self.rprint(f"[red]load_model_from must be in {self.VALID_MODEL_SOURCES}[/red]", style="error")
-            raise AssertionError(f"load_model_from must be in {self.VALID_MODEL_SOURCES}")
-        
+            self.rprint(
+                f"[red]load_model_from must be in {self.VALID_MODEL_SOURCES}[/red]",
+                style="error",
+            )
+            raise AssertionError(
+                f"load_model_from must be in {self.VALID_MODEL_SOURCES}"
+            )
+
         if self.cfg.load_model_from == "checkpoint":
             if hasattr(self.cfg, "torchvision"):
-                self.rprint("[red]torchvision key present in checkpoint mode[/red]", style="error")
+                self.rprint(
+                    "[red]torchvision key present in checkpoint mode[/red]",
+                    style="error",
+                )
                 raise AssertionError("torchvision key not allowed in checkpoint mode")
-            checkpoint_path = Path(f"model_checkpoints/{self.cfg.exp_name}/cfg{self.cfg.cfg_id}/{self.cfg.checkpoint_model}")
+            checkpoint_path = Path(
+                f"model_checkpoints/{self.cfg.exp_name}/cfg{self.cfg.cfg_id}/{self.cfg.checkpoint_model}"
+            )
             if not checkpoint_path.exists():
-                self.rprint(f"[red]Checkpoint not found: {checkpoint_path}[/red]", style="error")
+                self.rprint(
+                    f"[red]Checkpoint not found: {checkpoint_path}[/red]", style="error"
+                )
                 raise AssertionError(f"Checkpoint not found: {checkpoint_path}")
-        
-        self.rprint("✅ Evaluation configuration validation successful", style="success")
+
+        self.rprint(
+            "✅ Evaluation configuration validation successful", style="success"
+        )
         return self.cfg
-    
+
     def _verify_model_config(self) -> None:
         """Verify model-specific configuration."""
         if self.cfg.model_class == "standard_cnn":
             if hasattr(self.cfg, "custom_cnn"):
-                self.rprint("[red]Invalid config: custom_cnn key present in standard_cnn mode[/red]", style="error")
-                raise AssertionError("custom_cnn key should not be present in standard_cnn mode")
+                self.rprint(
+                    "[red]Invalid config: custom_cnn key present in standard_cnn mode[/red]",
+                    style="error",
+                )
+                raise AssertionError(
+                    "custom_cnn key should not be present in standard_cnn mode"
+                )
         else:  # custom_cnn
             if hasattr(self.cfg, "standard_cnn"):
-                self.rprint("[red]Invalid config: standard_cnn key present in custom_cnn mode[/red]", style="error")
-                raise AssertionError("standard_cnn key should not be present in custom_cnn mode")
-            
+                self.rprint(
+                    "[red]Invalid config: standard_cnn key present in custom_cnn mode[/red]",
+                    style="error",
+                )
+                raise AssertionError(
+                    "standard_cnn key should not be present in custom_cnn mode"
+                )
+
             # Validate custom CNN architecture parameters
             if not all(char in "01" for char in self.cfg.arch.conv_trainable):
-                self.rprint("[red]Invalid conv_trainable string. Must only contain '0's and '1's[/red]", style="error")
+                self.rprint(
+                    "[red]Invalid conv_trainable string. Must only contain '0's and '1's[/red]",
+                    style="error",
+                )
                 raise AssertionError("conv_trainable must only contain '0's and '1's")
-            
+
             if not all(char in "01" for char in self.cfg.arch.fc_trainable):
-                self.rprint("[red]Invalid fc_trainable string. Must only contain '0's and '1's[/red]", style="error")
+                self.rprint(
+                    "[red]Invalid fc_trainable string. Must only contain '0's and '1's[/red]",
+                    style="error",
+                )
                 raise AssertionError("fc_trainable must only contain '0's and '1's")
-            
+
             # Model-dataset compatibility warnings
             if self.cfg.dataset == "imagenet" and "tiny" in self.cfg.model_name.lower():
-                self.rprint("⚠️  Training TinyCustomCNN on ImageNet-1k. This model is designed for TinyImageNet.", style="warning")
-            elif self.cfg.dataset == "tiny-imagenet" and "tiny" not in self.cfg.model_name.lower():
-                self.rprint("⚠️  Training CustomCNN on TinyImageNet. This model is designed for ImageNet-1k.", style="warning")
-    
+                self.rprint(
+                    "⚠️  Training TinyCustomCNN on ImageNet-1k. This model is designed for TinyImageNet.",
+                    style="warning",
+                )
+            elif (
+                self.cfg.dataset == "tiny-imagenet"
+                and "tiny" not in self.cfg.model_name.lower()
+            ):
+                self.rprint(
+                    "⚠️  Training CustomCNN on TinyImageNet. This model is designed for ImageNet-1k.",
+                    style="warning",
+                )
+
     def _verify_pca_config(self) -> None:
         """Verify PCA-specific configuration."""
         if self.cfg.pca_n_classes <= 1:
-            self.rprint("[red]Invalid pca_n_classes. Must be greater than 1 when pca_labels is True[/red]", style="error")
-            raise AssertionError("pca_n_classes must be greater than 1 when pca_labels is True")
-        
+            self.rprint(
+                "[red]Invalid pca_n_classes. Must be greater than 1 when pca_labels is True[/red]",
+                style="error",
+            )
+            raise AssertionError(
+                "pca_n_classes must be greater than 1 when pca_labels is True"
+            )
+
         if (self.cfg.pca_n_classes & (self.cfg.pca_n_classes - 1)) != 0:
-            self.rprint("[red]Invalid pca_n_classes. Must be a power of 2[/red]", style="error")
+            self.rprint(
+                "[red]Invalid pca_n_classes. Must be a power of 2[/red]", style="error"
+            )
             raise AssertionError("pca_n_classes must be a power of 2")
+
 
 def validate_config(cfg: OmegaConf) -> OmegaConf:
     """Validate configuration using ConfigVerifier."""
@@ -579,3 +657,16 @@ def log_training_metrics(logger, cfg, epoch, loss, metrics, scheduler):
             if "train_top5" in metrics:
                 status += f" (top5: {metrics['train_top5']:.2f}%)"
     rprint(status, style="info")
+
+
+def get_env_var(key):
+    """Get path from environment variable or raise error if not found"""
+    env_path = Path(__file__).parent.parent / ".env"
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path)
+    path = os.environ.get(key)
+    if path is None:
+        raise ValueError(
+            f"Environment variable {key} not found. Please set it in .env file or system environment."
+        )
+    return path

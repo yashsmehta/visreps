@@ -14,13 +14,14 @@ def main():
     args = parser.parse_args()
 
     # Use first n_bits PCA components (i.e. n_bits=6)
-    n_bits = 6 
+    n_bits = 6
+    pretrained_dataset = "none"
 
     # Load features.
-    features_path = f"datasets/obj_cls/{args.dataset}/features.npz"
+    features_path = f"datasets/obj_cls/{args.dataset}/features_pretrained_{pretrained_dataset}.npz"
     if not os.path.exists(features_path):
         raise FileNotFoundError(f"Features file not found at {features_path}")
-    labels_dir = os.path.join(os.path.dirname(features_path), "pca_labels")
+    labels_dir = os.path.join(os.path.dirname(features_path), f"pca_labels_{pretrained_dataset}")
     os.makedirs(labels_dir, exist_ok=True)
     print(f"Loading features from {features_path}")
     data_dict = np.load(features_path, allow_pickle=True)
