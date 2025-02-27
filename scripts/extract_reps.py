@@ -7,19 +7,14 @@ from visreps.models import standard_cnn
 from visreps.models.utils import configure_feature_extractor
 from visreps.dataloaders.obj_cls import get_obj_cls_loader
 
-def get_model_and_layers(dataset):
+def get_model_and_layers(dataset, pretrained_dataset="imagenet1k"):
     """Initializes the model and defines the layers to extract features from.
     """
     num_classes = 200 if dataset == "tiny-imagenet" else 1000
-    model = standard_cnn.AlexNet(pretrained_dataset="imagenet1k", num_classes=num_classes)
+    model = standard_cnn.AlexNet(pretrained_dataset=pretrained_dataset, num_classes=num_classes)
     
     layers = [
-        'conv3',
-        'conv4',
-        'conv5',
-        'fc1',
-        'fc2',
-        'fc3'
+        'fc2'
     ]
     return model, layers
 
@@ -58,7 +53,8 @@ def main():
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model, layers = get_model_and_layers(args.dataset)
+    pretrained_dataset = "none"
+    model, layers = get_model_and_layers(args.dataset, pretrained_dataset)
     
     # Configure feature extractor with OmegaConf
     cfg = OmegaConf.create({"return_nodes": layers})
@@ -67,7 +63,7 @@ def main():
 
     data_cfg = {
         "dataset": args.dataset,
-        "batchsize": 128,
+        "batchsize": 512, 
         "num_workers": 8,
         "data_augment": False
     }
@@ -100,7 +96,7 @@ def main():
 
     output_dir = os.path.join("datasets", "obj_cls", args.dataset)
     os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, "features.npz")
+    output_path = os.path.join(output_dir, f"features_pretrained_{pretrained_dataset}.npz")
     
     # Save combined features
     save_dict = {

@@ -7,15 +7,17 @@ BASE_CONFIG = "configs/train/base.json"
 
 # Define the parameter grid for training
 PARAM_GRID = {
-    "exp_name": ["imagenet_pca"],
+    "exp_name": ["imagenet_pca_none"],
     "arch.nonlinearity": ["relu"],
     "seed": [1],
     "arch.dropout": [0.3],
     "arch.batchnorm": [True],
     "model_name": ["CustomCNN"],
     "pca_labels": [True],
-    "pca_n_classes": [2, 4, 8],
+    "pca_n_classes": [2, 4, 8, 16, 32],
+    "pca_labels_folder": ["pca_labels_none"],
 }
+
 
 def flatten_config(config, parent_key="", sep="."):
     """Recursively flattens a nested configuration dictionary."""
@@ -28,10 +30,12 @@ def flatten_config(config, parent_key="", sep="."):
             flat[new_key] = v
     return flat
 
+
 def load_config(filepath):
     """Loads a JSON configuration from the given file."""
     with open(filepath, "r") as file:
         return json.load(file)
+
 
 def main():
     # Generate all combinations of grid parameters
@@ -44,18 +48,26 @@ def main():
     # Run each combination
     for combo in param_combos:
         # Create overrides from the parameter combination
-        overrides = [f"{name}={json.dumps(value)}" for name, value in zip(param_names, combo)]
-        
+        overrides = [
+            f"{name}={json.dumps(value)}" for name, value in zip(param_names, combo)
+        ]
+
         # Add required mode override
         overrides.append("mode=train")
-        
-        cmd = ["python", "-m", "visreps.run",
-               "--config", BASE_CONFIG,
-               "--override"] + overrides
+
+        cmd = [
+            "python",
+            "-m",
+            "visreps.run",
+            "--config",
+            BASE_CONFIG,
+            "--override",
+        ] + overrides
 
         cmd_str = " ".join(cmd)
         print(f"\nExecuting: {cmd_str}")
         subprocess.run(cmd)
 
+
 if __name__ == "__main__":
-    main() 
+    main()
