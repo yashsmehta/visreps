@@ -7,7 +7,7 @@ from collections import defaultdict
 from visreps.dataloaders.obj_cls import get_obj_cls_loader
 from visreps.models import utils as model_utils
 import visreps.utils as utils
-from visreps.utils import calculate_cls_accuracy, get_logger
+from visreps.utils import calculate_cls_accuracy, get_logger, is_interactive_environment
 
 
 class Trainer:
@@ -46,10 +46,17 @@ class Trainer:
 
     def train_epoch(self, epoch):
         self.model.train()
-        progress_bar = tqdm(self.loaders["train"], desc=f"Epoch {epoch}", leave=False)
+        
+        # Only use tqdm progress bar in interactive environments
+        train_loader = self.loaders["train"]
+        if is_interactive_environment():
+            train_loader = tqdm(train_loader, desc=f"Epoch {epoch}", leave=False)
+        else:
+            print(f"Starting Epoch {epoch}")
+            
         epoch_stats = defaultdict(float)
 
-        for i, (images, labels) in enumerate(progress_bar):
+        for i, (images, labels) in enumerate(train_loader):
             images, labels = images.to(self.device), labels.to(self.device)
             self.optimizer.zero_grad()
             outputs = self.model(images)
@@ -68,11 +75,16 @@ class Trainer:
             epoch_stats['learning_rate'] = curr_lr
 
             avg_loss = epoch_stats['batch_loss'] / (i + 1)
-            progress_bar.set_postfix({
-                'Avg Loss': f'{avg_loss:.4f}',
-                'LR': f'{curr_lr:.6f}',
-                'Grad Norm': f'{grad_norm:.4f}'
-            })
+            # Only update progress bar in interactive environments
+            if is_interactive_environment():
+                train_loader.set_postfix({
+                    'Avg Loss': f'{avg_loss:.4f}',
+                    'LR': f'{curr_lr:.6f}',
+                    'Grad Norm': f'{grad_norm:.4f}'
+                })
+            # Print occasional updates in non-interactive environments
+            elif i % 50 == 0:
+                print(f"Batch {i}/{len(self.loaders['train'])}, Avg Loss: {avg_loss:.4f}, LR: {curr_lr:.6f}")
 
         n_batches = epoch_stats['n_batches']
         avg_epoch_loss = epoch_stats['batch_loss'] / n_batches
