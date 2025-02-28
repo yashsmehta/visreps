@@ -11,6 +11,7 @@ from rich.console import Console
 from rich.theme import Theme
 from omegaconf import OmegaConf
 from dotenv import load_dotenv
+import sys
 
 # Suppress specific torch.load FutureWarning
 warnings.filterwarnings(
@@ -19,6 +20,32 @@ warnings.filterwarnings(
     message="You are using `torch.load` with `weights_only=False`.*",
 )
 warnings.filterwarnings("ignore", category=UserWarning, message="Corrupt EXIF data.*")
+
+
+def is_interactive_environment():
+    """
+    Detect if code is running in an interactive environment (like a terminal or Jupyter notebook)
+    rather than in a batch job (like SLURM).
+    
+    Returns:
+        bool: True if running in an interactive environment, False otherwise
+    """
+    # Check if running in a SLURM job
+    if os.environ.get('SLURM_JOB_ID') is not None:
+        return False
+    
+    # Check if running in a Jupyter notebook
+    try:
+        if 'ipykernel' in sys.modules:
+            return True
+    except:
+        pass
+    
+    # Check if stdout is attached to a terminal
+    try:
+        return sys.stdout.isatty()
+    except:
+        return False
 
 
 def setup_logging():
