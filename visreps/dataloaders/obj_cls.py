@@ -190,7 +190,7 @@ def create_collate_fn():
         return torch.stack(images), torch.tensor(labels)
     return collate_fn
 
-def create_dataloader(dataset: Dataset, batch_size: int = 32, num_workers: int = 8,
+def create_dataloader(dataset: Dataset, batch_size: int = 32, num_workers: int = 4,
                       shuffle: bool = True, collate_fn=None) -> DataLoader:
     return DataLoader(
         dataset,
@@ -241,7 +241,7 @@ def prepare_tinyimgnet_data(cfg, pca_labels, shuffle):
         loaders[split] = create_dataloader(
             dataset,
             batch_size=cfg.get("batchsize", 32),
-            num_workers=cfg.get("num_workers", 8),
+            num_workers=cfg.get("num_workers", 4),
             shuffle=shuffle
         )
     return datasets, loaders
@@ -266,7 +266,7 @@ def prepare_imgnet_data(cfg, pca_labels, shuffle):
         loaders_dict[split] = create_dataloader(
             dataset,
             batch_size=cfg.get("batchsize", 32),
-            num_workers=cfg.get("num_workers", 8),
+            num_workers=cfg.get("num_workers", 4),
             shuffle=shuffle
         )
 
