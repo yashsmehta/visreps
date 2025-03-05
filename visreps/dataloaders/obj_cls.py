@@ -197,7 +197,7 @@ def create_dataloader(dataset: Dataset, batch_size: int = 32, num_workers: int =
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers,
-        prefetch_factor=2,
+        prefetch_factor=8,
         pin_memory=True,
         collate_fn=collate_fn or create_collate_fn()
     )
@@ -206,7 +206,7 @@ def wrap_with_pca(dataset, base_path, cfg, split):
     """Wrap the dataset with PCA labels"""
     n_classes = cfg.get("pca_n_classes")
     pca_file = f"n_classes_{n_classes}.csv"
-    pca_path = os.path.join(base_path, cfg.get("pca_labels_folder"), pca_file)
+    pca_path = os.path.join(base_path, pca_file)
     if not os.path.exists(pca_path):
         print(f"Warning: PCA file not found at {pca_path}. Using original labels.")
         return dataset
@@ -218,7 +218,7 @@ def wrap_with_pca(dataset, base_path, cfg, split):
 # -----------------------------------------------------------------------------
 def prepare_tinyimgnet_data(cfg, pca_labels, shuffle):
     base_path = cfg.get("dataset_path", utils.get_env_var("TINY_IMAGENET_DATA_DIR"))
-    pca_base_path = utils.get_env_var("TINY_IMAGENET_LOCAL_DIR") + cfg.get("pca_labels_folder")
+    pca_base_path = os.path.join(utils.get_env_var("TINY_IMAGENET_LOCAL_DIR"), cfg.get("pca_labels_folder"))
     datasets, loaders = {}, {}
     for split in ["train", "test"]:
         augment = cfg.get("data_augment", True) and split == "train"
@@ -248,7 +248,7 @@ def prepare_tinyimgnet_data(cfg, pca_labels, shuffle):
 
 def prepare_imgnet_data(cfg, pca_labels, shuffle):
     base_path = cfg.get("dataset_path", utils.get_env_var("IMAGENET_DATA_DIR"))
-    pca_base_path = utils.get_env_var("IMAGENET_LOCAL_DIR") + cfg.get("pca_labels_folder")
+    pca_base_path = os.path.join(utils.get_env_var("IMAGENET_LOCAL_DIR"), cfg.get("pca_labels_folder"))
     datasets_dict, loaders_dict = {}, {}
 
     for split in ["train", "test"]:
