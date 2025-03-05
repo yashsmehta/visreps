@@ -1,6 +1,7 @@
 import torch
 import wandb
 import torch.nn as nn
+import time
 from tqdm import tqdm
 from collections import defaultdict
 
@@ -83,7 +84,7 @@ class Trainer:
                     'Grad Norm': f'{grad_norm:.4f}'
                 })
             # Print occasional updates in non-interactive environments
-            elif i % 50 == 0:
+            elif i % 10000 == 0:
                 print(f"Batch {i}/{len(self.loaders['train'])}, Avg Loss: {avg_loss:.4f}, LR: {curr_lr:.6f}")
 
         n_batches = epoch_stats['n_batches']
@@ -119,6 +120,7 @@ class Trainer:
 
     def train(self):
         for epoch in range(1, self.cfg.num_epochs + 1):
+            epoch_start_time = time.time()
             epoch_loss, epoch_metrics = self.train_epoch(epoch)
             self.scheduler.step()
 
@@ -139,8 +141,9 @@ class Trainer:
                 })
                 self.log_metrics(epoch, epoch_loss, metrics)
                 
+                epoch_time = time.time() - epoch_start_time
                 # Build status string based on available metrics
-                status = f"Epoch {epoch} | Train Loss: {epoch_loss:.4f} | Train Acc: {train_top1:.2f}%"
+                status = f"Epoch {epoch} | Time: {epoch_time:.1f}s | Train Loss: {epoch_loss:.4f} | Train Acc: {train_top1:.2f}%"
                 if isinstance(train_top5, (int, float)):
                     status += f" (top5: {train_top5:.2f}%)"
                 status += f" | Test Acc: {test_top1:.2f}%"
