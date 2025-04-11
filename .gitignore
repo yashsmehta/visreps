@@ -12,6 +12,7 @@ model_checkpoints/
 wandb/
 playground/
 benchmarks/
+__pycache__/
 .venv/
 .env
 .vscode/
