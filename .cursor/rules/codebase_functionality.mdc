@@ -1,0 +1,13 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Codebase Functionality
+This document outlines the functionality and structure of the `VisionAI/visreps` codebase.
+For detailed information on the codebase structure, please refer to: /home/ymehta3/research/VisionAI/visreps/codebase_structure.md
+
+## Functionality
+This codebase enables training deep neural networks (e.g., AlexNet) on standard object classification tasks (e.g., ImageNet, TinyImageNet) or on custom coarse-grained variants created via PCA on intermediate representations from pretrained or untrained AlexNet. PCA-based coarse labels are constructed by projecting dataset-level activations onto top principal components and splitting samples into 2, 4, 8, … 32 bins based on quantiles—capturing major representational axes while preserving data volume. These labels (stored as CSVs under pca_labels/{pretrained,untrained}/) allow controlled training with varying task granularity using the same input distribution.
+
+Models trained under different class granularity and initialization regimes are evaluated by comparing their internal representations to fMRI responses from the NSD dataset. During evaluation, NSD stimuli are passed through the trained networks, and features from specified layers are compared to voxel responses using Representational Similarity Analysis (RSA) or encoding models. The codebase is split into two logical components: train/ handles model training and checkpointing (on standard or PCA-derived labels), while eval/ loads checkpoints and computes brain alignment metrics across training timepoints.

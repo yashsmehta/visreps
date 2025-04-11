@@ -1,0 +1,92 @@
+---
+description: Overview of the codebase structure. Use this to understand how the project is organized—especially where data lives and how components are laid out. Read this if you’re unsure about any part of the code or need clarity on its purpose or flow.
+globs: 
+alwaysApply: false
+---
+# Codebase Structure
+This document outlines the structure of the `VisionAI/visreps` codebase.
+
+## Root Directory (`/`)
+This is the root directory: /home/ymehta3/research/VisionAI/visreps
+*   **Configuration & Environment:**
+    *   `.env`: Project paths, dataset locations, and API keys for Weights & Biases.
+    *   `pyproject.toml`: Project metadata, dependencies, and build system configuration (PEP 518). Uses `uv`.
+    *   `configs/`: Contains configuration files for different modes (training and evaluation).
+        *   `train/base.json`: Base configuration for training runs.
+        *   `eval/base.json`: Base configuration for evaluation runs.
+    *   `.venv/`: Virtual environment directory containing installed packages.
+
+*   **Data:**
+    project_root/
+    ├── .env                                 # Contains paths like IMAGENET_DATA_DIR, NSD_DATA_DIR
+    │
+    ├── datasets/
+       ├── obj_cls/                         # For training (object classification)
+       │   ├── imagenet/                    # Metadata and labels for ImageNet (images external)
+       │   │   └── pca_labels/
+       │   │       ├── pretrained/
+       │   │       │   ├── n_classes_2.csv
+       │   │       │   ├── n_classes_4.csv
+       │   │       │   └── ...
+       │   │       └── untrained/
+       │   │           ├── n_classes_2.csv
+       │   │           ├── n_classes_4.csv
+       │   │           └── ...
+       │   │
+       │   ├── tiny_imagenet/              # Metadata and labels for Tiny ImageNet (images external)
+       │   │   └── pca_labels/
+       │   │       ├── pretrained/
+       │   │       │   ├── n_classes_2.csv
+       │   │       │   └── ...
+       │   │       └── untrained/
+       │   │           ├── n_classes_2.csv
+       │   │           └── ...
+    
+       └── neural/                          # For evaluation (brain data comparison)
+           └── NSD/                         # Natural Scenes Dataset (images external)
+               ├── stimuli_images/          # Paths defined via NSD_DATA_DIR
+               └── fmri_responses.pkl       # Pickled fMRI voxel data (subject x voxel x trial)
+
+*   **Source Code:**
+    *   `visreps/`: The core Python package for visual representation learning.
+        *   `run.py`: Main entry point for executing training/evaluation based on configs.
+        *   `trainer.py`: Implements the model training loop (optimization, logging, etc.).
+        *   `evals.py`: Contains code for evaluating model performance on various tasks/metrics.
+        *   `utils.py`: General utility functions shared across the `visreps` package.
+        *   `dataloaders/`: Handles data loading and preprocessing.
+            *   `obj_cls.py`: Data loading for object classification datasets (ImageNet, Tiny ImageNet, etc.). Includes data normalization and augmentation definitions.
+            *   `neural.py`: Data loading for fMRI neural data.
+        *   `models/`: Defines neural network architectures.
+            *   `standard_cnn.py`: Implementations of standard CNN architectures.
+            *   `custom_cnn.py`: Custom CNN architectures specific to the research.
+            *   `nn_ops.py`: Custom neural network layers or operations.
+            *   `utils.py`: Model-specific utility functions (e.g., weight initialization).
+        *   `analysis/`: Scripts for analyzing learned representations.
+            *   `cross_decomposition.py`: Implements cross-decomposition methods (e.g., PLS, CCA).
+            *   `alignment.py`: Methods for aligning representations (e.g., linear probes).
+            *   `rsa.py`: Representational Similarity Analysis tools.
+            *   `regression/`: Sub-package likely containing regression-based analysis methods.
+            *   `metrics/`: Sub-package for various analysis metrics.
+*   **Scripts & Automation:**
+    *   `scripts/`: Standalone helper scripts.
+        *   `extract_reps.py`: Extracts intermediate representations from trained models.
+        *   `pca_reps.py`: Performs PCA on extracted representations.
+        *   `visualize_eigenspectra.py`: Script for plotting eigenspectra of representations.
+        *   `create_imagenet_labels.py`: Helper for ImageNet label processing.
+        *   `eval_checkpoints.py`: Script to evaluate saved model checkpoints.
+        *   `cleanup_logs.py`, `consolidate_logs.py`: Log management utilities.
+    *   `slurm/`: Scripts for interacting with the Slurm workload manager.
+        *   `train_scheduler.py`, `eval_scheduler.py`: Python scripts to schedule Slurm jobs for training/evaluation.
+        *   `basic.sh`: A basic Slurm job submission script template.
+*   **Testing:**
+    *   `tests/`: Contains unit and integration tests.
+        *   `test_*.py`: Individual test files for different components (e.g., data loaders, analysis methods). Uses `pytest`.
+        *   `outputs/`: Likely stores test artifacts or outputs.
+*   **Outputs & Data:**
+    *   `model_checkpoints/`: Directory where model checkpoints are saved.
+    *   `plots/`: Directory for saving generated plots and figures.
+    *   `plotters/`: Scripts specifically designed to generate plots from experimental results or analyses.
+        *   Contains various scripts (`rsa_pca_untrained.py`, `plssvd_epoch_comparison.py`, etc.) for specific visualizations.
+    *   `logs/`: Directory for storing results in the form of CSV from evaluation in different configurations.
+    *   `wandb/`: Directory used by Weights & Biases for run tracking and logging.
+    *   `datasets/`: Likely intended to store or symlink to dataset locations.
