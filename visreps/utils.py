@@ -6,6 +6,7 @@ import pickle
 import warnings
 import torch
 import torch.optim as optim
+from torch.optim.lr_scheduler import StepLR, MultiStepLR, CosineAnnealingLR, LinearLR, SequentialLR
 from filelock import FileLock, Timeout
 from rich.console import Console
 from rich.theme import Theme
@@ -119,7 +120,8 @@ def calculate_cls_accuracy(data_loader, model, device):
                 maxk = 5
                 _, preds = outputs.topk(maxk, dim=1, largest=True, sorted=True)
                 preds = preds.t()  # shape: [maxk, batch_size]
-                correct = preds.eq(labels.view(1, -1).expand_as(preds))
+                # Ensure labels are on the same device as predictions for comparison
+                correct = preds.eq(labels.to(preds.device).view(1, -1).expand_as(preds)) 
                 top1_correct += correct[0].sum().item()
                 # For top-5, an instance is correct if any of the top-5 predictions match the label
                 top5_correct += correct.sum(dim=0).gt(0).sum().item()
@@ -621,41 +623,64 @@ def setup_optimizer(model, cfg):
     ]
 
     # Setup optimizer
-    if cfg.optimizer.lower() == "adam":
+    optimizer_name = cfg.optimizer.lower()
+    if optimizer_name == "adam":
         return torch.optim.Adam(parameters, lr=cfg.learning_rate)
-    elif cfg.optimizer.lower() == "adamw":
+    elif optimizer_name == "adamw":
         return torch.optim.AdamW(parameters, lr=cfg.learning_rate)
-    elif cfg.optimizer.lower() == "sgd":
+    elif optimizer_name == "sgd":
         return torch.optim.SGD(parameters, lr=cfg.learning_rate, momentum=0.9)
     else:
         raise ValueError(f"Unknown optimizer: {cfg.optimizer}")
 
 
 def setup_scheduler(optimizer, cfg):
-    """Setup learning rate scheduler with warmup."""
-    # First set up the warmup
+    """Setup learning rate scheduler."""
+    scheduler_name = cfg.lr_scheduler.lower()
     warmup_epochs = cfg.get("warmup_epochs", 0)
+    # Get scheduler kwargs from config, default to empty dict if not present
+    scheduler_kwargs = cfg.get("scheduler_kwargs", {})
 
-    if warmup_epochs > 0:
-        # Create warmup scheduler that linearly increases LR from 10% to 100% of base LR
-        warmup = torch.optim.lr_scheduler.LinearLR(
+    # Define main scheduler based on config
+    if scheduler_name == "steplr":
+        main_scheduler = StepLR(
             optimizer,
-            start_factor=0.1,  # Start at 10% of base LR
+            step_size=scheduler_kwargs.get("step_size", 10), # Get from kwargs, provide default
+            gamma=scheduler_kwargs.get("gamma", 0.1) # Get from kwargs, provide default
+        )
+    elif scheduler_name == "multisteplr":
+        if "milestones" not in scheduler_kwargs:
+            raise ValueError("'milestones' must be specified in scheduler_kwargs for MultiStepLR")
+        main_scheduler = MultiStepLR(
+            optimizer,
+            milestones=scheduler_kwargs["milestones"], # Get from kwargs
+            gamma=scheduler_kwargs.get("gamma", 0.1) # Get from kwargs, provide default
+        )
+    elif scheduler_name == "cosineannealinglr":
+        total_epochs = cfg.num_epochs
+        # Calculate T_max based on total epochs and warmup
+        T_max = total_epochs - warmup_epochs if warmup_epochs > 0 else total_epochs
+        # Get eta_min from scheduler_kwargs or calculate default based on learning_rate
+        eta_min = scheduler_kwargs.get("eta_min", cfg.learning_rate * 0.05)
+        main_scheduler = CosineAnnealingLR(
+            optimizer,
+            T_max=scheduler_kwargs.get("T_max", T_max), # Allow overriding T_max via kwargs
+            eta_min=eta_min # Use eta_min derived above
+        )
+    else:
+        raise ValueError(f"Invalid LR scheduler name: {cfg.lr_scheduler}")
+
+    # Add warmup if configured
+    if warmup_epochs > 0:
+        warmup_scheduler = LinearLR(
+            optimizer,
+            start_factor=cfg.get("warmup_start_factor", 0.1),
             end_factor=1.0,
             total_iters=warmup_epochs,
         )
-
-        # Main cosine scheduler that goes from 100% to 1% of base LR
-        main = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer,
-            T_max=cfg.num_epochs - warmup_epochs,  # Remaining epochs after warmup
-            eta_min=cfg.learning_rate * 0.05,  # Minimum LR is 5% of initial LR
+        # Use SequentialLR instead of SequentialScheduler
+        return SequentialLR(
+            optimizer, schedulers=[warmup_scheduler, main_scheduler], milestones=[warmup_epochs]
         )
-
-        # Combine schedulers
-        return torch.optim.lr_scheduler.ChainedScheduler([warmup, main])
     else:
-        # If no warmup, just use cosine annealing
-        return torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=cfg.num_epochs, eta_min=cfg.learning_rate * 0.05
-        )
+        return main_scheduler
