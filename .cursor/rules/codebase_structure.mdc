@@ -17,35 +17,33 @@ This is the root directory: /home/ymehta3/research/VisionAI/visreps
     *   `.venv/`: Virtual environment directory containing installed packages.
 
 *   **Data:**
-    project_root/
-    ├── .env                                 # Contains paths like IMAGENET_DATA_DIR, NSD_DATA_DIR
-    │
-    ├── datasets/
-       ├── obj_cls/                         # For training (object classification)
-       │   ├── imagenet/                    # Metadata and labels for ImageNet (images external)
-       │   │   └── pca_labels/
-       │   │       ├── pretrained/
-       │   │       │   ├── n_classes_2.csv
-       │   │       │   ├── n_classes_4.csv
-       │   │       │   └── ...
-       │   │       └── untrained/
-       │   │           ├── n_classes_2.csv
-       │   │           ├── n_classes_4.csv
-       │   │           └── ...
-       │   │
-       │   ├── tiny_imagenet/              # Metadata and labels for Tiny ImageNet (images external)
-       │   │   └── pca_labels/
-       │   │       ├── pretrained/
-       │   │       │   ├── n_classes_2.csv
-       │   │       │   └── ...
-       │   │       └── untrained/
-       │   │           ├── n_classes_2.csv
-       │   │           └── ...
-    
-       └── neural/                          # For evaluation (brain data comparison)
-           └── NSD/                         # Natural Scenes Dataset (images external)
-               ├── stimuli_images/          # Paths defined via NSD_DATA_DIR
-               └── fmri_responses.pkl       # Pickled fMRI voxel data (subject x voxel x trial)
+        project_root/
+        ├── .env                          # Environment variables: paths like IMAGENET_DATA_DIR, NSD_DATA_DIR
+        │
+        ├── datasets/
+        │   ├── obj_cls/                 # For training (object classification tasks)
+        │   │   ├── imagenet/            # ImageNet labels and PCA metadata (images stored externally)
+        │   │   │   ├── pca_labels_imagenet1k/
+        │   │   │   │   ├── n_classes_2.csv
+        │   │   │   │   ├── n_classes_4.csv
+        │   │   │   │   └── ...
+        │   │   │   └── pca_labels_none/
+        │   │   │       ├── n_classes_2.csv
+        │   │   │       ├── n_classes_4.csv
+        │   │   │       └── ...
+        │   │   │
+        │   │   ├── tiny_imagenet/       # Tiny ImageNet labels and PCA metadata (images stored externally)
+        │   │   │   ├── pca_labels_imagenet1k/
+        │   │   │   │   ├── n_classes_2.csv
+        │   │   │   │   └── ...
+        │   │   │   └── pca_labels_none/
+        │   │   │       ├── n_classes_2.csv
+        │   │   │       └── ...
+        │
+        │   └── neural/                  # For evaluation against neural data
+        │       └── NSD/                 # Natural Scenes Dataset (images stored externally)
+        │           ├── stimuli_images/ # Image stimuli (path set via NSD_DATA_DIR)
+        │           └── fmri_responses.pkl  # fMRI data: pickled tensor [subject × voxel × trial]
 
 *   **Source Code:**
     *   `visreps/`: The core Python package for visual representation learning.
