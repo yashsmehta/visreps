@@ -5,8 +5,7 @@
   "analysis": "rsa",
   "neural_dataset": "nsd",
   "log_expdata": true,
-  "cfg_id": 1,
-  "exp_name": "seeds",
+  "exp_name": "cluster_test",
   "batchsize": 32,
   "num_workers": 8,
   "return_nodes": ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2", "fc3"],
@@ -16,8 +15,9 @@
     "model_name": "AlexNet",
     "pretrained_dataset": "imagenet1k"
   },
+  "cfg_id": 1,
   "checkpoint":
   {
-    "checkpoint_model": "checkpoint_epoch_20.pth"
+    "checkpoint_model": "checkpoint_epoch_5.pth"
   }
 }

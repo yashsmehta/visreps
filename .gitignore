@@ -15,6 +15,7 @@ benchmarks/
 __pycache__/
 .venv/
 .env
+.gitignore
 .vscode/
 settings.json
 tests/outputs/

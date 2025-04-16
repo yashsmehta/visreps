@@ -47,9 +47,11 @@ class PCADataset(Dataset):
     Wraps a base dataset to substitute its labels with PCA-derived ones.
     Expects a CSV with 'image' and 'pca_label' columns.
     """
-    def __init__(self, base_dataset, pca_labels_path):
+    def __init__(self, base_dataset, pca_labels_path, num_classes: int):
         self.dataset = base_dataset
         self.label_map = self._load_pca_labels(pca_labels_path)
+        # Store the number of PCA classes
+        self.num_classes = num_classes 
         self._filter_samples()
 
     def _load_pca_labels(self, csv_path):
@@ -97,38 +99,71 @@ class ImageNetDataset(Dataset):
     """
     Custom loader for ImageNet with a flat folder structure.
     Folder-to-label mapping is read from a JSON file.
+    Can load 'train', 'test', or 'all' splits.
     """
     def __init__(self, base_path, split = "train", transform=None, train_ratio= 0.8):
+        assert split in ["train", "test", "all"], f"Invalid split: {split}"
         self.transform = transform
         label_file = os.path.join(utils.get_env_var("IMAGENET_LOCAL_DIR"), "folder_labels.json")
         self.num_classes = 1000
-        with open(label_file, "r") as f:
-            self.folder_labels = json.load(f)
+        
+        # Load folder -> label mapping
+        try:
+            with open(label_file, "r") as f:
+                self.folder_labels = json.load(f)
+        except FileNotFoundError:
+             raise FileNotFoundError(f"Label file not found: {label_file}")
+        except json.JSONDecodeError:
+            raise ValueError(f"Error decoding JSON from {label_file}")
 
         self.samples = []
         skipped = set()
+        print(f"Scanning {base_path} for ImageNet images...")
+        
+        # Scan for all valid images first
+        valid_folders = set(self.folder_labels.keys())
+        if not os.path.isdir(base_path):
+             raise FileNotFoundError(f"ImageNet base path not found or not a directory: {base_path}")
+             
         for folder in os.listdir(base_path):
-            if not folder.startswith("n"):
+            if not folder.startswith("n"): # Standard ImageNet folder prefix
                 continue
             folder_path = os.path.join(base_path, folder)
-            if not os.path.isdir(folder_path) or folder not in self.folder_labels:
+            # Check if folder is valid and exists in label file
+            if not os.path.isdir(folder_path) or folder not in valid_folders:
                 skipped.add(folder)
                 continue
+                
             label = int(self.folder_labels[folder])
             for fname in os.listdir(folder_path):
+                # Check for standard image extensions
                 if fname.lower().endswith((".jpeg", ".jpg")):
                     img_path = os.path.join(folder_path, fname)
-                    img_id = fname  # Just use filename for PCA matching
+                    img_id = fname  # Use filename for potential PCA matching later
                     self.samples.append((img_path, label, img_id))
                     
         if skipped:
-            print(f"Warning: Skipped {len(skipped)} folders not in folder labels")
+            print(f"Warning: Skipped {len(skipped)} folders not found in {label_file} or not directories.")
         
-        total = len(self.samples)
-        indices = torch.randperm(total).tolist()
-        split_idx = int(total * train_ratio)
-        self.samples = [self.samples[i] for i in (indices[:split_idx] if split == "train" else indices[split_idx:])]
-        print(f"{split.capitalize()} split: {len(self.samples)} samples")
+        total_found = len(self.samples)
+        print(f"Found {total_found} total valid image files.")
+        
+        # Apply train/test split only if split is 'train' or 'test'
+        if split in ["train", "test"]:
+            if total_found == 0:
+                 print(f"Warning: No images found to split for '{split}' split.")
+                 self.samples = [] # Ensure samples is empty list
+            else:
+                 # Use a fixed seed for reproducible splits if needed, otherwise random split
+                 # torch.manual_seed(42) # Uncomment for deterministic split
+                 indices = torch.randperm(total_found).tolist()
+                 split_idx = int(total_found * train_ratio)
+                 if split == "train":
+                     self.samples = [self.samples[i] for i in indices[:split_idx]]
+                 else: # split == "test"
+                     self.samples = [self.samples[i] for i in indices[split_idx:]]
+            print(f"Using {split.capitalize()} split: {len(self.samples)} samples")
+        # If split is 'all', self.samples remains the full list
 
     def __len__(self):
         return len(self.samples)
@@ -192,12 +227,15 @@ def create_collate_fn():
 
 def create_dataloader(dataset: Dataset, batch_size: int = 32, num_workers: int = 4,
                       shuffle: bool = True, collate_fn=None) -> DataLoader:
+    # Conditionally set prefetch_factor only if using multiple workers
+    prefetch_factor = 8 if num_workers > 0 else None
+    
     return DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers,
-        prefetch_factor=8,
+        prefetch_factor=prefetch_factor, # Use the conditional value
         pin_memory=True,
         collate_fn=collate_fn or create_collate_fn()
     )
@@ -205,13 +243,12 @@ def create_dataloader(dataset: Dataset, batch_size: int = 32, num_workers: int =
 def wrap_with_pca(dataset, base_path, cfg, split):
     """Wrap the dataset with PCA labels"""
     n_classes = cfg.get("pca_n_classes")
+    if n_classes is None:
+        raise ValueError("pca_n_classes must be specified in config when pca_labels=True")
     pca_file = f"n_classes_{n_classes}.csv"
-    pca_path = os.path.join(base_path, pca_file)
-    if not os.path.exists(pca_path):
-        print(f"Warning: PCA file not found at {pca_path}. Using original labels.")
-        return dataset
-    print(f"Applying PCA labels for {split} from {pca_path}")
-    return PCADataset(dataset, pca_path)
+    pca_labels_path = os.path.join(base_path, pca_file)
+    print(f"Applying PCA labels for {split} from {pca_labels_path}")
+    return PCADataset(dataset, pca_labels_path, num_classes=n_classes)
 
 # -----------------------------------------------------------------------------
 # Dataset preparation functions
@@ -248,40 +285,49 @@ def prepare_tinyimgnet_data(cfg, pca_labels, shuffle):
 
 def prepare_imgnet_data(cfg, pca_labels, shuffle):
     base_path = cfg.get("dataset_path", utils.get_env_var("IMAGENET_DATA_DIR"))
-    pca_base_path = os.path.join(utils.get_env_var("IMAGENET_LOCAL_DIR"), cfg.get("pca_labels_folder"))
-    datasets_dict, loaders_dict = {}, {}
+    datasets, loaders = {}, {}
+    
+    # Determine splits: For feature extraction (shuffle=False), use 'all'. Otherwise, use ['train', 'test']
+    splits_to_load = ["all"] if not shuffle else ["train", "test"]
+    print(f"Preparing ImageNet data for splits: {splits_to_load}")
 
-    for split in ["train", "test"]:
-        augment = split == "train" and cfg.get("data_augment", True)
-        transform = get_transform(ds_stats="imgnet", data_augment=augment, image_size=224)
-        dataset = ImageNetDataset(base_path, split=split, transform=transform, train_ratio=cfg.get("train_ratio", 0.8))
+    for split in splits_to_load:
+        # Augmentation is usually False during feature extraction (controlled by shuffle flag proxy)
+        augment = cfg.get("data_augment", False) and split == "train" and shuffle
+        tfms = get_transform(ds_stats="imgnet", data_augment=augment, image_size=224)
         
+        # Instantiate the dataset for the current split ('train', 'test', or 'all')
+        dataset = ImageNetDataset(base_path, split=split, transform=tfms)
+        
+        # Set num_classes in cfg if not already present (primarily for training)
         if not pca_labels and "n_classes" not in cfg:
-            cfg["n_classes"] = dataset.num_classes
-            print(f"Setting n_classes to {dataset.num_classes} based on dataset")
+             cfg["n_classes"] = dataset.num_classes
+             print(f"Setting n_classes to {dataset.num_classes} based on dataset")
+
+        # Wrap with PCA labels if specified (usually only during training/evaluation, not extraction)
+        if pca_labels:
+            pca_base_path = os.path.join(utils.get_env_var("IMAGENET_LOCAL_DIR"), cfg.get("pca_labels_folder"))
+            dataset = wrap_with_pca(dataset, pca_base_path, cfg, split)
         
-        dataset = wrap_with_pca(dataset, pca_base_path, cfg, split) if pca_labels else dataset
-
-        datasets_dict[split] = dataset
-        loaders_dict[split] = create_dataloader(
+        datasets[split] = dataset
+        loaders[split] = create_dataloader(
             dataset,
-            batch_size=cfg.get("batchsize", 32),
-            num_workers=cfg.get("num_workers", 4),
-            shuffle=shuffle
+            batch_size=cfg.get("batchsize", 512),
+            num_workers=cfg.get("num_workers", 8),
+            shuffle=shuffle, # Shuffle should be False for extraction split='all'
         )
-
-    return datasets_dict, loaders_dict
+    return datasets, loaders
 
 def get_obj_cls_loader(cfg, shuffle=True):
-    """
-    Prepares object classification datasets and loaders.
-    Supported datasets: 'tiny-imagenet' and 'imagenet'.
-    """
+    """Return datasets and dataloaders for object classification."""
     dataset_name = cfg.get("dataset", "tiny-imagenet")
     pca_labels = cfg.get("pca_labels", False)
+
     if dataset_name == "tiny-imagenet":
-        return prepare_tinyimgnet_data(cfg, pca_labels, shuffle)
+        datasets, loaders = prepare_tinyimgnet_data(cfg, pca_labels, shuffle)
     elif dataset_name == "imagenet":
-        return prepare_imgnet_data(cfg, pca_labels, shuffle)
+        datasets, loaders = prepare_imgnet_data(cfg, pca_labels, shuffle)
     else:
-        raise ValueError(f"Unknown dataset: {dataset_name}")
+        raise ValueError(f"Unsupported dataset: {dataset_name}")
+
+    return datasets, loaders
