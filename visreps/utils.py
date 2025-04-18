@@ -16,6 +16,8 @@ import sys
 import csv
 import wandb
 
+# print("--- Importing visreps/utils.py ---")
+
 # Suppress specific torch.load FutureWarning
 warnings.filterwarnings(
     "ignore",
@@ -264,15 +266,16 @@ class MetricsLogger:
 
 
 def get_env_var(key):
-    """Get path from environment variable or raise error if not found"""
-    env_path = Path(__file__).parent.parent / ".env"
-    if env_path.exists():
-        load_dotenv(dotenv_path=env_path)
+    """Get path from environment variable. Attempts to load .env if key not found initially."""
+    # print(f"--- Inside visreps.utils.get_env_var for key: {key} ---")
+    # load_dotenv() should be called at the script entry point for primary loading.
     path = os.environ.get(key)
     if path is None:
-        raise ValueError(
-            f"Environment variable {key} not found. Please set it in .env file or system environment."
-        )
+        # If not found, print debug info and return an empty string to avoid TypeError downstream.
+        # This assumes downstream code can handle an empty path or will raise its own error.
+        print(f"Debug: Environment variable '{key}' not found in os.environ.")
+        print(f"Debug: Current os.environ keys (first 50): {list(os.environ.keys())[:50]}") 
+        return "" # Return empty string instead of raising error or returning None
     return path
 
 

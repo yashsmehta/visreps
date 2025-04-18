@@ -255,10 +255,26 @@ def wrap_with_pca(dataset, base_path, cfg, split):
 # -----------------------------------------------------------------------------
 def prepare_tinyimgnet_data(cfg, pca_labels, shuffle):
     base_path = cfg.get("dataset_path", utils.get_env_var("TINY_IMAGENET_DATA_DIR"))
-    pca_base_path = os.path.join(utils.get_env_var("TINY_IMAGENET_LOCAL_DIR"), cfg.get("pca_labels_folder"))
+    
+    # Fetch the local dir path first to trigger potential error from get_env_var
+    local_dir_path = utils.get_env_var("TINY_IMAGENET_LOCAL_DIR")
+
+    # Now join the path
+    pca_base_path = os.path.join(local_dir_path, cfg.get("pca_labels_folder"))
+    
     datasets, loaders = {}, {}
-    for split in ["train", "test"]:
-        augment = cfg.get("data_augment", True) and split == "train"
+    
+    # Determine splits: Use 'val' as 'all' for extraction (shuffle=False), otherwise use ['train', 'test']
+    # Tiny ImageNet conventionally uses 'val' for testing/evaluation.
+    splits_to_load = ["val"] if not shuffle else ["train", "val"]
+    print(f"Preparing Tiny ImageNet data for splits: {splits_to_load}")
+    
+    for split in splits_to_load:
+        # Determine actual folder name ('train' or 'val')
+        folder_split = "train" if split == "train" else "val"
+        
+        # Augmentation only for train split when shuffle=True
+        augment = cfg.get("data_augment", True) and split == "train" and shuffle
         tfms = (
             [transforms.Resize(64), transforms.CenterCrop(64)]
             + ([
@@ -269,22 +285,38 @@ def prepare_tinyimgnet_data(cfg, pca_labels, shuffle):
             + [transforms.ToTensor(), transforms.Normalize(DS_MEAN["tiny-imagenet"], DS_STD["tiny-imagenet"])]
         )
         transform = transforms.Compose(tfms)
-        dataset = TinyImageNetDataset(base_path, split, transform)
+        # Use the folder_split to point to the correct directory
+        dataset = TinyImageNetDataset(base_path, folder_split, transform)
+        
         if not pca_labels and "n_classes" not in cfg:
             cfg["n_classes"] = dataset.num_classes
             print(f"Setting n_classes to {dataset.num_classes} based on dataset")
+            
+        # Use the main split name ('train', 'val', or potentially 'all' if we rename 'val') for PCA wrapping
         dataset = wrap_with_pca(dataset, pca_base_path, cfg, split) if pca_labels else dataset
-        datasets[split] = dataset
-        loaders[split] = create_dataloader(
+        
+        # Use the main split name ('train' or 'val') as the key in the returned dict
+        # If shuffle is False, we want the key to be 'all', so we rename 'val' to 'all'
+        dict_key = "all" if not shuffle and split == "val" else split
+        datasets[dict_key] = dataset
+        loaders[dict_key] = create_dataloader(
             dataset,
             batch_size=cfg.get("batchsize", 32),
             num_workers=cfg.get("num_workers", 4),
-            shuffle=shuffle
+            shuffle=shuffle # Pass the original shuffle flag
         )
     return datasets, loaders
 
-def prepare_imgnet_data(cfg, pca_labels, shuffle):
-    base_path = cfg.get("dataset_path", utils.get_env_var("IMAGENET_DATA_DIR"))
+def prepare_imgnet_data(cfg, pca_labels, shuffle, dataset_env_var="IMAGENET_DATA_DIR"):
+    """Prepares ImageNet or related datasets (like mini variants).
+    
+    Args:
+        cfg: Configuration object.
+        pca_labels: Boolean indicating if PCA labels should be used.
+        shuffle: Boolean indicating if data should be shuffled.
+        dataset_env_var: The environment variable key for the dataset base path.
+    """
+    base_path = cfg.get("dataset_path", utils.get_env_var(dataset_env_var)) # Use the provided env var
     datasets, loaders = {}, {}
     
     # Determine splits: For feature extraction (shuffle=False), use 'all'. Otherwise, use ['train', 'test']
@@ -326,7 +358,11 @@ def get_obj_cls_loader(cfg, shuffle=True):
     if dataset_name == "tiny-imagenet":
         datasets, loaders = prepare_tinyimgnet_data(cfg, pca_labels, shuffle)
     elif dataset_name == "imagenet":
-        datasets, loaders = prepare_imgnet_data(cfg, pca_labels, shuffle)
+        # Call prepare_imgnet_data with the standard ImageNet env var
+        datasets, loaders = prepare_imgnet_data(cfg, pca_labels, shuffle, dataset_env_var="IMAGENET_DATA_DIR")
+    elif dataset_name == "imagenet-mini-50":
+        # Call prepare_imgnet_data with the ImageNet-Mini-50 env var
+        datasets, loaders = prepare_imgnet_data(cfg, pca_labels, shuffle, dataset_env_var="IMAGENET_MINI_50_DATA_DIR")
     else:
         raise ValueError(f"Unsupported dataset: {dataset_name}")
 
