@@ -76,6 +76,17 @@ This is the root directory: /home/ymehta3/research/VisionAI/visreps
     *   `slurm/`: Scripts for interacting with the Slurm workload manager.
         *   `train_scheduler.py`, `eval_scheduler.py`: Python scripts to schedule Slurm jobs for training/evaluation.
         *   `basic.sh`: A basic Slurm job submission script template.
+        The bonner-libraries package is organized into several sub-modules:
+        bonner.brainio: Implements the BrainIO specification for handling neural datasets, addressing issues with large fMRI data and netCDF files. It uses catalog CSVs stored under $BONNER_BRAINIO_HOME.
+        bonner.files: Utilities for file handling.
+        bonner.plotting: Tools for creating plots.
+        bonner.datasets: Functions for managing neural datasets.
+        bonner.models: Tools for working with and dissecting PyTorch models, focusing on standardized activation extraction.
+        bonner.computation: Provides CPU/GPU-agnostic computation capabilities.
+        bonner.caching: Implements caching of function outputs to disk.
+        Key aspects include:
+        bonner.models: Centralizes tools for analyzing PyTorch models.
+        bonner.brainio: Provides a custom BrainIO implementation tailored for large-scale fMRI data, managing data downloads and packaging relative to $BONNER_BRAINIO_HOME.
 *   **Testing:**
     *   `tests/`: Contains unit and integration tests.
         *   `test_*.py`: Individual test files for different components (e.g., data loaders, analysis methods). Uses `pytest`.
