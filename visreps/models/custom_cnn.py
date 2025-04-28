@@ -225,47 +225,46 @@ class CustomCNN(nn.Module):
         nonlin_fn = nn_ops.get_nonlinearity(nonlinearity, inplace=True)
         pool_fn = nn_ops.get_pooling_fn(pooling_type, kernel_size=3, stride=2)
 
-        # Adjusted architecture for Tiny ImageNet (64x64 input) following AlexNet structure
         self.features = nn.Sequential(
-            # conv1: 64x64 -> 15x15 (after pooling)
+            # conv1: 224x224 -> 56x56 (after pooling)
             nn.Conv2d(3, 96, kernel_size=11, stride=4, padding=2, bias=not batchnorm),
             nn.LocalResponseNorm(size=5, alpha=0.0001, beta=0.75, k=2.0) if not batchnorm else nn.BatchNorm2d(96),
             nonlin_fn,
-            pool_fn,  # 15x15
+            pool_fn,  # 56x56
 
-            # conv2: 15x15 -> 7x7 (after pooling)
+            # conv2: 56x56 -> 28x28 (after pooling)
             nn.Conv2d(96, 256, kernel_size=5, padding=2, groups=2, bias=not batchnorm),
             nn.LocalResponseNorm(size=5, alpha=0.0001, beta=0.75, k=2.0) if not batchnorm else nn.BatchNorm2d(256),
             nonlin_fn,
-            pool_fn,  # 7x7
+            pool_fn,  # 28x28
 
-            # conv3: 7x7 -> 7x7
+            # conv3: 28x28 -> 14x14
             nn.Conv2d(256, 384, kernel_size=3, padding=1, bias=not batchnorm),
             nn.BatchNorm2d(384) if batchnorm else nn.Identity(),
             nonlin_fn,
 
-            # conv4: 7x7 -> 7x7
+            # conv4: 14x14 -> 14x14
             nn.Conv2d(384, 384, kernel_size=3, padding=1, groups=2, bias=not batchnorm),
             nn.BatchNorm2d(384) if batchnorm else nn.Identity(),
             nonlin_fn,
 
-            # conv5: 7x7 -> 3x3 (after pooling)
+            # conv5: 14x14 -> 7x7 (after pooling)
             nn.Conv2d(384, 256, kernel_size=3, padding=1, groups=2, bias=not batchnorm),
             nn.BatchNorm2d(256) if batchnorm else nn.Identity(),
             nonlin_fn,
-            pool_fn,  # 3x3
+            pool_fn,  # 7x7
         )
 
-        # Use 3x3 output size to match AlexNet's final feature map dimensions
-        self.adaptive_pool = nn.AdaptiveAvgPool2d((3, 3))
+        # Use 6x6 output size to match AlexNet's final feature map dimensions
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((6, 6))
 
         # Classifier matching AlexNet's structure with 4096 neurons
         self.classifier = nn.Sequential(
-            nn.Dropout(0.5) if dropout else nn.Identity(),  # Original AlexNet dropout
-            nn.Linear(256 * 3 * 3, 4096),
+            nn.Dropout(p=dropout) if dropout > 0 else nn.Identity(),
+            nn.Linear(256 * 6 * 6, 4096),
             nn.BatchNorm1d(4096) if batchnorm else nn.Identity(),
             nonlin_fn,
-            nn.Dropout(0.5) if dropout else nn.Identity(),  # Original AlexNet dropout
+            nn.Dropout(p=dropout) if dropout > 0 else nn.Identity(),
             nn.Linear(4096, 4096),
             nn.BatchNorm1d(4096) if batchnorm else nn.Identity(),
             nonlin_fn,
@@ -279,26 +278,15 @@ class CustomCNN(nn.Module):
         """Initialize model weights properly."""
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                # Use He initialization for Conv layers (ReLU networks)
                 nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
             elif isinstance(m, (nn.BatchNorm2d, nn.BatchNorm1d)):
-                nn.init.constant_(m.weight, 1)
-                nn.init.constant_(m.bias, 0)
+                nn.init.ones_(m.weight) # Initialize weight to 1 for BatchNorm
+                nn.init.zeros_(m.bias)
             elif isinstance(m, nn.Linear):
-                # Check if this is the final layer by comparing out_features to num_classes.
-                if m.out_features == self.num_classes:
-                    # Final classification layer: use a smaller std.
-                    fan_in = m.weight.size(1)
-                    std = 1.0 / math.sqrt(fan_in)
-                    nn.init.normal_(m.weight, 0, std)
-                else:
-                    # Hidden layers: use He initialization (gain for ReLU).
-                    gain = nn.init.calculate_gain('relu')
-                    fan_in = m.weight.size(1)
-                    std = gain / math.sqrt(fan_in)
-                    nn.init.normal_(m.weight, 0, std)
+                # Use He initialization for linear layers as well, appropriate for ReLU
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
                 if m.bias is not None:
                     nn.init.zeros_(m.bias)
 
