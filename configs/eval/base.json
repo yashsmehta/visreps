@@ -3,12 +3,13 @@
   "region": "ventral visual stream",
   "subject_idx": 0,
   "analysis": "rsa",
-  "neural_dataset": "nsd",
-  "log_expdata": true,
-  "exp_name": "cluster_test",
-  "batchsize": 32,
+  "neural_dataset": "things",
+  "log_expdata": false,
+  "exp_name": "imagenet_pca",
+  "batchsize": 128,
+  "apply_srp": true,
   "num_workers": 8,
-  "return_nodes": ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2", "fc3"],
+  "return_nodes": ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2"],
   "load_model_from": "checkpoint",
   "torchvision":
   {
@@ -18,6 +19,6 @@
   "cfg_id": 1,
   "checkpoint":
   {
-    "checkpoint_model": "checkpoint_epoch_5.pth"
+    "checkpoint_model": "checkpoint_epoch_10.pth"
   }
 }
