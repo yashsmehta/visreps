@@ -393,8 +393,8 @@ class ConfigVerifier:
         "midventral visual stream",
         "ventral visual stream",
     }
-    VALID_ANALYSES = {"rsa", "cross_decomposition"}
-    VALID_NEURAL_DATASETS = {"nsd"}
+    VALID_ANALYSES = {"rsa"}
+    VALID_NEURAL_DATASETS = {"nsd", "things"}
     VALID_LAYERS = {"conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2", "fc3"}
 
     def __init__(self, cfg: OmegaConf):
@@ -484,9 +484,10 @@ class ConfigVerifier:
 
         if self.cfg.neural_dataset.lower() not in self.VALID_NEURAL_DATASETS:
             self.rprint(
-                "[red]Currently only NSD dataset is supported[/red]", style="error"
+                f"[red]Invalid neural_dataset: {self.cfg.neural_dataset}. Must be in {self.VALID_NEURAL_DATASETS}[/red]",
+                style="error",
             )
-            raise AssertionError("Currently only NSD dataset is supported")
+            raise AssertionError(f"Invalid neural_dataset: {self.cfg.neural_dataset}")
 
         # Model layers validation
         if not hasattr(self.cfg.return_nodes, "__iter__"):
@@ -499,12 +500,13 @@ class ConfigVerifier:
             self.rprint("[red]return_nodes list cannot be empty[/red]", style="error")
             raise AssertionError("return_nodes list cannot be empty")
 
-        if not all(node in self.VALID_LAYERS for node in self.cfg.return_nodes):
-            self.rprint(
-                f"[red]Invalid return nodes: {self.cfg.return_nodes}. Must be in {self.VALID_LAYERS}[/red]",
-                style="error",
-            )
-            raise AssertionError(f"Invalid return nodes: {self.cfg.return_nodes}")
+        # Removed hardcoded layer validation - will be done after model loading in evals.py
+        # if not all(node in self.VALID_LAYERS for node in self.cfg.return_nodes):
+        #     self.rprint(
+        #         f"[red]Invalid return nodes: {self.cfg.return_nodes}. Must be in {self.VALID_LAYERS}[/red]",
+        #         style="error",
+        #     )
+        #     raise AssertionError(f"Invalid return nodes: {self.cfg.return_nodes}")
 
         # Model loading validation
         if self.cfg.load_model_from not in self.VALID_MODEL_SOURCES:
@@ -523,8 +525,9 @@ class ConfigVerifier:
                     style="error",
                 )
                 raise AssertionError("torchvision key not allowed in checkpoint mode")
+            checkpoint_model_name = self.cfg.checkpoint_model
             checkpoint_path = Path(
-                f"model_checkpoints/{self.cfg.exp_name}/cfg{self.cfg.cfg_id}/{self.cfg.checkpoint_model}"
+                f"model_checkpoints/{self.cfg.exp_name}/cfg{self.cfg.cfg_id}/{checkpoint_model_name}"
             )
             if not checkpoint_path.exists():
                 self.rprint(

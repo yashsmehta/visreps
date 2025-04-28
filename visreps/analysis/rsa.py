@@ -1,18 +1,34 @@
-import itertools
-from typing import Dict, List, Tuple, Any
 import numpy as np
 import torch
 from tqdm.auto import tqdm
 from visreps.analysis.metrics import pearson_r, spearman_r
 from visreps.utils import rprint
+import logging
 
-def compute_rsm(activations: torch.Tensor) -> torch.Tensor:
-    """Compute RSM from activations tensor (n_samples, n_features) -> (n_samples, n_samples)"""
-    return pearson_r(
-        activations.transpose(-2, -1),
-        correction=0,
-        return_diagonal=False,
-    )
+# Setup logger
+logger = logging.getLogger(__name__)
+
+
+def compute_rsm(activations: torch.Tensor, correction: float = 1e-12) -> torch.Tensor:
+    """
+    Pearson-R correlation matrix across samples (rows).
+    Input : (n_samples, n_features) tensor
+    Output: (n_samples, n_samples) RSM
+    """
+    n_samples, n_features = activations.shape
+    x   = activations.float()                                 # ensure fp32
+    x  -= x.mean(dim=1, keepdim=True)                         # row-center
+    std = x.pow(2).mean(dim=1).add(correction).sqrt()         # row σ
+
+    mask = std < correction * 10                              # near-zero σ
+    if mask.any():
+        logger.warning(f"{mask.sum().item()} / {n_samples} samples are constant.")
+        std[mask] = 1.0                                       # avoid div-by-0
+
+    cov = (x @ x.T) / n_features                              # covariance
+    rsm = cov / (std[:, None] * std[None, :] + correction)    # correlation
+    rsm.clamp_(-1, 1).fill_diagonal_(1.0)
+    return rsm
 
 def compute_rsm_correlation(rsm1: torch.Tensor, rsm2: torch.Tensor, correlation: str = "Pearson") -> float:
     """Compute correlation between two RSMs using specified method (Pearson/Spearman)"""
@@ -67,41 +83,26 @@ def compute_rsa_alignment(
     activations_dict,
     neural_data
 ):
-    """Compute RSA alignment between model layer activations and neural data"""
+    """Return list of dicts with RSA alignment scores for each layer."""
     results = []
-    
-    # Get RSA parameters from config
     correlation = cfg.get('correlation', 'Pearson')
     n_bootstraps = cfg.get('n_bootstraps', 500)
     subsample_fraction = cfg.get('subsample_fraction', 0.9)
     do_bootstrap = cfg.get('do_bootstrap', False)
-    
     rprint(f"Computing RSA scores using {correlation} correlation...", style="info")
-    
-    # Compute neural RSM once
     neural_rsm = compute_rsm(neural_data)
-    
-    # Compute RSA for each layer
     for layer, activations in activations_dict.items():
-        # Flatten activations if needed
-        print(f"\nProcessing Layer: {layer}")
-        print(f"Activations shape: {activations.shape}")
         if activations.ndim > 2:
             activations = activations.flatten(start_dim=1)
-            
-        # Compute layer RSM and correlation
         layer_rsm = compute_rsm(activations)
         score = compute_rsm_correlation(layer_rsm, neural_rsm, correlation)
         rprint(f"Layer {layer:<20} RSA Score: {score:.4f}", style="highlight")
-        
         result = {
             "layer": layer,
             "score": score,
             "analysis": "rsa",
             "correlation": correlation,
         }
-        
-        # Compute bootstrap scores if enabled
         if do_bootstrap:
             bootstrap_scores = bootstrap_correlation(
                 layer_rsm, neural_rsm,
@@ -109,20 +110,14 @@ def compute_rsa_alignment(
                 subsample_fraction=subsample_fraction,
                 correlation=correlation
             )
-            
-            # Compute bootstrap statistics
             bootstrap_mean = float(bootstrap_scores.mean())
             bootstrap_std = float(bootstrap_scores.std())
             bootstrap_ci = bootstrap_scores.quantile(torch.tensor([0.025, 0.975]))
-            print(f"Bootstrap results - Mean: {bootstrap_mean:.4f} ± {bootstrap_std:.4f}")
-            
             result.update({
                 "bootstrap_mean": bootstrap_mean,
                 "bootstrap_std": bootstrap_std,
                 "bootstrap_ci_lower": float(bootstrap_ci[0]),
                 "bootstrap_ci_upper": float(bootstrap_ci[1])
             })
-        
         results.append(result)
-        
     return results

@@ -1,15 +1,21 @@
+from collections import defaultdict
 import json
 import os
-import warnings
 import torch
 import torchvision
 from omegaconf import OmegaConf
 import torch.nn as nn
-from typing import Dict
+from typing import Dict, List, Tuple
+import numpy as np
+import joblib
+from tqdm import tqdm
+import psutil                     # Added import
+import resource                   # Added import (optional, for peak process memory)
 
 from visreps.models import standard_cnn
 from visreps.models.custom_cnn import CustomCNN, TinyCustomCNN
 from visreps.utils import rprint
+from visreps.analysis.sparse_random_projection import get_srp_transformer
 
 class FeatureExtractor(nn.Module):
     def __init__(self, model: nn.Module, return_nodes: Dict[str, str] = None):
@@ -144,24 +150,65 @@ def configure_feature_extractor(cfg, model):
     return FeatureExtractor(model, return_nodes)
 
 
-def get_activations(model, dataloader, device):
+def get_activations(
+    model: nn.Module,
+    dataloader: torch.utils.data.DataLoader,
+    device: torch.device,
+    apply_srp: bool = False,
+) -> Tuple[Dict[str, torch.Tensor], List]:
     """
-    Extract activations from a model for a given dataloader.
+    Collect layer activations for every sample in `dataloader`.
+    If `apply_srp`, each batch is projected (Sparse Random Projection) to
+    k = 4096 per layer, capped by its native dimensionality.
     """
     model.eval()
-    activations_dict = {}
-    all_keys = []
+    activations: Dict[str, List[torch.Tensor]] = defaultdict(list)
+    all_keys: List = []
+    srp = {}
+
+    # ---------- SRP initialisation ----------
+    if apply_srp:
+        try:
+            probe_imgs, _ = next(iter(dataloader))                # single probe batch
+        except StopIteration:
+            return {}, []
+
+        with torch.no_grad():
+            probe_out = model(probe_imgs.to(device))
+
+        k_fixed, density, seed, cache_dir = 4096, None, None, "model_checkpoints/srp_cache"
+        for name, out in probe_out.items():
+            D = out.view(out.size(0), -1).size(1)
+            srp[name] = get_srp_transformer(
+                D=D,
+                k=min(k_fixed, D),
+                density=density,
+                seed=seed,
+                cache_dir=cache_dir,
+            )
+
+    # ---------- main loop ----------
     with torch.no_grad():
-        for images, keys in dataloader:
-            inputs = images.to(device)
-            outputs = model(inputs)
+        for imgs, keys in tqdm(dataloader, desc="Extracting model activations"):
             all_keys.extend(keys)
-            for node_name, output in outputs.items():
-                output = output.cpu()
-                activations_dict.setdefault(node_name, []).append(output)
-    for node_name in activations_dict:
-        activations_dict[node_name] = torch.cat(activations_dict[node_name], dim=0)
-    return activations_dict, all_keys
+            feats = model(imgs.to(device))
+            for name, out in feats.items():
+                out_cpu = out.cpu().half()                        # save RAM
+                transformer = srp.get(name)
+                if apply_srp and transformer is not None:
+                    flat = out_cpu.view(out_cpu.size(0), -1).float().numpy()
+                    try:
+                        proj = transformer.transform(flat)
+                        del flat # Explicitly delete flat array
+                        out_cpu = torch.from_numpy(proj).to(out_cpu.dtype) # Overwrite out_cpu
+                        del proj # Explicitly delete proj array
+                    except Exception:
+                        print("Failed to project, falling back to raw activations")
+                        del flat
+                        pass
+                activations[name].append(out_cpu)
+
+    return {n: torch.cat(b, 0) for n, b in activations.items()}, all_keys
 
 
 def merge_checkpoint_config(cfg, checkpoint):
@@ -209,7 +256,8 @@ def load_model(cfg, device, num_classes=None):
         if num_classes is not None:
             rprint("WARNING: num_classes is ignored when loading from checkpoint", style="warning")
         checkpoint_path = f"model_checkpoints/{cfg.exp_name}/cfg{cfg.cfg_id}/{cfg.checkpoint_model}"
-        checkpoint = torch.load(checkpoint_path, map_location=device)
+        # Explicitly set weights_only=False to allow loading pickled code
+        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
         print(f"Loaded model from checkpoint: {checkpoint_path}")
         merge_checkpoint_config(cfg, checkpoint)
         return checkpoint['model'].to(device)
