@@ -461,19 +461,55 @@ class ConfigVerifier:
         self.rprint("Validating evaluation configuration...", style="setup")
 
         # Neural parameters validation
-        if self.cfg.region.lower() not in self.VALID_REGIONS:
-            self.rprint(
-                f"[red]Invalid region: {self.cfg.region}. Must be in {self.VALID_REGIONS}[/red]",
-                style="error",
-            )
-            raise AssertionError(f"Invalid region: {self.cfg.region}")
+        if self.cfg.neural_dataset.lower() == "things":
+            # For 'things' dataset, region and subject_idx are not applicable.
+            # Issue warning and set to "N/A" if they are provided incorrectly.
+            if hasattr(self.cfg, 'region') and isinstance(self.cfg.region, str) and self.cfg.region.upper() != "N/A":
+                 self.rprint(
+                     f"[warning]Region '{self.cfg.region}' provided for 'things' dataset. Setting to 'N/A'.[/warning]",
+                     style="warning",
+                 )
+                 self.cfg.region = "N/A"
 
-        if not 0 <= self.cfg.subject_idx < 8:
-            self.rprint(
-                f"[red]Invalid subject index: {self.cfg.subject_idx}. Must be in range [0, 7][/red]",
-                style="error",
-            )
-            raise AssertionError(f"Invalid subject index: {self.cfg.subject_idx}")
+            if hasattr(self.cfg, 'subject_idx') and not (isinstance(self.cfg.subject_idx, str) and self.cfg.subject_idx.upper() == "N/A"):
+                 self.rprint(
+                     f"[warning]Subject index '{self.cfg.subject_idx}' provided for 'things' dataset. Setting to 'N/A'.[/warning]",
+                     style="warning",
+                 )
+                 self.cfg.subject_idx = "N/A"
+
+        elif self.cfg.neural_dataset.lower() == "nsd":
+            # Existing checks specific to 'nsd'
+            if self.cfg.region.lower() not in self.VALID_REGIONS:
+                self.rprint(
+                    f"[red]Invalid region for NSD: {self.cfg.region}. Must be in {self.VALID_REGIONS}[/red]",
+                    style="error",
+                )
+                raise AssertionError(f"Invalid region for NSD: {self.cfg.region}")
+
+            # Ensure subject_idx is an integer for NSD
+            if not isinstance(self.cfg.subject_idx, int) or not 0 <= self.cfg.subject_idx < 8:
+                self.rprint(
+                    f"[red]Invalid subject index for NSD: {self.cfg.subject_idx}. Must be an integer in range [0, 7][/red]",
+                    style="error",
+                )
+                raise AssertionError(f"Invalid subject index for NSD: {self.cfg.subject_idx}")
+        else:
+             # Handle other potential future neural datasets if necessary
+             # For now, assume they might need region/subject similar to NSD
+             if self.cfg.region.lower() not in self.VALID_REGIONS:
+                 self.rprint(
+                     f"[red]Invalid region: {self.cfg.region}. Must be in {self.VALID_REGIONS}[/red]",
+                     style="error",
+                 )
+                 raise AssertionError(f"Invalid region: {self.cfg.region}")
+
+             if not isinstance(self.cfg.subject_idx, int) or not 0 <= self.cfg.subject_idx < 8:
+                 self.rprint(
+                     f"[red]Invalid subject index: {self.cfg.subject_idx}. Must be an integer in range [0, 7][/red]",
+                     style="error",
+                 )
+                 raise AssertionError(f"Invalid subject index: {self.cfg.subject_idx}")
 
         if self.cfg.analysis.lower() not in self.VALID_ANALYSES:
             self.rprint(
@@ -481,13 +517,6 @@ class ConfigVerifier:
                 style="error",
             )
             raise AssertionError(f"Invalid analysis: {self.cfg.analysis}")
-
-        if self.cfg.neural_dataset.lower() not in self.VALID_NEURAL_DATASETS:
-            self.rprint(
-                f"[red]Invalid neural_dataset: {self.cfg.neural_dataset}. Must be in {self.VALID_NEURAL_DATASETS}[/red]",
-                style="error",
-            )
-            raise AssertionError(f"Invalid neural_dataset: {self.cfg.neural_dataset}")
 
         # Model layers validation
         if not hasattr(self.cfg.return_nodes, "__iter__"):
