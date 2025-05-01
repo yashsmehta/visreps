@@ -1,123 +1,137 @@
-import numpy as np
-import torch
-from tqdm.auto import tqdm
-from visreps.analysis.metrics import pearson_r, spearman_r
-from visreps.utils import rprint
 import logging
+from typing import Dict, List
 
-# Setup logger
+import numpy as np
+import scipy.stats
+import torch
+from visreps.utils import rprint
+
 logger = logging.getLogger(__name__)
 
+# -----------------------------------------------------------------------------
+# Internal helpers
+# -----------------------------------------------------------------------------
 
-def compute_rsm(activations: torch.Tensor, correction: float = 1e-12) -> torch.Tensor:
+_CORR_FUNCS = {
+    "pearson": scipy.stats.pearsonr,
+    "spearman": scipy.stats.spearmanr,
+    "kendall": scipy.stats.kendalltau,
+}
+
+
+def _rank(x: torch.Tensor) -> torch.Tensor:
+    """Row‑wise dense ranking via double argsort (ties get consecutive ranks)."""
+    return torch.argsort(torch.argsort(x, dim=1), dim=1).float()
+
+
+# -----------------------------------------------------------------------------
+# Public API
+# -----------------------------------------------------------------------------
+
+def compute_rsm(
+    representations: torch.Tensor, *, correlation: str = "Pearson", correction: float = 1e-12
+) -> torch.Tensor:
+    """Return an (n_samples × n_samples) RSM built with Pearson or Spearman.
+
+    Args:
+        representations: Row‑major activations (n_samples, n_features).
+        correlation: "Pearson" or "Spearman" (case‑insensitive).
+        correction: Numerical stabiliser added to variances.
     """
-    Pearson-R correlation matrix across samples (rows).
-    Input : (n_samples, n_features) tensor
-    Output: (n_samples, n_samples) RSM
-    """
-    n_samples, n_features = activations.shape
-    x   = activations.float()                                 # ensure fp32
-    x  -= x.mean(dim=1, keepdim=True)                         # row-center
-    std = x.pow(2).mean(dim=1).add(correction).sqrt()         # row σ
+    corr = correlation.lower()
+    if corr not in {"pearson", "spearman"}:
+        raise ValueError("correlation must be 'Pearson' or 'Spearman'")
 
-    mask = std < correction * 10                              # near-zero σ
-    if mask.any():
-        logger.warning(f"{mask.sum().item()} / {n_samples} samples are constant.")
-        std[mask] = 1.0                                       # avoid div-by-0
+    x = representations.float()
+    if corr == "spearman":
+        x = _rank(x)
 
-    cov = (x @ x.T) / n_features                              # covariance
-    rsm = cov / (std[:, None] * std[None, :] + correction)    # correlation
+    x -= x.mean(dim=1, keepdim=True)
+    std = x.pow(2).mean(dim=1).add(correction).sqrt()
+
+    # Guard against zero variance rows
+    zero_mask = std < correction * 10
+    if zero_mask.any():
+        logger.warning("%d/%d rows have ~zero variance for %s RSM", zero_mask.sum(), len(std), correlation)
+        std[zero_mask] = 1.0
+
+    cov = (x @ x.T) / x.size(1)
+    rsm = cov / (std[:, None] * std[None, :] + correction)
     rsm.clamp_(-1, 1).fill_diagonal_(1.0)
     return rsm
 
-def compute_rsm_correlation(rsm1: torch.Tensor, rsm2: torch.Tensor, correlation: str = "Pearson") -> float:
-    """Compute correlation between two RSMs using specified method (Pearson/Spearman)"""
-    # Get upper triangular values (excluding diagonal)
-    triu_indices = torch.triu_indices(rsm1.shape[-1], rsm1.shape[-1], offset=1)
-    vec1 = rsm1[..., triu_indices[0], triu_indices[1]]
-    vec2 = rsm2[..., triu_indices[0], triu_indices[1]]
-    
-    # Compute correlation
-    corr_func = pearson_r if correlation == "Pearson" else spearman_r
-    return float(corr_func(vec1, vec2))
 
-def bootstrap_correlation(
-    rsm1: torch.Tensor,
-    rsm2: torch.Tensor,
-    n_bootstraps: int = 500,
-    subsample_fraction: float = 0.9,
-    correlation: str = "Pearson",
-    seed: int = 0,
-    batch_size: int = 500,
-) -> torch.Tensor:
-    """Bootstrap correlation between RSMs with subsampling"""
-    n_samples = rsm1.shape[-1]
-    n_subset = int(n_samples * subsample_fraction)
-    rng = np.random.default_rng(seed=seed)
-    corr_func = pearson_r if correlation == "Pearson" else spearman_r
-    bootstrap_scores = []
-    
-    for batch_idx in tqdm(range(0, n_bootstraps, batch_size), desc="Bootstrap", leave=False):
-        batch_size = min(batch_size, n_bootstraps - batch_idx)
-        batch_scores = []
-        
-        for _ in range(batch_size):
-            # Sample indices
-            idx = rng.permutation(n_samples)[:n_subset]
-            # Get submatrices
-            sub_rsm1 = rsm1[idx][:, idx]
-            sub_rsm2 = rsm2[idx][:, idx]
-            # Get upper triangular values
-            triu_indices = torch.triu_indices(n_subset, n_subset, offset=1)
-            vec1 = sub_rsm1[triu_indices[0], triu_indices[1]]
-            vec2 = sub_rsm2[triu_indices[0], triu_indices[1]]
-            # Compute correlation
-            batch_scores.append(corr_func(vec1, vec2, return_diagonal=True))
-            
-        bootstrap_scores.append(torch.stack(batch_scores))
-        
-    return torch.cat(bootstrap_scores)
+def compute_rsm_correlation(
+    rsm1: torch.Tensor, rsm2: torch.Tensor, *, correlation: str = "Spearman"
+) -> float:
+    """Correlation between two RSMs using Pearson / Spearman / Kendall.
+
+    Returns NaN if correlation cannot be computed (e.g., zero variance).
+    """
+    if rsm1.shape != rsm2.shape or rsm1.ndim != 2:
+        raise ValueError("RSMs must share the same 2‑D shape")
+
+    n = rsm1.size(0)
+    if n <= 1:
+        logger.warning("RSM dimension ≤ 1; correlation undefined")
+        return float("nan")
+
+    idx = torch.triu_indices(n, n, offset=1, device=rsm1.device)
+    v1 = rsm1[idx[0], idx[1]].cpu().numpy()
+    v2 = rsm2[idx[0], idx[1]].cpu().numpy()
+    if v1.size == 0:
+        return float("nan")
+
+    corr = correlation.lower()
+    if corr not in _CORR_FUNCS:
+        raise ValueError("correlation must be 'Pearson', 'Spearman', or 'Kendall'")
+
+    try:
+        val, _ = _CORR_FUNCS[corr](v1, v2)
+        if np.isnan(val):
+            logger.warning("NaN returned for %s correlation", correlation)
+            return float("nan")
+        return float(val)
+    except Exception as e:  # pragma: no cover
+        logger.error("Error computing %s correlation: %s", correlation, e)
+        return float("nan")
+
 
 def compute_rsa_alignment(
-    cfg,
-    activations_dict,
-    neural_data
-):
-    """Return list of dicts with RSA alignment scores for each layer."""
+    cfg: Dict, activations_dict: Dict[str, torch.Tensor], neural_data: torch.Tensor
+) -> List[Dict]:
+    """Compute RSA alignment for each layer in *activations_dict*.
+
+    The config *cfg* may contain:
+        make_rsm_correlation: method for building RSMs (default "Pearson").
+        compare_rsm_correlation: method for comparing RSMs (default "Spearman").
+    """
+    make_rsm_corr = cfg.get("make_rsm_correlation", "Pearson")
+    cmp_rsm_corr = cfg.get("compare_rsm_correlation", "Kendall")
+
+    rprint(f"Building RSMs with {make_rsm_corr} correlation", style="info")
+    rprint(f"Comparing RSMs with {cmp_rsm_corr} correlation", style="info")
+
+    neural_rsm = compute_rsm(neural_data, correlation=make_rsm_corr)
     results = []
-    correlation = cfg.get('correlation', 'Pearson')
-    n_bootstraps = cfg.get('n_bootstraps', 500)
-    subsample_fraction = cfg.get('subsample_fraction', 0.9)
-    do_bootstrap = cfg.get('do_bootstrap', False)
-    rprint(f"Computing RSA scores using {correlation} correlation...", style="info")
-    neural_rsm = compute_rsm(neural_data)
-    for layer, activations in activations_dict.items():
-        if activations.ndim > 2:
-            activations = activations.flatten(start_dim=1)
-        layer_rsm = compute_rsm(activations)
-        score = compute_rsm_correlation(layer_rsm, neural_rsm, correlation)
-        rprint(f"Layer {layer:<20} RSA Score: {score:.4f}", style="highlight")
-        result = {
-            "layer": layer,
-            "score": score,
-            "analysis": "rsa",
-            "correlation": correlation,
-        }
-        if do_bootstrap:
-            bootstrap_scores = bootstrap_correlation(
-                layer_rsm, neural_rsm,
-                n_bootstraps=n_bootstraps,
-                subsample_fraction=subsample_fraction,
-                correlation=correlation
-            )
-            bootstrap_mean = float(bootstrap_scores.mean())
-            bootstrap_std = float(bootstrap_scores.std())
-            bootstrap_ci = bootstrap_scores.quantile(torch.tensor([0.025, 0.975]))
-            result.update({
-                "bootstrap_mean": bootstrap_mean,
-                "bootstrap_std": bootstrap_std,
-                "bootstrap_ci_lower": float(bootstrap_ci[0]),
-                "bootstrap_ci_upper": float(bootstrap_ci[1])
-            })
-        results.append(result)
+
+    for layer, acts in activations_dict.items():
+        flat_acts = acts.flatten(start_dim=1) if acts.ndim > 2 else acts
+        layer_rsm = compute_rsm(flat_acts, correlation=make_rsm_corr)
+        score = compute_rsm_correlation(layer_rsm, neural_rsm, correlation=cmp_rsm_corr)
+
+        rprint(
+            f"Layer {layer:<15} RSA ({make_rsm_corr} / {cmp_rsm_corr}): {score:.4f}",
+            style="highlight",
+        )
+        results.append(
+            {
+                "layer": layer,
+                "score": score,
+                "analysis": "rsa",
+                "make_rsm_correlation": make_rsm_corr,
+                "compare_rsm_correlation": cmp_rsm_corr,
+            }
+        )
     return results
+
