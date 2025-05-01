@@ -1,32 +1,42 @@
 import numpy as np
-import pandas as pd
 from typing import Dict, List, Tuple
 import torch
 import logging
 from collections import defaultdict
-from omegaconf import OmegaConf, DictConfig
+from omegaconf import DictConfig
 
 from visreps.analysis.rsa import compute_rsa_alignment
 
 logger = logging.getLogger(__name__)
 
 
+# ---------- helpers ----------
+
+def _pca_reorder(mat: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Reorder rows of `mat` along the first principal component.
+    Returns (reordered_mat, indices).  Falls back to original order on failure.
+    """
+    try:
+        centered = mat - mat.mean(0, keepdim=True)
+        _, _, V = torch.pca_lowrank(centered, q=1)
+        if V.numel() == 0:
+            raise RuntimeError("empty PC")
+        order = torch.argsort(centered @ V[:, 0])
+        return mat[order], order
+    except Exception as e:
+        logger.warning(f"PCA reorder failed: {e}")
+        return mat, torch.arange(mat.size(0))
+
+
+# ---------- public API ----------
+
 def compute_neural_alignment(
     cfg: DictConfig,
     acts_aligned: Dict[str, torch.Tensor],
     neural_aligned: torch.Tensor,
 ) -> List[dict]:
-    """
-    Compute neural alignment scores using RSA.
-
-    Args:
-        cfg (DictConfig): Configuration object.
-        acts_aligned (Dict[str, torch.Tensor]): Model activations aligned to neural data.
-        neural_aligned (torch.Tensor): Aligned neural or behavioral data.
-
-    Returns:
-        List[dict]: List of alignment scores per layer, each as a dict.
-    """
+    """Thin wrapper around `compute_rsa_alignment` to keep the public signature unchanged."""
     return compute_rsa_alignment(cfg, acts_aligned, neural_aligned)
 
 
@@ -37,52 +47,46 @@ def prepare_data_for_alignment(
     keys: List[str],
 ) -> Tuple[Dict[str, torch.Tensor], torch.Tensor]:
     """
-    Align and aggregate model activations and neural/behavioral data for alignment analysis.
-
-    Supports 'nsd' (aligns by stimulus key) and 'things' (aggregates by concept).
-
-    Args:
-        cfg (DictConfig): Configuration object with dataset info.
-        acts_raw (Dict[str, torch.Tensor]): Raw model activations keyed by layer.
-        neural_data_raw (Dict[str, np.ndarray]): Raw neural/behavioral data keyed by stimulus or concept.
-        keys (List[str]): List of stimulus identifiers.
-
-    Returns:
-        Tuple[Dict[str, torch.Tensor], torch.Tensor]: 
-            - Aligned/aggregated activations (per layer).
-            - Aligned/aggregated neural/behavioral data.
+    Align/aggregate activations and neural data for RSA analysis.
+    Supports `nsd` (stimulus-level) and `things` (concept-level) pipelines.
     """
+    dataset = cfg.neural_dataset.lower()
 
-    def _filter_nsd() -> Tuple[Dict[str, torch.Tensor], torch.Tensor]:
-        valid_idx = [i for i, k in enumerate(keys) if str(k) in neural_data_raw]
-        if not valid_idx:
+    # ---- NSD (stimulus-level alignment) ----
+    if dataset == "nsd":
+        idx = [i for i, k in enumerate(keys) if str(k) in neural_data_raw]
+        if not idx:
             logger.warning("No overlapping NSD keys.")
             return {}, torch.empty(0)
-        neural = torch.as_tensor(np.stack([neural_data_raw[str(keys[i])] for i in valid_idx]))
-        acts = {layer: act[valid_idx] for layer, act in acts_raw.items()}
-        return acts, neural
 
-    def _prepare_things() -> Tuple[Dict[str, torch.Tensor], torch.Tensor]:
-        concepts, idx_map = [], defaultdict(list)
+        neural = torch.as_tensor(np.stack([neural_data_raw[str(keys[i])] for i in idx]))
+        acts   = {l: a[idx] for l, a in acts_raw.items()}
+
+    # ---- THINGS (concept-level aggregation) ----
+    elif dataset == "things":
+        idx_map = defaultdict(list)
         for i, k in enumerate(keys):
-            c = "_".join(k.split("_")[:-1]) if "_" in k else k
-            if c and c in neural_data_raw:
-                if c not in concepts:
-                    concepts.append(c)
-                idx_map[c].append(i)
-        if not concepts:
-            logger.warning("No overlapping THINGS concepts found using derived names.")
+            concept = "_".join(k.split("_")[:-1]) or k
+            if concept in neural_data_raw:
+                idx_map[concept].append(i)
+
+        if not idx_map:
+            logger.warning("No overlapping THINGS concepts.")
             return {}, torch.empty(0)
+
+        concepts = list(idx_map)
         acts = {
-            layer: torch.stack([act[idx_map[c]].float().mean(0).to(act.dtype) for c in concepts])
-            for layer, act in acts_raw.items()
+            l: torch.stack([acts_raw[l][idx_map[c]].float().mean(0) for c in concepts]).to(a.dtype)
+            for l, a in acts_raw.items()
         }
         neural = torch.as_tensor(np.stack([neural_data_raw[c] for c in concepts], dtype=np.float32))
-        return acts, neural
 
-    dataset = cfg.neural_dataset.lower()
-    if dataset == "nsd":
-        return _filter_nsd()
-    if dataset == "things":
-        return _prepare_things()
-    raise ValueError(f"Unsupported neural_dataset '{dataset}'")
+    else:
+        raise ValueError(f"Unsupported neural_dataset '{dataset}'")
+
+    # ---- common: PCA-based reorder for nicer plots/analysis ----
+    neural, order = _pca_reorder(neural)
+    acts   = {l: a[order] for l, a in acts.items()}
+
+    logger.info(f"Prepared {dataset.upper()} data with {neural.size(0)} samples.")
+    return acts, neural
