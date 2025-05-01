@@ -9,7 +9,7 @@ from visreps.analysis.alignment import (
     compute_neural_alignment,
     prepare_data_for_alignment,
 )
-
+from visreps.analysis.reconstruct_from_pcs import reconstruct_from_pcs
 logger = logging.getLogger(__name__)
 
 # ──────────────────────── helpers ────────────────────────
@@ -26,7 +26,8 @@ def eval(cfg):
 
     # 1 ── CONFIG & DEVICE ─────────────────────────────────
     rprint("\n[1/4] Config + device", style="info")
-    cfg  = _load_cfg(cfg)
+    if cfg.load_model_from == "checkpoint":
+        cfg  = _load_cfg(cfg)
     dev  = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # 2 ── MODEL & FEATURE EXTRACTOR ───────────────────────
@@ -44,6 +45,8 @@ def eval(cfg):
         cfg.apply_srp
     )
     print("Extracted model activations and got stimuli ids")
+    if cfg.get("reconstruct_from_pcs"):
+        acts = reconstruct_from_pcs(acts, cfg.pca_k)
 
     acts_aligned, neural_aligned = prepare_data_for_alignment(
         cfg, acts, neural_data, ids
