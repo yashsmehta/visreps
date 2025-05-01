@@ -1,24 +1,29 @@
 {
-  "mode": "eval",
-  "region": "ventral visual stream",
-  "subject_idx": 0,
-  "analysis": "rsa",
-  "neural_dataset": "things",
-  "log_expdata": false,
-  "exp_name": "imagenet_pca",
-  "batchsize": 128,
-  "apply_srp": true,
-  "num_workers": 8,
-  "return_nodes": ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2"],
+  "make_rsm_correlation": "Pearson",
+  "compare_rsm_correlation": "Kendall",
+  "neural_dataset": "nsd",
+  "exp_name": "imagenet_cnn",
+  "cfg_id": 1,
+  "return_nodes": ["fc2"],
+  "reconstruct_from_pcs": false,
+  "pca_k": 1,
+
   "load_model_from": "checkpoint",
+  "checkpoint":
+  {
+    "checkpoint_model": "checkpoint_epoch_10.pth"
+  },
   "torchvision":
   {
     "model_name": "AlexNet",
     "pretrained_dataset": "imagenet1k"
   },
-  "cfg_id": 1,
-  "checkpoint":
-  {
-    "checkpoint_model": "checkpoint_epoch_10.pth"
-  }
+  "apply_srp": true,
+  "mode": "eval",
+  "region": "ventral visual stream",
+  "subject_idx": 0,
+  "analysis": "rsa",
+  "batchsize": 128,
+  "num_workers": 8,
+  "log_expdata": false
 }
