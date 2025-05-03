@@ -10,16 +10,16 @@ CHECKPOINTS_DIR = "model_checkpoints"
 
 # Evaluation parameter grid
 PARAM_GRID = {
-    "exp_name": ["seeds"],
-    "config_folders": ["cfg1", "cfg2"],
-    "eval_epochs": [0, 10],
-    "region": [
-        "early visual stream",
-        "ventral visual stream",
-    ],
+    "exp_name": ["imagenet_cnn"],
+    "config_folders": ["cfg1"],
+    "make_rsm_correlation": ["Pearson"],
+    "compare_rsm_correlation": ["Pearson"],
+    "reconstruct_from_pcs": [False],
+    "pca_k": [1],
+    "log_expdata": [False],
+    "eval_epochs": [10],
     "analysis": ["rsa"],
-    "subject_idx": [0, 1],
-    "return_nodes": [["conv4", "fc2"]],
+    "neural_dataset": ["things"],
 }
 
 
@@ -38,14 +38,12 @@ def run_evaluation(params: Dict[str, Any], checkpoint_path: str):
     print(f"\nRunning evaluation for {checkpoint_name}:")
     print(f"  Experiment: {params['exp_name']}")
     print(f"  Config:     {params['config_folders']}")
-    print(f"  Region:     {params['region']}")
     print(f"  Analysis:   {params['analysis']}")
-    print(f"  Subject:    {params['subject_idx']}")
+    print(f"  Neural dataset: {params['neural_dataset']}")
 
     # Create command with all necessary overrides
     overrides = [f"{k}={json.dumps(v)}" for k, v in params.items()] + [
         "mode=eval",
-        "neural_dataset=nsd",
         "log_expdata=true",
         f"cfg_id={config_id}",
         "load_model_from=checkpoint",
