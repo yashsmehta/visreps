@@ -9,21 +9,24 @@ from visreps.analysis.rsa import compute_rsa_alignment
 
 logger = logging.getLogger(__name__)
 
-
 # ---------- helpers ----------
-
 def _pca_reorder(mat: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-    """
-    Reorder rows of `mat` along the first principal component.
-    Returns (reordered_mat, indices).  Falls back to original order on failure.
+    """Reorder rows of `mat` by their score on the first principal component.
+    Returns (reordered_mat, row_indices).
+    Falls back to the original order if PCA fails.
     """
     try:
         centered = mat - mat.mean(0, keepdim=True)
-        _, _, V = torch.pca_lowrank(centered, q=1)
+        torch.manual_seed(42)
+        _, _, V = torch.pca_lowrank(centered, q=50)
         if V.numel() == 0:
             raise RuntimeError("empty PC")
-        order = torch.argsort(centered @ V[:, 0])
+        pc1 = V[:, 0]
+        projections = centered @ pc1
+        order = torch.argsort(projections, stable=True)
+        logger.info(f"Reordered neural data with {mat.size(0)} samples.")
         return mat[order], order
+
     except Exception as e:
         logger.warning(f"PCA reorder failed: {e}")
         return mat, torch.arange(mat.size(0))
@@ -53,13 +56,10 @@ def prepare_data_for_alignment(
     dataset = cfg.neural_dataset.lower()
 
     # ---- NSD (stimulus-level alignment) ----
-    if dataset == "nsd":
+    if dataset == "nsd" or dataset == "nsd_synthetic":
         idx = [i for i, k in enumerate(keys) if str(k) in neural_data_raw]
-        if not idx:
-            logger.warning("No overlapping NSD keys.")
-            return {}, torch.empty(0)
-
-        neural = torch.as_tensor(np.stack([neural_data_raw[str(keys[i])] for i in idx]))
+        neural = np.stack([neural_data_raw[str(keys[i])] for i in idx]).squeeze()
+        neural = torch.as_tensor(neural)
         acts   = {l: a[idx] for l, a in acts_raw.items()}
 
     # ---- THINGS (concept-level aggregation) ----
@@ -69,10 +69,6 @@ def prepare_data_for_alignment(
             concept = "_".join(k.split("_")[:-1]) or k
             if concept in neural_data_raw:
                 idx_map[concept].append(i)
-
-        if not idx_map:
-            logger.warning("No overlapping THINGS concepts.")
-            return {}, torch.empty(0)
 
         concepts = list(idx_map)
         acts = {
@@ -87,6 +83,5 @@ def prepare_data_for_alignment(
     # ---- common: PCA-based reorder for nicer plots/analysis ----
     neural, order = _pca_reorder(neural)
     acts   = {l: a[order] for l, a in acts.items()}
-
     logger.info(f"Prepared {dataset.upper()} data with {neural.size(0)} samples.")
     return acts, neural
