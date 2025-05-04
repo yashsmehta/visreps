@@ -8,11 +8,12 @@ import gc
 import pickle # Import standard pickle library
 import argparse # Add argparse
 from PIL import Image # Import PIL Image
+import matplotlib.pyplot as plt # Import matplotlib
 
 import visreps.utils as utils
 from bonner.datasets.gifford2025_nsd_synthetic._data import load_betas
 # Import stimulus loading functions
-from bonner.datasets.gifford2025_nsd_synthetic._stimuli import load_shared_stimuli, StimulusSet, N_STIMULI # Import StimulusSet and N_STIMULI
+from bonner.datasets.gifford2025_nsd_synthetic._stimuli import load_shared_stimuli, StimulusSet, N_STIMULI, N_STIMULI_SHARED # Import StimulusSet and N_STIMULI and N_STIMULI_SHARED
 from bonner.datasets.allen2021_natural_scenes import load_rois, create_roi_selector
 
 
@@ -211,19 +212,40 @@ def process_stimuli_data(output_path: Path, output_filename: str, subject: int):
         total_stimuli = len(stimulus_set)
         logger.info(f"StimulusSet initialized. Expecting {total_stimuli} total stimuli (shared + subject {subject}'s unshared).")
 
+        # --- Pre-load data into NumPy arrays for efficiency ---
+        logger.info("Loading stimuli data into NumPy arrays...")
+        try:
+            # Transpose to (stimulus, height, width, channel) for easier indexing
+            shared_images_np = stimulus_set.stimuli_shared.transpose('stimulus', 'height', 'width', 'channel').values
+            shared_stim_names = stimulus_set.stimuli_shared['stimulus'].values
+            unshared_images_np = stimulus_set.stimuli_unshared.transpose('stimulus', 'height', 'width', 'channel').values
+            unshared_stim_names = stimulus_set.stimuli_unshared['stimulus'].values
+            logger.info("Successfully loaded data into NumPy arrays.")
+        except Exception as e:
+             logger.exception(f"Failed to load stimuli data into NumPy arrays: {e}")
+             # If loading fails, exit or handle appropriately - here we raise to stop processing
+             raise RuntimeError("Could not load stimuli data into memory.") from e
+        # --- End Pre-loading ---
+
         # Convert to the desired dictionary format {stim_id_str: np.array (H, W, C)}
         logger.info("Converting stimuli to dictionary format {stim_id_str: np.array(H, W, C)}...")
         stimuli_dict = {}
         for i in range(total_stimuli):
-            # Get the PIL Image using the index
-            image = stimulus_set[i] # Returns PIL Image
-            # Convert PIL Image back to numpy array (H, W, C)
-            # np.array() preserves the uint8 dtype from PIL
-            image_array = np.array(image)
-            # Use the index 'i' as the key (string format)
-            stimuli_dict[str(i)] = image_array
+            # Get data directly from NumPy arrays
+            if i < N_STIMULI_SHARED:
+                image_array = shared_images_np[i]
+                stim_name = shared_stim_names[i]
+            else:
+                unshared_idx = i - N_STIMULI_SHARED
+                image_array = unshared_images_np[unshared_idx]
+                stim_name = unshared_stim_names[unshared_idx]
+
+            # Use the stimulus name as the key (ensure string format)
+            # stim_name from .values should already be appropriate type (often numpy string or object)
+            stimuli_dict[str(stim_name)] = image_array
+
             if i % 1000 == 0: # Log progress periodically
-                 logger.debug(f"Processed stimulus {i}/{total_stimuli}")
+                 logger.debug(f"Processed stimulus {i}/{total_stimuli} (name: {stim_name})")
 
         num_stim = len(stimuli_dict)
         example_stim_id = next(iter(stimuli_dict)) if num_stim > 0 else None
