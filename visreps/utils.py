@@ -268,7 +268,7 @@ class MetricsLogger:
 def get_env_var(key):
     """Get path from environment variable. Attempts to load .env if key not found initially."""
     # print(f"--- Inside visreps.utils.get_env_var for key: {key} ---")
-    # load_dotenv() should be called at the script entry point for primary loading.
+    load_dotenv()
     path = os.environ.get(key)
     if path is None:
         # If not found, print debug info and return an empty string to avoid TypeError downstream.
@@ -357,7 +357,7 @@ def merge_nested_config(cfg, source_key):
     del cfg[source_key]
 
 
-def load_config(config_path, overrides):
+def load_config(config_path, overrides=None):
     """Load config from file and apply CLI overrides."""
     if not Path(config_path).exists():
         raise FileNotFoundError(f"Config file not found: {config_path}")
