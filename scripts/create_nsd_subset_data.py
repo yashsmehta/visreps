@@ -6,9 +6,13 @@ from pathlib import Path
 from typing import Dict, Sequence
 import gc
 import pickle # Import standard pickle library
+import argparse # Add argparse
+from PIL import Image # Import PIL Image
 
 import visreps.utils as utils
 from bonner.datasets.gifford2025_nsd_synthetic._data import load_betas
+# Import stimulus loading functions
+from bonner.datasets.gifford2025_nsd_synthetic._stimuli import load_shared_stimuli, StimulusSet, N_STIMULI # Import StimulusSet and N_STIMULI
 from bonner.datasets.allen2021_natural_scenes import load_rois, create_roi_selector
 
 
@@ -23,26 +27,30 @@ SPECIFIC_ROIS: Dict[str, Sequence[Dict[str, str]]] = {
     "ventral": ({"source": "streams", "label": "ventral"},),
 }
 
-def main():
-    # --- Hardcoded Configuration ---
-    rois_to_process = ["early", "midventral", "ventral"] # Specify desired ROIs here
-    output_dir = "datasets/neural/nsd_synthetic"
-    output_filename = "fmri_responses.pkl"
+# Inverse mapping from short name to descriptive name for saving
+DESCRIPTIVE_ROI_NAMES = {
+    "early": "early visual stream",
+    "midventral": "midventral visual stream",
+    "ventral": "ventral visual stream",
+}
+
+def process_fmri_data(output_path: Path, output_filename: str):
+    """Processes and saves fMRI data."""
+    logger.info("--- Starting fMRI Data Processing ---")
+    # --- Hardcoded Configuration for fMRI ---
+    rois_to_process = ["early", "midventral", "ventral"] # Short names used for processing logic
     resolution = "1pt8mm"
     preprocessing = "fithrf_GLMdenoise_RR"
     z_score = True
-    subjects_to_process = [0] # Process only subject 0 for now
-    # subjects_to_process = list(range(8)) # Uncomment to process all subjects
-    # -------------------------------
+    # subjects_to_process = [0] # Process only subject 0 for now
+    subjects_to_process = list(range(8)) # Process all subjects
+    # ---------------------------------------
 
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    # Initialize based on requested ROIs
-    all_processed_data = {roi: {} for roi in rois_to_process}
+    # Initialize based on DESCRIPTIVE names for final output structure
+    all_processed_data = {name: {} for name in DESCRIPTIVE_ROI_NAMES.values()}
 
     logger.info(f"Processing subjects: {subjects_to_process}")
-    logger.info(f"Processing ROIs: {rois_to_process}")
+    logger.info(f"Processing ROIs (using short names internally): {rois_to_process}")
 
     for subject_idx in subjects_to_process:
         logger.info(f"--- Processing Subject {subject_idx} ---")
@@ -84,10 +92,16 @@ def main():
             subject_processed_any_roi = False # Flag to track if any ROI was processed for this subject
             for roi_name in rois_to_process:
                 # Ensure the ROI exists in the main dictionary structure
-                if roi_name not in all_processed_data:
-                    all_processed_data[roi_name] = {}
+                # Use the descriptive name for lookup in the final structure
+                descriptive_roi_name = DESCRIPTIVE_ROI_NAMES.get(roi_name)
+                if descriptive_roi_name is None:
+                     logger.error(f"Internal error: ROI short name '{roi_name}' not found in DESCRIPTIVE_ROI_NAMES map. Skipping.")
+                     continue
+                if descriptive_roi_name not in all_processed_data:
+                    # This case should ideally not happen due to initialization, but good practice
+                    all_processed_data[descriptive_roi_name] = {}
 
-                logger.info(f"Processing ROI '{roi_name}' for Subject {subject_idx}...")
+                logger.info(f"Processing ROI '{roi_name}' (maps to '{descriptive_roi_name}') for Subject {subject_idx}...")
                 try:
                     selectors = SPECIFIC_ROIS[roi_name]
                     logger.debug(f"Creating ROI selector for {roi_name} using selectors: {selectors}")
@@ -129,6 +143,8 @@ def main():
                     # Convert to dictionary {stim_idx_str: numpy_array}
                     # Group again by 'stimulus' to iterate easily
                     stim_to_beta_map = {
+                        # Convert stimulus index to string explicitly
+                        # idx is already the stimulus ID (likely string or int convertible to string)
                         str(idx): data.values.astype(np.float32)
                         for idx, data in avg_roi_betas_xr.groupby("stimulus")
                     }
@@ -137,8 +153,8 @@ def main():
                     example_shape = stim_to_beta_map[example_stim_id].shape if example_stim_id else "N/A"
                     logger.info(f"Finished averaging for ROI '{roi_name}'. Got data for {num_stim} stimuli. Shape per stimulus: {example_shape}")
 
-                    # Store this subject's data for this ROI in the main dictionary
-                    all_processed_data[roi_name][subject_idx] = stim_to_beta_map
+                    # Store this subject's data for this ROI in the main dictionary using the DESCRIPTIVE name
+                    all_processed_data[descriptive_roi_name][subject_idx] = stim_to_beta_map
                     subject_processed_any_roi = True
 
                 except KeyError as e:
@@ -162,22 +178,120 @@ def main():
             logger.exception(f"Failed to process subject {subject_idx}: {e}")
 
     # --- Saving the combined processed data ---
-    logger.info("--- Saving Combined Processed Data ---")
+    logger.info("--- Saving Combined Processed fMRI Data ---")
 
     # Check if any data was processed at all
-    if not any(all_processed_data[roi] for roi in all_processed_data):
-        logger.warning("No data was successfully processed for any subject/ROI combination. Nothing to save.")
+    # Check based on descriptive names now
+    if not any(all_processed_data[descriptive_name] for descriptive_name in all_processed_data):
+        logger.warning("No fMRI data was successfully processed for any subject/ROI combination. Nothing to save.")
     else:
         # Construct the single output filename using the argument
         output_file = output_path / output_filename
         try:
-            logger.info(f"Saving combined data for {len(subjects_to_process)} subject(s) and {len(rois_to_process)} ROI(s) to {output_file}...")
+            logger.info(f"Saving combined fMRI data for {len(subjects_to_process)} subject(s) and {len(all_processed_data)} ROI(s) to {output_file}...")
             # Use standard pickle dump
             with open(output_file, 'wb') as f:
                 pickle.dump(all_processed_data, f)
-            logger.info(f"Successfully saved combined data to {output_file}")
+            logger.info(f"Successfully saved combined fMRI data to {output_file}")
         except Exception as e:
-            logger.exception(f"Failed to save combined data to {output_file}: {e}")
+            logger.exception(f"Failed to save combined fMRI data to {output_file}: {e}")
+
+    logger.info("--- fMRI Data Processing Finished ---")
+
+
+def process_stimuli_data(output_path: Path, output_filename: str, subject: int):
+    """Loads, processes, and saves shared and unshared stimulus image data for a specific subject using StimulusSet."""
+    logger.info(f"--- Starting Stimulus Data Processing for Subject {subject} ---")
+
+    try:
+        logger.info(f"Initializing StimulusSet for subject {subject}...")
+        # Instantiate StimulusSet for the given subject
+        stimulus_set = StimulusSet(subject=subject)
+        # Total number of stimuli (shared + unshared for this subject)
+        total_stimuli = len(stimulus_set)
+        logger.info(f"StimulusSet initialized. Expecting {total_stimuli} total stimuli (shared + subject {subject}'s unshared).")
+
+        # Convert to the desired dictionary format {stim_id_str: np.array (H, W, C)}
+        logger.info("Converting stimuli to dictionary format {stim_id_str: np.array(H, W, C)}...")
+        stimuli_dict = {}
+        for i in range(total_stimuli):
+            # Get the PIL Image using the index
+            image = stimulus_set[i] # Returns PIL Image
+            # Convert PIL Image back to numpy array (H, W, C)
+            # np.array() preserves the uint8 dtype from PIL
+            image_array = np.array(image)
+            # Use the index 'i' as the key (string format)
+            stimuli_dict[str(i)] = image_array
+            if i % 1000 == 0: # Log progress periodically
+                 logger.debug(f"Processed stimulus {i}/{total_stimuli}")
+
+        num_stim = len(stimuli_dict)
+        example_stim_id = next(iter(stimuli_dict)) if num_stim > 0 else None
+        example_shape = stimuli_dict[example_stim_id].shape if example_stim_id else "N/A"
+        logger.info(f"Processed {num_stim} stimuli (shared + subject {subject}'s unshared). Example shape for stim '{example_stim_id}': {example_shape}")
+
+        # --- Saving the processed stimulus data ---
+        # Use the provided output_filename (which will include the subject)
+        output_file = output_path / output_filename
+        logger.info(f"Saving processed stimulus data for subject {subject} to {output_file}...")
+        try:
+            with open(output_file, 'wb') as f:
+                pickle.dump(stimuli_dict, f)
+            logger.info(f"Successfully saved stimulus data to {output_file}")
+        except Exception as e:
+            logger.exception(f"Failed to save stimulus data to {output_file}: {e}")
+
+    except FileNotFoundError as e:
+        logger.error(f"Failed to load underlying stimuli files for subject {subject}: {e}. Ensure data is downloaded.")
+    except Exception as e:
+        logger.exception(f"Failed to process stimuli for subject {subject}: {e}")
+
+    logger.info("--- Stimulus Data Processing Finished ---")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Process NSD synthetic dataset - either fMRI responses or Stimuli.")
+    parser.add_argument(
+        '--data-type',
+        type=str,
+        required=True,
+        choices=['fmri', 'stimuli'],
+        help="Specify whether to process 'fmri' data or 'stimuli' images."
+    )
+    parser.add_argument(
+        '--subject',
+        type=int,
+        # required=True, # Make subject required only if data-type is stimuli
+        help="Specify the subject index (0-7) for stimuli processing (required if --data-type is stimuli)."
+    )
+    args = parser.parse_args()
+
+    # Validate subject argument if processing stimuli
+    if args.data_type == 'stimuli':
+        if args.subject is None:
+            parser.error("--subject is required when --data-type is stimuli")
+        if not (0 <= args.subject <= 7):
+             parser.error(f"--subject must be between 0 and 7, got {args.subject}")
+
+
+    # --- Common Configuration ---
+    output_dir = "datasets/neural/nsd_synthetic"
+    # --------------------------
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    if args.data_type == 'fmri':
+        # Define output filename for fMRI
+        output_filename = "fmri_responses.pkl"
+        process_fmri_data(output_path, output_filename)
+    elif args.data_type == 'stimuli':
+        # Define output filename for stimuli, including the subject index
+        output_filename = f"stimuli_subject_{args.subject}.pkl"
+        process_stimuli_data(output_path, output_filename, args.subject)
+    else:
+        # This case should not be reachable due to argparse choices
+        logger.error(f"Invalid data type specified: {args.data_type}")
 
     logger.info("--- Script Finished ---")
 
