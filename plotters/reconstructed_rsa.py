@@ -232,18 +232,17 @@ if legend_handles:
     baseline_handle = [h for h in legend_handles if h.get_linestyle() == '--']
     ordered_handles = pca_handles + baseline_handle
 
-    # Place legend outside the plot area to the right, ensuring it's centered vertically
-    # Add check for non-empty handles before creating legend
-    if ordered_handles:
-        fig.legend(handles=ordered_handles, fontsize=10, title='Classification', title_fontsize='11', loc='center left', bbox_to_anchor=(1.0, 0.5))
-    else:
-        print("Warning: No legend handles generated, skipping figure legend.")
-
+# --- Create Legend BEFORE final layout adjustment ---
+common_legend = None
+if ordered_handles:
+    common_legend = fig.legend(handles=ordered_handles, fontsize=10, title='Classification', title_fontsize='11', loc='center left', bbox_to_anchor=(0.9, 0.5)) # Anchor slightly left of edge initially
+else:
+    print("Warning: No legend handles generated, skipping figure legend.")
 
 # --- Save Figure ---
-# Adjust layout to prevent overlap and make space for legend/suptitle
-# Adjust right margin (e.g., 0.88) based on legend size and new aspect ratio
-fig.tight_layout(rect=[0, 0, 0.88, 0.95]) # Try smaller right margin for legend space
+# Apply tight_layout AFTER legend creation, constraining subplot area to leave space
+fig.tight_layout(rect=[0, 0, 0.88, 0.95])
+# Removed plt.subplots_adjust as tight_layout(rect=...) should handle it
 
 # Format ROI string for filename (replace space with underscore, lowercase)
 roi_str_filename = roi.replace(' ', '_').lower()
