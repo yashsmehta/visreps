@@ -5,7 +5,6 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 from torchvision import transforms
-import xarray as xr
 
 import visreps.utils as utils
 from visreps.dataloaders.obj_cls import get_transform
@@ -68,7 +67,7 @@ def load_nsd_synthetic_data(
     fmri = utils.load_pickle(os.path.join(root, "fmri_responses.pkl"))[region][subj]
     images = {
         str(k): v
-        for k, v in utils.load_pickle(os.path.join(root, "stimuli.pkl")).items()
+        for k, v in utils.load_pickle(os.path.join(root, f"stimuli_subject_{subj}.pkl")).items()
     }
 
     ids = {str(k) for k in fmri} & images.keys()

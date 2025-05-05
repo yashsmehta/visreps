@@ -163,7 +163,7 @@ def get_activations(
     """
     model.eval()
     activations: Dict[str, List[torch.Tensor]] = defaultdict(list)
-    all_keys: List = []
+    ids: List = []
     srp = {}
 
     # ---------- SRP initialisation ----------
@@ -190,7 +190,7 @@ def get_activations(
     # ---------- main loop ----------
     with torch.no_grad():
         for imgs, keys in tqdm(dataloader, desc="Extracting model activations"):
-            all_keys.extend(keys)
+            ids.extend(keys)
             feats = model(imgs.to(device))
             for name, out in feats.items():
                 out_cpu = out.cpu().half()                        # save RAM
@@ -208,7 +208,7 @@ def get_activations(
                         pass
                 activations[name].append(out_cpu)
 
-    return {n: torch.cat(b, 0) for n, b in activations.items()}, all_keys
+    return {n: torch.cat(b, 0) for n, b in activations.items()}, ids
 
 
 def merge_checkpoint_config(cfg, checkpoint):
