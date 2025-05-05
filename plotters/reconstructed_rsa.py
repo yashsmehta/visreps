@@ -24,21 +24,21 @@ n_rows = math.ceil(n_layers / n_cols)
 
 # Helper function to filter and get scores for a specific layer
 def get_layer_scores(df_cnn, df_pca, layer, roi, subject_idx, neural_dataset, rsa_correlation_method):
-    """Filters dataframes for a specific layer and returns baseline and reconstructed scores."""
+    """Filters dataframes for a specific layer and returns reconstructed CNN scores and grouped PCA scores."""
 
-    # --- Filter CNN Data (Baseline) ---
+    # --- Filter CNN Data (Reconstructed 1k-way) ---
     cnn_filter_conditions = (
         (df_cnn['layer'] == layer) &
         (df_cnn['neural_dataset'] == neural_dataset) &
         (df_cnn['region'] == roi) &
         (df_cnn['subject_idx'] == subject_idx) &
         (df_cnn['compare_rsm_correlation'].str.lower() == rsa_correlation_method.lower()) &
-        (df_cnn['reconstruct_from_pcs'] == False)
+        (df_cnn['reconstruct_from_pcs'] == True) # Fetch reconstructed scores
     )
-    cnn_base_row = df_cnn[cnn_filter_conditions]
-    cnn_base_score = cnn_base_row['score'].iloc[0] if not cnn_base_row.empty else None
+    # Get the DataFrame of reconstructed scores for the 1k model, sorted by k
+    cnn_recon_df = df_cnn[cnn_filter_conditions].sort_values('pca_k')
 
-    # --- Filter PCA Data (Reconstructed) ---
+    # --- Filter PCA Data (Reconstructed k-way) ---
     pca_filter_conditions = (
         (df_pca['layer'] == layer) &
         (df_pca['neural_dataset'] == neural_dataset) &
@@ -49,12 +49,13 @@ def get_layer_scores(df_cnn, df_pca, layer, roi, subject_idx, neural_dataset, rs
     )
     pca_recon_df = df_pca[pca_filter_conditions].sort_values(['pca_n_classes', 'pca_k'])
 
-    # Group reconstructed data by pca_n_classes
+    # Group reconstructed PCA data by pca_n_classes
     pca_recon_grouped = {
         k_classes: group for k_classes, group in pca_recon_df.groupby('pca_n_classes')
     }
 
-    return cnn_base_score, pca_recon_grouped
+    # Return the reconstructed CNN DataFrame and the grouped PCA data
+    return cnn_recon_df, pca_recon_grouped
 
 # --- Setup Plot ---
 sns.set_theme(style="ticks", context="paper")
@@ -75,12 +76,12 @@ all_pca_n_classes = sorted(df_pca[
 if all_pca_n_classes:
     n_pca_variants = len(all_pca_n_classes)
     # Adjust linspace for better visual separation if many variants
-    blues_cmap = plt.cm.Blues(np.linspace(0.3, 1.0, n_pca_variants))
+    blues_cmap = plt.cm.Blues(np.linspace(0.2, 0.8, n_pca_variants))
     pca_color_map = {k: color for k, color in zip(all_pca_n_classes, blues_cmap)}
 else:
     pca_color_map = {}
 
-baseline_color = 'black' # Color for the baseline CNN (1000-way)
+baseline_color = 'red' # Color for the baseline CNN (1000-way)
 
 legend_handles = []
 has_added_handles = False # Flag to add handles only once
@@ -91,16 +92,41 @@ for i, layer in enumerate(layers):
     print(f"--- Processing Layer: {layer} ---")
 
     # --- Get Data for this layer ---
-    cnn_base_score, pca_recon_grouped = get_layer_scores(
+    cnn_recon_df, pca_recon_grouped = get_layer_scores(
         df_cnn, df_pca, layer, roi, subject_idx, neural_dataset, rsa_correlation_method
     )
-
-    print(f"Baseline Score (1000-way): {cnn_base_score if cnn_base_score is not None else 'N/A'}")
 
     all_x_ticks_layer = set() # Collect unique x-ticks for this layer
     min_x_layer, max_x_layer = float('inf'), float('-inf') # Track min/max x for limits
 
-    # Plot reconstructed data (solid lines, markers for each pca_n_classes)
+    # Plot reconstructed 1k CNN data (solid red line)
+    if not cnn_recon_df.empty:
+        print(f"Reconstructed Data (1k-way):")
+        print(cnn_recon_df[['pca_k', 'score']].to_string())
+        sns.lineplot(
+            data=cnn_recon_df,
+            x='pca_k',
+            y='score',
+            marker='o',
+            markersize=5,
+            linewidth=2.0,
+            label='1k', # Use '1k' for legend
+            color=baseline_color, # Use the red color
+            linestyle='-', # Solid line
+            zorder=2,
+            ax=ax
+        )
+        all_x_ticks_layer.update(cnn_recon_df['pca_k'].unique())
+        min_x_layer = min(min_x_layer, cnn_recon_df['pca_k'].min())
+        max_x_layer = max(max_x_layer, cnn_recon_df['pca_k'].max())
+
+        # Add legend handle only once
+        if not has_added_handles:
+            legend_handles.append(mlines.Line2D([], [], color=baseline_color, marker='o', markersize=5, linestyle='-', label='1k'))
+    else:
+        print(f"Warning: No reconstructed data found for 1k-way in layer {layer}.")
+
+    # Plot reconstructed PCA data (solid lines, markers for each pca_n_classes)
     for k_classes, recon_df in pca_recon_grouped.items():
         if recon_df.empty:
             print(f"Warning: No reconstructed data found for {k_classes}-way in layer {layer}.")
@@ -134,46 +160,6 @@ for i, layer in enumerate(layers):
         if not has_added_handles:
             legend_handles.append(mlines.Line2D([], [], color=color, marker='o', markersize=5, linestyle='-', label=label))
 
-    # Plot baseline CNN data (dashed line)
-    if cnn_base_score is not None:
-        # Determine x-range based on plotted data for this layer
-        if all_x_ticks_layer:
-             # xmin = min(all_x_ticks_layer)
-             # xmax = max(all_x_ticks_layer)
-             # Use tracked min/max for baseline line range
-             xmin_line = min(all_x_ticks_layer)
-             xmax_line = max(all_x_ticks_layer)
-             # Also update overall min/max for axis limits
-             min_x_layer = min(min_x_layer, xmin_line)
-             max_x_layer = max(max_x_layer, xmax_line)
-
-             ax.hlines(
-                 cnn_base_score, xmin=xmin_line, xmax=xmax_line, # Use hlines for clarity
-                 linestyle='--',
-                 color=baseline_color,
-                 linewidth=2.0,
-                 alpha=0.9,
-                 zorder=1,
-                 label='_nolegend_' # Avoid duplicate legend entry
-             )
-        else: # Plot as axhline if no recon data was plotted
-             ax.axhline(
-                 cnn_base_score,
-                 linestyle='--',
-                 color=baseline_color,
-                 linewidth=2.0,
-                 alpha=0.9,
-                 zorder=1,
-                 label='_nolegend_'
-             )
-
-
-        # Add baseline legend handle only once
-        if not has_added_handles:
-            legend_handles.append(mlines.Line2D([], [], color=baseline_color, linestyle='--', linewidth=2.0, label='1000-way (Baseline)'))
-    else:
-        print(f"Warning: No baseline score found for layer {layer}.")
-
     has_added_handles = True # Ensure handles are added only in the first iteration
 
     # --- Customize Subplot Appearance ---
@@ -181,32 +167,12 @@ for i, layer in enumerate(layers):
     ax.set_xlabel('Number of Principal Components (k)', fontsize=11)
     ax.set_ylabel('RSA Score', fontsize=11)
 
-    # Set x-ticks based on collected values for the layer
-    # if all_x_ticks_layer:
-    #     unique_ticks = np.sort(list(all_x_ticks_layer))
-    #     # Ensure ticks are integers if they are whole numbers
-    #     int_ticks = unique_ticks[unique_ticks == unique_ticks.astype(int)]
-    #     ax.set_xticks(ticks=int_ticks.astype(int))
-    #     ax.set_xticklabels(labels=int_ticks.astype(int), fontsize=9)
-    # else:
-    #     ax.set_xticks([])
-    #     ax.set_xticklabels([])
-
     # Configure x-axis ticks (Major every 5, Minor every 1)
-    if min_x_layer != float('inf') and max_x_layer != float('-inf'):
-        # Set limits slightly padded
-        pad = 1
-        ax.set_xlim(min_x_layer - pad, max_x_layer + pad)
-        # Set major and minor locators
-        ax.xaxis.set_major_locator(MultipleLocator(5))
-        ax.xaxis.set_minor_locator(MultipleLocator(1))
-        # Ensure only major ticks have labels
-        ax.tick_params(axis='x', which='major', labelsize=9)
-        ax.tick_params(axis='x', which='minor', labelbottom=False)
-    else:
-        # No data, remove ticks
-        ax.set_xticks([])
-        ax.set_xticklabels([])
+    ax.set_xlim(min_x_layer, max_x_layer)
+    ax.xaxis.set_major_locator(MultipleLocator(5))
+    ax.xaxis.set_minor_locator(MultipleLocator(1))
+    ax.tick_params(axis='x', which='major', labelsize=9)
+    ax.tick_params(axis='x', which='minor', labelbottom=False)
 
     ax.tick_params(axis='y', labelsize=9)
     ax.grid(True, linestyle=':', alpha=0.5)
@@ -227,10 +193,13 @@ fig.suptitle(f'RSA Score vs Reconstruction PCs ({neural_dataset.upper()}, {roi_s
 
 # Create and order the final common legend
 if legend_handles:
-    # Sort handles: PCA k-way first (numerically), then baseline
-    pca_handles = sorted([h for h in legend_handles if h.get_linestyle() == '-'], key=lambda x: int(x.get_label().split('-')[0]))
-    baseline_handle = [h for h in legend_handles if h.get_linestyle() == '--']
-    ordered_handles = pca_handles + baseline_handle
+    # Sort handles: PCA k-way first (numerically), then the '1k' handle
+    pca_handles = sorted(
+        [h for h in legend_handles if h.get_label() != '1k'], 
+        key=lambda x: int(x.get_label().split('-')[0])
+    )
+    cnn_1k_handle = [h for h in legend_handles if h.get_label() == '1k']
+    ordered_handles = pca_handles + cnn_1k_handle
 
 # --- Create Legend BEFORE final layout adjustment ---
 common_legend = None
