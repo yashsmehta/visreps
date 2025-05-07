@@ -13,7 +13,7 @@ df_pca = pd.read_csv("logs/eval/checkpoint/imagenet_pca.csv")
 # --- Define Fixed Filters ---
 neural_dataset = 'nsd'
 roi = 'early visual stream'
-subject_idx = 0
+num_subjects_total = 8 # Define total number of subjects
 rsa_correlation_method = 'spearman'
 
 # Define layers to plot
@@ -23,39 +23,61 @@ n_cols = 4 # Use 4 columns for better layout (FC1, FC2 side-by-side)
 n_rows = math.ceil(n_layers / n_cols)
 
 # Helper function to filter and get scores for a specific layer
-def get_layer_scores(df_cnn, df_pca, layer, roi, subject_idx, neural_dataset, rsa_correlation_method):
-    """Filters dataframes for a specific layer and returns reconstructed CNN scores and grouped PCA scores."""
+def get_layer_scores_avg(df_cnn, df_pca, layer, roi, neural_dataset, rsa_correlation_method, num_subjects):
+    """Filters dataframes for a specific layer, averages scores across subjects, 
+    and returns reconstructed CNN scores and grouped PCA scores."""
 
-    # --- Filter CNN Data (Reconstructed 1k-way) ---
-    cnn_filter_conditions = (
-        (df_cnn['layer'] == layer) &
-        (df_cnn['neural_dataset'] == neural_dataset) &
-        (df_cnn['region'] == roi) &
-        (df_cnn['subject_idx'] == subject_idx) &
-        (df_cnn['compare_rsm_correlation'].str.lower() == rsa_correlation_method.lower()) &
-        (df_cnn['reconstruct_from_pcs'] == True) # Fetch reconstructed scores
-    )
-    # Get the DataFrame of reconstructed scores for the 1k model, sorted by k
-    cnn_recon_df = df_cnn[cnn_filter_conditions].sort_values('pca_k')
+    all_cnn_recon_dfs_subj = []
+    all_pca_recon_dfs_subj = []
 
-    # --- Filter PCA Data (Reconstructed k-way) ---
-    pca_filter_conditions = (
-        (df_pca['layer'] == layer) &
-        (df_pca['neural_dataset'] == neural_dataset) &
-        (df_pca['region'] == roi) &
-        (df_pca['subject_idx'] == subject_idx) &
-        (df_pca['compare_rsm_correlation'].str.lower() == rsa_correlation_method.lower()) &
-        (df_pca['reconstruct_from_pcs'] == True)
-    )
-    pca_recon_df = df_pca[pca_filter_conditions].sort_values(['pca_n_classes', 'pca_k'])
+    for subj_loop_idx in range(num_subjects):
+        # --- Filter CNN Data (Reconstructed 1k-way) for current subject ---
+        cnn_filter_conditions_subj = (
+            (df_cnn['layer'] == layer) &
+            (df_cnn['neural_dataset'] == neural_dataset) &
+            (df_cnn['region'] == roi) &
+            (df_cnn['subject_idx'] == subj_loop_idx) &
+            (df_cnn['compare_rsm_correlation'].str.lower() == rsa_correlation_method.lower()) &
+            (df_cnn['reconstruct_from_pcs'] == True)
+        )
+        cnn_recon_df_for_subj = df_cnn[cnn_filter_conditions_subj]
+        if not cnn_recon_df_for_subj.empty:
+            all_cnn_recon_dfs_subj.append(cnn_recon_df_for_subj)
 
-    # Group reconstructed PCA data by pca_n_classes
-    pca_recon_grouped = {
-        k_classes: group for k_classes, group in pca_recon_df.groupby('pca_n_classes')
-    }
+        # --- Filter PCA Data (Reconstructed k-way) for current subject ---
+        pca_filter_conditions_subj = (
+            (df_pca['layer'] == layer) &
+            (df_pca['neural_dataset'] == neural_dataset) &
+            (df_pca['region'] == roi) &
+            (df_pca['subject_idx'] == subj_loop_idx) &
+            (df_pca['compare_rsm_correlation'].str.lower() == rsa_correlation_method.lower()) &
+            (df_pca['reconstruct_from_pcs'] == True)
+        )
+        pca_recon_df_for_subj = df_pca[pca_filter_conditions_subj]
+        if not pca_recon_df_for_subj.empty:
+            all_pca_recon_dfs_subj.append(pca_recon_df_for_subj)
 
-    # Return the reconstructed CNN DataFrame and the grouped PCA data
-    return cnn_recon_df, pca_recon_grouped
+    # --- Process CNN Data (Average across subjects) ---
+    if not all_cnn_recon_dfs_subj:
+        cnn_recon_df_avg = pd.DataFrame(columns=['pca_k', 'score']) # Empty DF if no data
+    else:
+        combined_cnn_df = pd.concat(all_cnn_recon_dfs_subj)
+        cnn_recon_df_avg = combined_cnn_df.groupby('pca_k')['score'].mean().reset_index()
+        cnn_recon_df_avg = cnn_recon_df_avg.sort_values('pca_k')
+
+    # --- Process PCA Data (Average across subjects) ---
+    if not all_pca_recon_dfs_subj:
+        pca_recon_grouped_avg = {}
+    else:
+        combined_pca_df = pd.concat(all_pca_recon_dfs_subj)
+        pca_recon_df_avg = combined_pca_df.groupby(['pca_n_classes', 'pca_k'])['score'].mean().reset_index()
+        pca_recon_df_avg = pca_recon_df_avg.sort_values(['pca_n_classes', 'pca_k'])
+        
+        pca_recon_grouped_avg = {
+            k_classes: group for k_classes, group in pca_recon_df_avg.groupby('pca_n_classes')
+        }
+
+    return cnn_recon_df_avg, pca_recon_grouped_avg
 
 # --- Setup Plot ---
 sns.set_theme(style="ticks", context="paper")
@@ -63,21 +85,21 @@ sns.set_theme(style="ticks", context="paper")
 fig, axes = plt.subplots(n_rows, n_cols, figsize=(4 * n_cols, 4 * n_rows), sharey=False)
 axes = axes.flatten() # Flatten the axes array for easy iteration
 
-# Define colors for PCA k-ways - get unique values across all layers first
-all_pca_n_classes = sorted(df_pca[
+# Define colors for PCA k-ways - get unique values across all layers and subjects
+all_pca_n_classes_overall = sorted(df_pca[
     (df_pca['neural_dataset'] == neural_dataset) &
     (df_pca['region'] == roi) &
-    (df_pca['subject_idx'] == subject_idx) &
+    (df_pca['subject_idx'].isin(range(num_subjects_total))) & # Consider all subjects
     (df_pca['reconstruct_from_pcs'] == True) &
-    (df_pca['layer'].isin(layers))
+    (df_pca['layer'].isin(layers)) # Ensure only relevant layers are considered
 ]['pca_n_classes'].unique())
 
 # Use sequential blue colormap as requested
-if all_pca_n_classes:
-    n_pca_variants = len(all_pca_n_classes)
+if all_pca_n_classes_overall:
+    n_pca_variants = len(all_pca_n_classes_overall)
     # Adjust linspace for better visual separation if many variants
     blues_cmap = plt.cm.Blues(np.linspace(0.2, 0.8, n_pca_variants))
-    pca_color_map = {k: color for k, color in zip(all_pca_n_classes, blues_cmap)}
+    pca_color_map = {k: color for k, color in zip(all_pca_n_classes_overall, blues_cmap)}
 else:
     pca_color_map = {}
 
@@ -91,9 +113,9 @@ for i, layer in enumerate(layers):
     ax = axes[i]
     print(f"--- Processing Layer: {layer} ---")
 
-    # --- Get Data for this layer ---
-    cnn_recon_df, pca_recon_grouped = get_layer_scores(
-        df_cnn, df_pca, layer, roi, subject_idx, neural_dataset, rsa_correlation_method
+    # --- Get Data for this layer (averaged across subjects) ---
+    cnn_recon_df, pca_recon_grouped = get_layer_scores_avg(
+        df_cnn, df_pca, layer, roi, neural_dataset, rsa_correlation_method, num_subjects_total
     )
 
     all_x_ticks_layer = set() # Collect unique x-ticks for this layer
@@ -101,7 +123,7 @@ for i, layer in enumerate(layers):
 
     # Plot reconstructed 1k CNN data (solid red line)
     if not cnn_recon_df.empty:
-        print(f"Reconstructed Data (1k-way):")
+        print(f"Reconstructed Data (1k-way, Avg Subj):")
         print(cnn_recon_df[['pca_k', 'score']].to_string())
         sns.lineplot(
             data=cnn_recon_df,
@@ -124,15 +146,15 @@ for i, layer in enumerate(layers):
         if not has_added_handles:
             legend_handles.append(mlines.Line2D([], [], color=baseline_color, marker='o', markersize=5, linestyle='-', label='1k'))
     else:
-        print(f"Warning: No reconstructed data found for 1k-way in layer {layer}.")
+        print(f"Warning: No reconstructed data found for 1k-way (Avg Subj) in layer {layer}.")
 
     # Plot reconstructed PCA data (solid lines, markers for each pca_n_classes)
     for k_classes, recon_df in pca_recon_grouped.items():
         if recon_df.empty:
-            print(f"Warning: No reconstructed data found for {k_classes}-way in layer {layer}.")
+            print(f"Warning: No reconstructed data found for {k_classes}-way (Avg Subj) in layer {layer}.")
             continue
 
-        print(f"Reconstructed Data ({k_classes}-way):")
+        print(f"Reconstructed Data ({k_classes}-way, Avg Subj):")
         print(recon_df[['pca_k', 'score']].to_string())
 
         color = pca_color_map.get(k_classes, 'gray') # Get color or default
@@ -168,9 +190,21 @@ for i, layer in enumerate(layers):
     ax.set_ylabel('RSA Score', fontsize=11)
 
     # Configure x-axis ticks (Major every 5, Minor every 1)
-    ax.set_xlim(min_x_layer, max_x_layer)
-    ax.xaxis.set_major_locator(MultipleLocator(5))
-    ax.xaxis.set_minor_locator(MultipleLocator(1))
+    if min_x_layer != float('inf') and max_x_layer != float('-inf'):
+        # Data was found and limits were updated, add slight padding
+        # Ensure pca_k values are treated as discrete points, so padding should be minimal if integers.
+        # If pca_k can be non-integer, this padding is fine.
+        # Let's adjust padding to be symmetrical and slightly smaller, e.g., 0.5 or 1.
+        # Assuming pca_k are integers (usually number of components).
+        padding = 1 # Or 0.5 if very dense integer pca_k values are expected.
+        ax.set_xlim(min_x_layer - padding, max_x_layer + padding)
+        ax.xaxis.set_major_locator(MultipleLocator(5))
+        ax.xaxis.set_minor_locator(MultipleLocator(1))
+    else:
+        # No data plotted for this layer, or min/max remained inf/-inf
+        print(f"Warning: No data to set x-axis limits for layer {layer}. Using default x-axis (0-1).")
+        ax.set_xlim(0, 1) # Default view for empty subplots for x-axis PCA components
+
     ax.tick_params(axis='x', which='major', labelsize=9)
     ax.tick_params(axis='x', which='minor', labelbottom=False)
 
@@ -189,7 +223,7 @@ for j in range(n_layers, n_rows * n_cols):
 # --- Final Figure Customization ---
 # Format ROI string for title/filename (replace space with underscore, capitalize)
 roi_str_formatted = roi.replace(' ', '_').upper()
-fig.suptitle(f'RSA Score vs Reconstruction PCs ({neural_dataset.upper()}, {roi_str_formatted}, Subj {subject_idx}, Corr Method: {rsa_correlation_method.capitalize()})', fontsize=16, weight='bold')
+fig.suptitle(f'RSA Score vs Reconstruction PCs ({neural_dataset.upper()}, {roi_str_formatted}, Avg Across {num_subjects_total} Subj, Corr Method: {rsa_correlation_method.capitalize()})', fontsize=16, weight='bold')
 
 # Create and order the final common legend
 if legend_handles:
@@ -215,7 +249,7 @@ fig.tight_layout(rect=[0, 0, 0.88, 0.95])
 
 # Format ROI string for filename (replace space with underscore, lowercase)
 roi_str_filename = roi.replace(' ', '_').lower()
-save_filename = f'plotters/reconstructed_rsa_layers_{roi_str_filename}_subj{subject_idx}_{neural_dataset}_corrmethod_{rsa_correlation_method}.png'
+save_filename = f'plotters/reconstructed_rsa_layers_{roi_str_filename}_avg_subj_{neural_dataset}_corrmethod_{rsa_correlation_method}.png'
 plt.savefig(save_filename, dpi=300)
 print(f"Plot saved to {save_filename}")
 # plt.show()

@@ -135,7 +135,7 @@ def plot_rsm_triangles(npz_path, output_dir="plotters", keys_to_plot=['fc2', 'ne
         print(f"An error occurred while plotting RSM triangles: {e}")
 
 if __name__ == '__main__':
-    rsm_file_path = "model_checkpoints/imagenet_pca/cfg1/RSMs/rsms_things_epoch_10.npz"
+    rsm_file_path = "model_checkpoints/imagenet_cnn/cfg1/RSMs/rsms_nsd_synthetic_epoch_10.npz"
     keys_to_plot_main = ['fc2', 'neural']
     clip_percentile = 98 # Define percentile for clipping (changed to 98)
     if os.path.exists(rsm_file_path):
