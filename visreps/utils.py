@@ -295,7 +295,7 @@ def load_pickle(file_path):
 
 
 def save_results(df, cfg, timeout=60):
-    """Save results to CSV with file locking in logs/mode/exp_name.csv format.
+    """Save results to CSV with file locking in logs/mode/results_csv.csv format.
     Adds all config parameters from OmegaConf while avoiding metadata."""
     # Create a clean DataFrame without the metadata
     clean_df = df.copy()
@@ -312,9 +312,9 @@ def save_results(df, cfg, timeout=60):
     time.sleep(random.uniform(0, 3))
 
     # Setup paths and lock
-    save_dir = Path("logs") / cfg.mode / cfg.load_model_from
+    save_dir = Path("logs")
     save_dir.mkdir(parents=True, exist_ok=True)
-    results_path = save_dir / f"{cfg.exp_name}.csv"
+    results_path = save_dir / f"{cfg.results_csv}"
     lock_path = results_path.with_suffix(".lock")
     lock = FileLock(str(lock_path), timeout=timeout)
 
@@ -385,7 +385,7 @@ class ConfigVerifier:
     """Validates configuration for both training and evaluation modes."""
 
     VALID_MODES = {"train", "eval"}
-    VALID_DATASETS = {"imagenet", "tiny-imagenet"}
+    VALID_DATASETS = {"imagenet", "tiny-imagenet", "imagenet-mini-50"}
     VALID_MODEL_CLASSES = {"custom_cnn", "standard_cnn"}
     VALID_MODEL_SOURCES = {"checkpoint", "torchvision"}
     VALID_REGIONS = {
@@ -556,7 +556,7 @@ class ConfigVerifier:
                 raise AssertionError("torchvision key not allowed in checkpoint mode")
             checkpoint_model_name = self.cfg.checkpoint_model
             checkpoint_path = Path(
-                f"model_checkpoints/{self.cfg.exp_name}/cfg{self.cfg.cfg_id}/{checkpoint_model_name}"
+                f"{self.cfg.checkpoint_dir}/cfg{self.cfg.cfg_id}/{checkpoint_model_name}"
             )
             if not checkpoint_path.exists():
                 self.rprint(
