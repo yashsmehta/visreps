@@ -211,25 +211,6 @@ def get_activations(
     return {n: torch.cat(b, 0) for n, b in activations.items()}, ids
 
 
-def merge_checkpoint_config(cfg, checkpoint):
-    """
-    Update cfg in place with config from checkpoint, giving priority to current cfg.
-    Only adds keys from checkpoint that don't exist in current cfg.
-    
-    Args:
-        cfg (OmegaConf): Current configuration
-        checkpoint (dict): Loaded checkpoint containing 'config' and optionally 'epoch'
-    """
-    if 'config' in checkpoint:
-        checkpoint_cfg = OmegaConf.create(checkpoint['config'])
-        # Update only missing keys from checkpoint config
-        for key in checkpoint_cfg:
-            if key not in cfg:
-                cfg[key] = checkpoint_cfg[key]
-    if 'epoch' in checkpoint:
-        cfg.epoch = checkpoint['epoch']
-
-
 def load_model(cfg, device, num_classes=None):
     """
     Load a model from checkpoint or initialize a new model.
@@ -255,11 +236,10 @@ def load_model(cfg, device, num_classes=None):
     if getattr(cfg, 'load_model_from', None) == 'checkpoint':
         if num_classes is not None:
             rprint("WARNING: num_classes is ignored when loading from checkpoint", style="warning")
-        checkpoint_path = f"model_checkpoints/{cfg.exp_name}/cfg{cfg.cfg_id}/{cfg.checkpoint_model}"
+        checkpoint_path = f"{cfg.checkpoint_dir}/cfg{cfg.cfg_id}/{cfg.checkpoint_model}"
         # Explicitly set weights_only=False to allow loading pickled code
         checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
         print(f"Loaded model from checkpoint: {checkpoint_path}")
-        merge_checkpoint_config(cfg, checkpoint)
         return checkpoint['model'].to(device)
 
     # Otherwise, determine model class and name
