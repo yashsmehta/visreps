@@ -1,7 +1,6 @@
 import logging, torch
 import pandas as pd
 from omegaconf import OmegaConf
-
 from visreps.utils import rprint, save_results
 import visreps.models.utils as mutils
 from visreps.dataloaders.neural import get_neural_loader
@@ -17,9 +16,12 @@ logger = logging.getLogger(__name__)
 # ──────────────────────── helpers ────────────────────────
 def _load_cfg(cfg):
     """Merge runtime cfg with training cfg (drops `mode`)."""
-    path = f"model_checkpoints/{cfg.exp_name}/cfg{cfg.cfg_id}/config.json"
+    path = f"{cfg.checkpoint_dir}/cfg{cfg.cfg_id}/config.json"
     base = OmegaConf.load(path)
-    base.pop("mode", None)
+    epoch = int(cfg.checkpoint_model.split('_')[-1].split('.')[0])
+    base.epoch = epoch
+    for k in ("mode", "exp_name", "n_classes"):
+        base.pop(k, None)
     return OmegaConf.merge(base, cfg)
 
 
