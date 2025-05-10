@@ -6,6 +6,7 @@ datasets/
 notebooks/
 *.pyc
 *.pkl
+*.pt
 output.out
 logs/
 model_checkpoints/

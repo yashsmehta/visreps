@@ -15,6 +15,7 @@ import resource                   # Added import (optional, for peak process mem
 from visreps.models import standard_cnn
 from visreps.models.custom_cnn import CustomCNN, TinyCustomCNN
 from visreps.utils import rprint
+from visreps.utils import get_seed_letter
 from visreps.analysis.sparse_random_projection import get_srp_transformer
 
 class FeatureExtractor(nn.Module):
@@ -236,7 +237,8 @@ def load_model(cfg, device, num_classes=None):
     if getattr(cfg, 'load_model_from', None) == 'checkpoint':
         if num_classes is not None:
             rprint("WARNING: num_classes is ignored when loading from checkpoint", style="warning")
-        checkpoint_path = f"{cfg.checkpoint_dir}/cfg{cfg.cfg_id}/{cfg.checkpoint_model}"
+        seed_letter = get_seed_letter(cfg.seed)
+        checkpoint_path = f"{cfg.checkpoint_dir}/cfg{cfg.cfg_id}{seed_letter}/{cfg.checkpoint_model}"
         # Explicitly set weights_only=False to allow loading pickled code
         checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
         print(f"Loaded model from checkpoint: {checkpoint_path}")
