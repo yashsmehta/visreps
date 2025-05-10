@@ -5,6 +5,14 @@ alwaysApply: false
 ---
 # 🧪 PyTorch + PyTest Testing Guide (Dense)
 
+**Core Principles (from User Protocol):**
+- Test after *every* implementation step.
+- Tests must be precise and targeted.
+- Run all relevant tests; ensure all pass (no skips/failures).
+- Fix failures immediately.
+- Do not mark tasks complete without verified, passing tests.
+- Follow `testing.mtc` (if available) for detailed design, otherwise adhere to these general PyTorch/Python best practices.
+
 **Goal:** Concise best practices for `pytest` + `torch.testing`. Tests in `tests/`.
 
 ## 🔧 PyTest Basics
@@ -193,5 +201,3 @@ def test_bad_input(simple_model):
 - `pytest-rerunfailures`: Retry flaky tests.
 - `pytest-timeout`: Test timeouts.
 - `pytest-gpu`: GPU management helpers.
-
-</rewritten_file> 
