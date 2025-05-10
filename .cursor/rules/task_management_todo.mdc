@@ -1,0 +1,11 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Task Management with todo.md
+
+- For each task, break it down into detailed, step-by-step items in `[todo.md](mdc:todo.md)`.
+- Treat `[todo.md](mdc:todo.md)` as a live scratchpad.
+- Update `[todo.md](mdc:todo.md)` continuously.
+- Check off completed steps in `[todo.md](mdc:todo.md)`.
