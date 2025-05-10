@@ -9,17 +9,18 @@ BASE_CONFIG_PATH = "configs/eval/base.json"
 
 # Evaluation parameter grid
 PARAM_GRID = {
-    "cfg_id": [1], # folder: cfg1 
-    "eval_checkpoint_at_epoch": [18],
     "checkpoint_dir": ["/data/shared/imagenet_1k"],
-    "results_csv": ["full_vs_pcs_things.csv"],
+    "cfg_id": [1], # folder: cfg1 
+    "seed": [1], # folder: cfg1a, cfg1b, cfg1c
+    "results_csv": ["pc_reconstruction_analysis.csv"],
     "notes": [""],
-    "compare_rsm_correlation": ["Spearman", "Kendall"],
-    "reconstruct_from_pcs": [False],
-    "pca_k": [1],
-    # "subject_idx": [0, 1, 2, 3, 4, 5, 6, 7],
-    # "region": ["early visual stream", "midventral visual stream", "ventral visual stream"],
+    "compare_rsm_correlation": ["Spearman"],
+    "reconstruct_from_pcs": [True],
+    "pca_k": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
     "neural_dataset": ["things"],
+    # "subject_idx": [0, 1, 2, 3, 4, 5, 6, 7],
+    # "region": ["early visual stream"],
+    "eval_checkpoint_at_epoch": [18],
 }
 
 

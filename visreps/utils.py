@@ -460,23 +460,31 @@ class ConfigVerifier:
         """Verify evaluation configuration."""
         self.rprint("Validating evaluation configuration...", style="setup")
 
+        # Seed validation: ensure seed is one of [1, 2, 3]
+        if getattr(self.cfg, "seed", None) not in (1, 2, 3):
+            self.rprint(
+                f"[red]Invalid seed: {self.cfg.seed}. Must be one of [1, 2, 3][/red]",
+                style="error",
+            )
+            raise AssertionError(f"Invalid seed: {self.cfg.seed}")
+
         # Neural parameters validation
         if self.cfg.neural_dataset.lower() == "things":
             # For 'things' dataset, region and subject_idx are not applicable.
             # Issue warning and set to "N/A" if they are provided incorrectly.
             if hasattr(self.cfg, 'region') and isinstance(self.cfg.region, str) and self.cfg.region.upper() != "N/A":
-                 self.rprint(
-                     f"[warning]Region '{self.cfg.region}' provided for 'things' dataset. Setting to 'N/A'.[/warning]",
-                     style="warning",
-                 )
-                 self.cfg.region = "N/A"
+                self.rprint(
+                    f"[warning]Region '{self.cfg.region}' provided for 'things' dataset. Setting to 'N/A'.[/warning]",
+                    style="warning",
+                )
+                self.cfg.region = "N/A"
 
             if hasattr(self.cfg, 'subject_idx') and not (isinstance(self.cfg.subject_idx, str) and self.cfg.subject_idx.upper() == "N/A"):
-                 self.rprint(
-                     f"[warning]Subject index '{self.cfg.subject_idx}' provided for 'things' dataset. Setting to 'N/A'.[/warning]",
-                     style="warning",
-                 )
-                 self.cfg.subject_idx = "N/A"
+                self.rprint(
+                    f"[warning]Subject index '{self.cfg.subject_idx}' provided for 'things' dataset. Setting to 'N/A'.[/warning]",
+                    style="warning",
+                )
+                self.cfg.subject_idx = "N/A"
 
         elif self.cfg.neural_dataset.lower() == "nsd":
             # Existing checks specific to 'nsd'
@@ -555,8 +563,9 @@ class ConfigVerifier:
                 )
                 raise AssertionError("torchvision key not allowed in checkpoint mode")
             checkpoint_model_name = self.cfg.checkpoint_model
+            seed_letter = get_seed_letter(self.cfg.seed)
             checkpoint_path = Path(
-                f"{self.cfg.checkpoint_dir}/cfg{self.cfg.cfg_id}/{checkpoint_model_name}"
+                f"{self.cfg.checkpoint_dir}/cfg{self.cfg.cfg_id}{seed_letter}/{checkpoint_model_name}"
             )
             if not checkpoint_path.exists():
                 self.rprint(
@@ -719,3 +728,6 @@ def setup_scheduler(optimizer, cfg):
         )
     else:
         return main_scheduler
+
+def get_seed_letter(seed):
+    return {1: 'a', 2: 'b', 3: 'c'}.get(seed)
