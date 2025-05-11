@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-PARTITION="a100"
+PARTITION="v100"
 
 # Get list of nodes in the partition
 mapfile -t NODES < <(sinfo -h -N -p "$PARTITION" -o "%N")
@@ -34,7 +34,7 @@ printf "%-12s | %5s | %5s | %6s\n" "USER" "JOBS" "GPUS" "%TOTAL"
 echo "--------------+-------+-------+----------"
 # Data rows
 squeue -h -p "$PARTITION" -o "%u %b" | \
-awk '{ user=$1; gp=0; if(match($2, /gpu:([0-9]+)/, m)) gp=m[1]; jobs[user]++; gpus[user]+=gp } END { for (u in jobs) print u, jobs[u], gpus[u] }' | \
+awk '{ user=$1; gp=0; if(match($2, /gpu(:[^:]+)?:([0-9]+)/, m)) gp=m[2]; jobs[user]++; gpus[user]+=gp } END { for (u in jobs) print u, jobs[u], gpus[u] }' | \
 sort -k2,2nr | head -n 5 | \
 while read user jobs gpus; do
   percent=$(awk -v gpus=$gpus -v total=$TOTAL_GPUS 'BEGIN {printf "%.1f", gpus*100/total}')
