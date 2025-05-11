@@ -3,16 +3,17 @@
   "compare_rsm_correlation": "Spearman",
   "neural_dataset": "things",
   "results_csv": "base.csv",
-  "cfg_id": 1,
+  "cfg_id": 2,
+  "seed": 1,
   "return_nodes": ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2"],
-  "reconstruct_from_pcs": false,
-  "pca_k": 1,
+  "reconstruct_from_pcs": true,
+  "pca_k": 6,
   
   "load_model_from": "checkpoint",
   "checkpoint":
   {
-    "checkpoint_dir": "/data/shared/imagenet_1k",
-    "checkpoint_model": "checkpoint_epoch_20.pth"
+    "checkpoint_dir": "model_checkpoints/imagenet_pca",
+    "checkpoint_model": "checkpoint_epoch_10.pth"
   },
   "torchvision":
   {
@@ -21,11 +22,11 @@
   },
   "apply_srp": true,
   "mode": "eval",
-  "region": "ventral visual stream",
+  "region": "early visual stream",
   "subject_idx": 0,
   "analysis": "rsa",
   "batchsize": 128,
   "num_workers": 8,
-  "log_expdata": true,
+  "log_expdata": false,
   "notes": ""
 }
