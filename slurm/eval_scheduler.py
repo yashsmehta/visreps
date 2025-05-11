@@ -6,31 +6,32 @@ from pathlib import Path
 
 # Configuration
 BASE_CONFIG_PATH = "configs/eval/base.json"
-CHECKPOINTS_DIR = "model_checkpoints"
+SLURM_LOG_DIR = "slurm/slurm_logs"
+SAVE_SLURM_LOGS = True
 
 # Evaluation parameter grid
-# Note: return_nodes needs to be configured in the base config file
+# Note: return_nodes needs to be configured in the base config file if used
 PARAM_GRID = {
-    "exp_name": ["imagenet_pca_untrained"],
-    "config_folders": ["cfg5"],
-    "eval_epochs": [10],
-    "region": [
-        "early visual stream",
-        # "ventral visual stream",
-    ],
-    "analysis": ["rsa"],
-    "subject_idx": [0],
+    "checkpoint_dir": ["model_checkpoints/imagenet_1k"],
+    "cfg_id": [1], 
+    "seed": [1], 
+    "results_csv": ["cluster_eval_test.csv"],
+    "notes": [""],
+    "compare_rsm_correlation": ["Spearman"],
+    "reconstruct_from_pcs": [False],
+    "neural_dataset": ["nsd"],
+    "eval_checkpoint_at_epoch": [20],
 }
 
 # Slurm configuration
 SLURM_CONFIG = {
-    "job-name": "visreps_eval",
-    "output": "slurm/slurm_logs/%j.out",
-    "error": "slurm/slurm_logs/%j.err",
+    "job-name": "visreps",
+    "output": f"{SLURM_LOG_DIR}/%j.out",
+    "error": f"{SLURM_LOG_DIR}/%j.err",
     "ntasks": "1",
     "cpus-per-task": "16",
     "gres": "gpu:1",
-    "time": "1:00:00",
+    "time": "0:10:00",
     "partition": "v100",
     "qos": "qos_gpu",
     "account": "mbonner5_gpu",
@@ -42,7 +43,7 @@ def get_checkpoint_path(exp_name: str, config_folder: str, epoch: int) -> str:
         CHECKPOINTS_DIR, exp_name, config_folder, f"checkpoint_epoch_{epoch}.pth"
     )
 
-def generate_slurm_script(job_name: str, overrides: list, checkpoint_path: str) -> str:
+def generate_slurm_script(job_name: str, overrides: list) -> str:
     """Generates a Slurm script for evaluation."""
     script = ["#!/bin/bash"]
     
@@ -73,14 +74,22 @@ def generate_slurm_script(job_name: str, overrides: list, checkpoint_path: str) 
         "--override"
     ] + [f"{override}" for override in overrides]
     
-    script.append(" ".join(cmd))
+    # Check if output should be logged to a file
+    if SAVE_SLURM_LOGS:
+        Path(SLURM_LOG_DIR).mkdir(parents=True, exist_ok=True)
+        output_log_path = os.path.join(SLURM_LOG_DIR, f"{job_name}_output.log")
+        script.append(f"echo 'Logging output to {output_log_path}'")
+        script.append(f"({' '.join(cmd)}) > {output_log_path} 2>&1")
+    else:
+        script.append(" ".join(cmd))
+    
     script.append("\ndeactivate")
     
     return "\n".join(script)
 
 def main():
     # Create logs directory if it doesn't exist
-    Path("slurm/slurm_logs").mkdir(parents=True, exist_ok=True)
+    Path(SLURM_LOG_DIR).mkdir(parents=True, exist_ok=True)
     Path("slurm/tmp").mkdir(parents=True, exist_ok=True)
     
     # Generate all combinations of grid parameters
@@ -95,42 +104,46 @@ def main():
         # Create parameter dictionary
         params = dict(zip(param_names, combo))
         
-        # Get checkpoint path
-        checkpoint_path = get_checkpoint_path(
-            params["exp_name"], params["config_folders"], params["eval_epochs"]
-        )
+        # Construct checkpoint_model name
+        checkpoint_model_name = f"checkpoint_epoch_{params['eval_checkpoint_at_epoch']}.pth"
         
         # Create overrides from parameters
         overrides = []
         for k, v in params.items():
-            if k == "return_nodes":
-                # Use json.dumps to properly format the list
-                overrides.append(f"{k}={json.dumps(v[0])}")
-            else:
-                overrides.append(f"{k}={json.dumps(v)}")
+            if k == "eval_checkpoint_at_epoch": # This key is used to form checkpoint_model_name, not passed directly as an override
+                continue
+            overrides.append(f"{k}={json.dumps(v)}")
         
+        overrides.append(f"checkpoint_model={json.dumps(checkpoint_model_name)}")
+
         overrides.extend([
             "mode=eval",
-            "neural_dataset=nsd",
             "log_expdata=true",
-            f"cfg_id={params['config_folders'].replace('cfg', '')}",
             "load_model_from=checkpoint",
-            f"checkpoint_model={os.path.basename(checkpoint_path)}",
         ])
 
-        # Generate a unique job name
-        job_name = f"{params['exp_name']}_{params['config_folders']}_e{params['eval_epochs']}"
+        # Generate a unique job name suffix
+        job_suffix_parts = [
+            f"cfg{params.get('cfg_id', 'N')}",
+            f"s{params.get('seed', 'N')}",
+        ]
+        if 'pca_k' in params:
+            job_suffix_parts.append(f"k{params['pca_k']}")
+        if 'neural_dataset' in params:
+             job_suffix_parts.append(params['neural_dataset'])
+        
+        job_name_suffix = "_".join(job_suffix_parts)
         
         # Create temporary script file
-        script_path = f"slurm/tmp/eval_{job_name}.sh"
-        script_content = generate_slurm_script(job_name, overrides, checkpoint_path)
+        script_path = f"slurm/tmp/eval_{job_name_suffix}.sh"
+        script_content = generate_slurm_script(job_name_suffix, overrides)
         
         with open(script_path, "w") as f:
             f.write(script_content)
         
         # Submit the job
         cmd = ["sbatch", script_path]
-        print(f"\nSubmitting job: {job_name}")
+        print(f"\nSubmitting job: {SLURM_CONFIG.get('job-name', 'eval')}_{job_name_suffix}")
         subprocess.run(cmd)
         
         # Clean up temporary script
