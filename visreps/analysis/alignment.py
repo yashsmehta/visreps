@@ -4,6 +4,7 @@ import torch
 import logging
 from collections import defaultdict
 from omegaconf import DictConfig
+import pandas as pd
 
 from visreps.analysis.rsa import compute_rsa_alignment
 
@@ -56,8 +57,25 @@ def prepare_data_for_alignment(
     dataset = cfg.neural_dataset.lower()
 
     # ---- NSD (stimulus-level alignment) ----
-    if dataset == "nsd" or dataset == "nsd_synthetic":
+    if dataset == "nsd":
         idx = [i for i, k in enumerate(keys) if str(k) in neural_data_raw]
+        neural = np.stack([neural_data_raw[str(keys[i])] for i in idx]).squeeze()
+        neural = torch.as_tensor(neural)
+        acts   = {l: a[idx] for l, a in acts_raw.items()}
+
+    # ---- NSD Synthetic (stimulus-level alignment) ----
+    elif dataset == "nsd_synthetic":
+        # Read the CSV file to get the desired stimulus order
+        csv_path = "datasets/neural/nsd_synthetic/extracted_coords.csv"
+        order_df = pd.read_csv(csv_path) # Will raise FileNotFoundError if not found
+        ordered_stimuli = order_df["stimulus"].tolist() # Will raise KeyError if 'stimulus' column is missing
+
+        key_to_original_idx = {str(k): i for i, k in enumerate(keys)}
+        idx = []
+        for stim_id in ordered_stimuli:
+            if str(stim_id) in neural_data_raw and str(stim_id) in key_to_original_idx:
+                idx.append(key_to_original_idx[str(stim_id)])
+        
         neural = np.stack([neural_data_raw[str(keys[i])] for i in idx]).squeeze()
         neural = torch.as_tensor(neural)
         acts   = {l: a[idx] for l, a in acts_raw.items()}
@@ -80,8 +98,10 @@ def prepare_data_for_alignment(
     else:
         raise ValueError(f"Unsupported neural_dataset '{dataset}'")
 
-    # ---- common: PCA-based reorder for nicer plots/analysis ----
-    neural, order = _pca_reorder(neural)
-    acts   = {l: a[order] for l, a in acts.items()}
+    # For nsd_synthetic, we use the CSV order, so PCA reorder is skipped.
+    if dataset != "nsd_synthetic":
+        neural, order = _pca_reorder(neural)
+        acts   = {l: a[order] for l, a in acts.items()}
+    
     logger.info(f"Prepared {dataset.upper()} data with {neural.size(0)} samples.")
     return acts, neural
