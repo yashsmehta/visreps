@@ -146,12 +146,24 @@ def compute_rsa_alignment(
         )
 
     # --- Internal Flag for Saving RSMs --- (Manually change to True to enable saving)
-    save_rsms = False
+    save_rsms = True
     if save_rsms:
         try:
-            save_dir = os.path.join("model_checkpoints", "RSMs", f"pc6")
+            save_dir = os.path.join("model_checkpoints", "RSMs", f"pca4cls")
             os.makedirs(save_dir, exist_ok=True)
-            save_path = os.path.join(save_dir, f"rsms_{cfg.neural_dataset}_pca_labels_{cfg.pca_labels}_pca_k_{cfg.pca_k}_cfgid_{cfg.cfg_id}.npz")
+            
+            # Construct filename based on whether reconstruct_from_pcs is True
+            filename_parts = [
+                f"rsms_{cfg.neural_dataset}",
+                f"pca_labels_{cfg.pca_labels}",
+                f"cfgid_{cfg.cfg_id}",
+                f"seed_{cfg.seed}"
+            ]
+            
+            if cfg.reconstruct_from_pcs:
+                filename_parts.insert(2, f"pca_k_{cfg.pca_k}")
+                
+            save_path = os.path.join(save_dir, "_".join(filename_parts) + ".npz")
 
             # Prepare data to save (convert to numpy)
             rsms_to_save_np = {layer: rsm.cpu().numpy() for layer, rsm in layer_rsms.items()}
