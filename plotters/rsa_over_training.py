@@ -15,40 +15,66 @@ plt.rcParams['ytick.major.width'] = 1.0
 plt.rcParams['xtick.direction'] = 'out'
 plt.rcParams['ytick.direction'] = 'out'
 
-# Define paths for the separate CSV files
-output_dir_split = 'logs/eval/checkpoint'
-output_path_full = os.path.join(output_dir_split, 'imagenet_mini_50_1k.csv')
-output_path_pca = os.path.join(output_dir_split, 'imagenet_mini_50_pca.csv')
+# Define path for the single CSV file
+combined_csv_path = 'logs/over_training_analysis.csv'
 
-# Read the separate CSV files into different DataFrames
+# Read the combined CSV file
 try:
-    df_full = pd.read_csv(output_path_full)
-    df_pca = pd.read_csv(output_path_pca)
-    print("Successfully loaded separate files:")
-    print(f"  - Full models: {output_path_full}")
-    print(f"  - PCA models: {output_path_pca}")
-except FileNotFoundError as e:
-    print(f"Error: Required CSV file not found: {e.filename}")
+    df_all = pd.read_csv(combined_csv_path)
+    print(f"Successfully loaded combined file: {combined_csv_path}")
+except FileNotFoundError:
+    print(f"Error: The file {combined_csv_path} was not found.")
     exit()
 except Exception as e:
-    print(f"Error reading CSV files: {e}")
+    print(f"Error reading CSV file {combined_csv_path}: {e}")
     exit()
 
-# --- Debug: Print Columns and DTypes for both DataFrames ---
-print("\n--- df_full Columns and DTypes ---")
-print(df_full.info())
-print("-------------------------------------")
-print("\n--- df_pca Columns and DTypes ---")
-print(df_pca.info())
+# --- Debug: Print Columns and DTypes for the combined DataFrame ---
+print("\n--- df_all Columns and DTypes ---")
+if 'df_all' in locals(): # Check if df_all was loaded
+    # print(df_all.info()) # Uncomment for detailed info if needed
+    # Convert pca_n_classes to numeric. This is used for detailing PCA models.
+    if 'pca_n_classes' in df_all.columns:
+        df_all['pca_n_classes_numeric'] = pd.to_numeric(df_all['pca_n_classes'], errors='coerce')
+    else:
+        print("Warning: 'pca_n_classes' column not found. Details for PCA model variants might be missing or affect plotting.")
+        df_all['pca_n_classes_numeric'] = np.nan # Add the column as nan so it exists
+
+    # Split into df_full (standard models) and df_pca (PCA-based models) based on 'pca_labels'
+    if 'pca_labels' not in df_all.columns:
+        print("Error: 'pca_labels' column not found in the CSV. Cannot reliably split into standard and PCA models.")
+        df_full = pd.DataFrame()
+        df_pca = pd.DataFrame()
+        # Consider exiting if this state is critical, though downstream code handles empty DFs
+    else:
+        # Assuming pca_labels contains boolean values or values pandas can interpret as boolean for comparison.
+        # If 'pca_labels' could be strings 'True'/'False', a more robust conversion might be:
+        # df_all['pca_labels_bool'] = df_all['pca_labels'].astype(str).str.lower().map({'true': True, 'false': False})
+        # Then filter on df_all['pca_labels_bool']
+        df_full = df_all[df_all['pca_labels'] == False].copy()
+        df_pca = df_all[df_all['pca_labels'] == True].copy()
+
+    print(f"  - df_full (standard models, pca_labels==False) rows: {len(df_full)}")
+    print(f"  - df_pca (PCA models, pca_labels==True) rows: {len(df_pca)}")
+else:
+    # This case should ideally not be reached if exit() is called on read error
+    print("Error: df_all not loaded. Cannot proceed with splitting.")
+    df_full = pd.DataFrame() 
+    df_pca = pd.DataFrame()
+    # exit() # Consider exiting if this state is critical
+
 print("-----------------------------------\n")
-# --- End Debug ---
+# --- End Debug and Splitting ---
 
 # --- Configuration ---
-roi = "ventral visual stream"
+roi = "ventral visual stream" # UPDATED
 target_region = roi # Use consistent variable name
 # subject_idx = 0 # Ensure this is treated as an integer # REMOVED for averaging
 # target_subject = subject_idx # Use consistent variable name # REMOVED for averaging
 layers_to_plot = ['conv1', 'conv2', 'conv3', 'conv4', 'conv5', 'fc1', 'fc2'] # 7 layers for 2x4 grid
+plot_epoch_min = 0
+plot_epoch_max = 18
+epoch_tick_step = 3
 # --- End Configuration ---
 
 # --- Define Additional Filters ---
@@ -176,7 +202,7 @@ legend_handles = []
 legend_labels = []
 handles_added = set()
 
-max_epoch = 0
+# max_epoch = 0 # REMOVED: X-axis is fixed based on plot_epoch_max
 
 # Check which columns are actually present for plotting
 score_col = 'score' # Assume 'score' exists, add checks if needed
@@ -203,19 +229,10 @@ for i, layer in enumerate(layers_to_plot):
         ax.text(0.5, 0.5, "No Data", ha='center', va='center', fontsize=10, color='grey')
         ax.tick_params(axis='both', which='both', bottom=False, top=False, left=False, right=False,
                        labelbottom=False, labelleft=False)
+        # Set x-axis for "No Data" plots as well for consistent grid
+        ax.set_xlim(plot_epoch_min, plot_epoch_max)
+        ax.set_xticks(range(plot_epoch_min, plot_epoch_max + 1, epoch_tick_step))
         continue
-
-    # Update max_epoch from both sources
-    current_max_epoch_full = 0
-    if not layer_data_full.empty and epoch_col in layer_data_full.columns:
-        current_max_epoch_full = layer_data_full[epoch_col].max()
-    current_max_epoch_pca = 0
-    if not layer_data_pca.empty and epoch_col in layer_data_pca.columns:
-        current_max_epoch_pca = layer_data_pca[epoch_col].max()
-
-    current_max_epoch = max(current_max_epoch_full, current_max_epoch_pca)
-    if pd.notna(current_max_epoch):
-        max_epoch = max(max_epoch, int(current_max_epoch))
 
     # Plot full model line from filtered_df_full
     if not layer_data_full.empty and score_col in layer_data_full.columns and epoch_col in layer_data_full.columns:
@@ -260,17 +277,12 @@ for i, layer in enumerate(layers_to_plot):
     ax.grid(True, linestyle='--', alpha=0.3, color='#666666', zorder=1)
     ax.set_facecolor('white')
 
+    # Set x-axis limits and ticks for this subplot
+    ax.set_xlim(plot_epoch_min, plot_epoch_max)
+    ax.set_xticks(range(plot_epoch_min, plot_epoch_max + 1, epoch_tick_step))
+
 # Turn off the last unused subplot (2nd row, 4th column)
 axes[1, 3].axis('off')
-
-# Set shared x-axis ticks based on max_epoch found
-if max_epoch > 0:
-    for ax_row in axes:
-        for ax in ax_row:
-            if ax.has_data() and ax.axison:
-                ax.set_xticks(range(0, max_epoch + 1, 5)) # Set x-ticks with a step of 5
-else:
-    print("Warning: Could not determine valid epoch range.")
 
 # Add shared X and Y labels
 fig.text(0.5, 0.03, 'Epoch', ha='center', va='center', fontsize=14, fontweight='medium')
