@@ -29,7 +29,7 @@ def plot_brain_score_barplot(scores_by_cond: dict[str, list[float]],
     # ── palette & hatches (same style) ───────────────────────────────────────
     untrained_c, thousand_c = '#AAAAAA', '#FFA500'
     pca_cats = [c for c in cats if c not in ('Untrained', '1000 Classes')]
-    blues    = sns.color_palette('Blues', n_colors=max(len(pca_cats), 1) + 1)[1:]
+    blues    = sns.color_palette('Greens', n_colors=max(len(pca_cats), 1) + 1)[1:]
 
     palette = {c: (untrained_c if c == 'Untrained'
                    else thousand_c if c == '1000 Classes'

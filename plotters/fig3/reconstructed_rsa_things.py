@@ -23,7 +23,7 @@ import plotters.utils_plotter as plt_utils
 COLORS = {
     "initial": "#7f8c8d", # Grey for Untrained
     "final": "#FFA500",   # Adjusted to DarkOrange for 1000 Classes
-    "pca": dict(zip([2, 4, 8, 16, 32, 64], sns.color_palette('Blues', n_colors=6))),
+    "pca": dict(zip([2, 4, 8, 16, 32, 64], sns.color_palette('Greens', n_colors=6))),
 }
 
 def create_reconstructed_rsa_plot(
@@ -90,15 +90,19 @@ def create_reconstructed_rsa_plot(
             if not best_pc_layer_scores.empty:
                 mean_best_pc = best_pc_layer_scores.mean()
                 std_best_pc = best_pc_layer_scores.std()
+
+                pc_line_color = COLORS["pca"].get(4, '#808080') # Line color
                 
-                pc_color = COLORS["pca"].get(n_classes_best_pc, '#808080') 
-                pc_fill_color = sns.light_palette(pc_color, n_colors=3, as_cmap=False)[1] if isinstance(pc_color, str) else sns.set_hls_values(pc_color, l=0.85)
+                # Use a fixed blue from the COLORS["pca"] palette for the fill, as requested by the user.
+                # COLORS["pca"][16] is the 4th color in the 'Blues' palette of 6.
+                pc_fill_color = COLORS["pca"].get(2, '#ADD8E6') # Fill color - using a specific key from the palette
+                fill_alpha = 0.5
 
                 ax.plot(pca_k_values, np.full_like(pca_k_values, mean_best_pc, dtype=float),
-                        color=pc_color, linestyle='--', linewidth=2.275, 
+                        color=pc_line_color, linestyle='--', linewidth=2.275, 
                         label=f"{n_classes_best_pc} classes (full)", zorder=2)
                 ax.fill_between(pca_k_values, mean_best_pc - std_best_pc, mean_best_pc + std_best_pc, 
-                               color=pc_fill_color, alpha=0.25, zorder=1)
+                               color=pc_fill_color, alpha=fill_alpha, zorder=1)
 
         # Plot Untrained Data
         if untrained_data is not None and not untrained_data.empty:
@@ -185,37 +189,6 @@ def create_reconstructed_rsa_plot(
         plt.rcParams.update(original_rc_params) # Restore original rcParams
 
 
-_SKIP_ALWAYS = {"log_interval", "checkpoint_interval", "cfg_id", "score"}
-_PCA_COLS   = ("pca_labels", "pca_n_classes", "reconstruct_from_pcs", "pca_k")
-
-def _avg_over_subject_idx(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Collapse `subject_idx`; keep `seed` (if any) and PCA columns.
-    """
-    if df.empty or "subject_idx" not in df:
-        return df.copy()
-
-    d = df.copy()
-    d["subject_idx"] = pd.to_numeric(d["subject_idx"], errors="coerce")
-    d = d.dropna(subset=["subject_idx"])
-    if d.empty:
-        return d
-
-    skip = _SKIP_ALWAYS | {"subject_idx"}
-    group_cols = [c for c in d.columns if c not in skip]
-
-    out = (
-        d.groupby(group_cols, dropna=False, observed=False)["score"]
-          .mean()
-          .reset_index()
-    )
-
-    keep = ["layer", "score"]
-    if "seed" in out.columns:
-        keep.append("seed")
-    keep += [c for c in _PCA_COLS if c in out.columns]
-    return out[keep]
-
 def _load_csv(path: str) -> pd.DataFrame:
     if not os.path.isfile(path):
         raise FileNotFoundError(f"CSV file not found: {path}")
@@ -225,56 +198,44 @@ def _load_csv(path: str) -> pd.DataFrame:
 if __name__ == "__main__":
     cfg = {
         "metric": "Spearman",
-        "region": "ventral visual stream",
         "layers_1k": ["fc1"],
-        "layers_pc": ["fc1"],
-        "subject_idx": [0, 1, 2, 3, 4, 5, 6, 7],
+        "layers_pc": ["fc2"],
         "results_csv": "/home/ymehta3/research/VisionAI/visreps/logs/pc_reconstruction_analysis.csv",
-        "best_pc_n_classes": [64], # PCA n_classes to plot
-        "dataset": "nsd",
+        "best_pc_n_classes": [2], # PCA n_classes to plot
+        "dataset": "things",
     }
 
-    out_path = f"/home/ymehta3/research/VisionAI/visreps/plotters/fig2/reconstructed_rsa_{cfg['dataset']}_{cfg['region'][:6]}.png"
+    out_path = f"/home/ymehta3/research/VisionAI/visreps/plotters/fig3/reconstructed_rsa_{cfg['dataset']}.png"
     data_df = _load_csv(cfg["results_csv"])
     _, full_df = plt_utils.split_and_select_df(data_df,
                                             dataset=cfg["dataset"],
                                             metric=cfg["metric"],
-                                            region=cfg["region"],
                                             epoch=20,
-                                            subject_idx=cfg["subject_idx"],
                                             reconstruct_from_pcs=True,
                                             layers=cfg["layers_1k"])
 
-    full_df = _avg_over_subject_idx(full_df)
-    print("full_df: ", full_df)
-
+    print("full_df shape: ", full_df.shape)
     best_pc_df, _ = plt_utils.split_and_select_df(data_df,
                                         dataset=cfg["dataset"],
                                         metric=cfg["metric"],
-                                        region=cfg["region"],
                                         epoch=20,
-                                        subject_idx=cfg["subject_idx"],
                                         pca_n_classes=cfg["best_pc_n_classes"],
                                         reconstruct_from_pcs=False,
                                         layers=cfg["layers_pc"])
 
-    best_pc_df = _avg_over_subject_idx(best_pc_df)
-    print("best_pc_df: ", best_pc_df)
+    print("best_pc_df shape: ", best_pc_df.shape)
 
     untrained_results_csv = f"/home/ymehta3/research/VisionAI/visreps/logs/full-vs-pcs_{cfg['dataset']}.csv"
     data_df = _load_csv(untrained_results_csv)
     _, untrained_df = plt_utils.split_and_select_df(data_df,
                                             dataset=cfg["dataset"],
                                             metric=cfg["metric"],
-                                            region=cfg["region"],
                                             epoch=0,
-                                            subject_idx=cfg["subject_idx"],
                                             reconstruct_from_pcs=False,
                                             layers=cfg["layers_1k"])
 
     # This is the untrained results: should be plotted as a horizontal dashed line (mean + shaded std-dev).
-    untrained_df = _avg_over_subject_idx(untrained_df)
-    print("untrained_df: ", untrained_df)
+    print("untrained_df shape: ", untrained_df.shape)
 
     # Prepare reconstruction_data (3 seeds x 20 pca_k values)
     # Assuming seeds are 1, 2, 3 and pca_k are 1 to 20
@@ -283,6 +244,16 @@ if __name__ == "__main__":
     # Filter for the specific layer
     layer_to_plot = cfg["layers_1k"][0]
     reconstruction_subset = full_df[full_df['layer'] == layer_to_plot]
+
+    # Select only the columns essential for pivoting to prevent interference from other columns (e.g., 'region')
+    # that might have problematic values (like NaNs) for the "Things" dataset or other datasets.
+    # The pivot operation only needs 'seed', 'pca_k', and 'score'.
+    essential_pivot_cols = ['seed', 'pca_k', 'score']
+    
+    # Ensure that the DataFrame passed to pivot_table only contains these columns.
+    # If any of these essential columns are missing from full_df, 
+    # this selection (or the subsequent pivot_table call) will raise a KeyError, which is appropriate.
+    reconstruction_subset = reconstruction_subset[essential_pivot_cols]
 
     # Pivot table to get seeds as rows, pca_k as columns
     try:
@@ -319,7 +290,7 @@ if __name__ == "__main__":
 
         plot_cfg = {
             "metric": cfg["metric"],
-            "title": f'{cfg["metric"]} Score vs. PCs ({cfg["region"]}, Layer: {layer_to_plot}) - Reconstructed',
+            "title": f'{cfg["metric"]} Score vs. PCs, Layer: {layer_to_plot}) - Reconstructed',
             "layers_1k": cfg["layers_1k"],
             "layers_pc": cfg["layers_pc"],
             "best_pc_n_classes": cfg["best_pc_n_classes"],
