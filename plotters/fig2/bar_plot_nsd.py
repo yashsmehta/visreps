@@ -28,7 +28,7 @@ def plot_brain_score_barplot(scores_by_cond: dict[str, list[float]],
     errs  = [np.std(v, ddof=1) if len(v) > 1 else 0 for v in scores_by_cond.values()]
 
     # ── palette & hatches (same style) ───────────────────────────────────────
-    untrained_c, thousand_c = '#AAAAAA', '#FFB74D'
+    untrained_c, thousand_c = '#AAAAAA', '#FFA500'
     pca_cats = [c for c in cats if c not in ('Untrained', '1000 Classes')]
     blues    = sns.color_palette('Blues', n_colors=max(len(pca_cats), 1) + 1)[1:]
 
@@ -71,7 +71,7 @@ def plot_brain_score_barplot(scores_by_cond: dict[str, list[float]],
     ax.tick_params(axis='x', direction='out', bottom=False, top=False, length=4, color='black', width=1.5) # Updated x-tick params
 
     # Enhanced y-axis formatting (similar to bar_plot_things.py)
-    ax.tick_params(axis='y', which='major', direction='out', left=True, right=False, labelsize=12, length=5, color='black', width=1.5)
+    ax.tick_params(axis='y', which='major', direction='out', left=True, right=False, labelsize=18, length=5, color='black', width=1.5)
     ax.yaxis.set_major_locator(MultipleLocator(0.1))
     ax.yaxis.set_minor_locator(AutoMinorLocator(2))
 
