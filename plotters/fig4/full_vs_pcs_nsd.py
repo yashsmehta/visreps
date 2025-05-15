@@ -27,11 +27,11 @@ def create_comparison_plots(
     layer_order: List[str],
     neural_dataset: str,            # For filename
     compare_rsm_correlation: str, # For y-label and filename
-    region_name: str,               # For filename
-    min_y: float | None,
-    max_y: float | None,
     pca_sizes_for_plot: List[int], # To iterate for PCA lines
-    out_dir: str
+    out_dir: str,
+    min_y: float | None = None, # Added default None
+    max_y: float | None = None, # Added default None
+    region_name: str = ""      # For filename
 ):
     """Generate and save a comparison plot using pre-processed data."""
 
@@ -80,8 +80,6 @@ def create_comparison_plots(
 
     ax.set_xticks(x_ticks_pos)
     ax.set_xticklabels(layer_order, rotation=0, ha="center") # X-axis labels horizontal, fontsize controlled by rcParams
-    for label in ax.get_xticklabels(): # Make x-axis tick labels bold
-        label.set_fontweight('bold')
     ax.set_ylabel(f"RSA ({compare_rsm_correlation.capitalize()})", labelpad=10) # Y-label fontsize controlled by rcParams 'axes.labelsize'
     
     ax.tick_params(axis='x', direction='out', bottom=True, top=False, length=4, color='black', width=1.2) # Keep bottom ticks visible
@@ -155,9 +153,9 @@ if __name__ == "__main__":
         "region": "ventral visual stream",
         "subject_idx": [0, 1, 2, 3, 4, 5, 6, 7],
         "layers": ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2"],
-        "results_csv": "/home/ymehta3/research/VisionAI/visreps/logs/full-vs-pcs_nsd.csv",
+        "results_csv": "/home/ymehta3/research/VisionAI/visreps/logs/full-vs-pcs_nsd_synthetic.csv",
         "pca_plot_n_classes": [2, 4, 8, 16, 32, 64], # PCA n_classes to plot
-        "dataset": "nsd"
+        "dataset": "nsd_synthetic"
     }
 
     data_df = _load_csv(cfg["results_csv"])
@@ -225,9 +223,9 @@ if __name__ == "__main__":
         layer_order=layer_order,
         neural_dataset=cfg["dataset"],
         compare_rsm_correlation=cfg["metric"],
-        region_name=cfg["region"],
-        min_y=min_y,
-        max_y=max_y,
         pca_sizes_for_plot=cfg["pca_plot_n_classes"],
         out_dir=out_dir,
+        min_y=min_y,
+        max_y=max_y,
+        region_name=cfg["region"],
     )

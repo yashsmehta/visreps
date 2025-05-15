@@ -44,6 +44,7 @@ def avg_over_subject_idx(df: pd.DataFrame) -> pd.DataFrame:
 def avg_over_seed(df: pd.DataFrame) -> pd.DataFrame:
     """
     Collapse `seed`; keep `subject_idx` (if any) and PCA columns.
+    Drop subject_idx if all values are NaN.
     """
     if df.empty or "seed" not in df:
         return df.copy()
@@ -65,7 +66,8 @@ def avg_over_seed(df: pd.DataFrame) -> pd.DataFrame:
 
     keep = ["layer", "score"]
     if "subject_idx" in out.columns:
-        keep.append("subject_idx")
+        if not out["subject_idx"].isna().all():
+            keep.append("subject_idx")
     keep += [c for c in _PCA_COLS if c in out.columns]
     return out[keep]
 
