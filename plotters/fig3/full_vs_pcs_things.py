@@ -98,4 +98,5 @@ if __name__ == "__main__":
         max_y=max_y,
         pca_sizes_for_plot=cfg["pca_plot_n_classes"],
         out_dir=out_dir,
+        colors="Greens"
     )

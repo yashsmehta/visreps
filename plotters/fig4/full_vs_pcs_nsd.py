@@ -31,7 +31,8 @@ def create_comparison_plots(
     out_dir: str,
     min_y: float | None = None, # Added default None
     max_y: float | None = None, # Added default None
-    region_name: str = ""      # For filename
+    region_name: str = "",      # For filename
+    colors: str = "Blues"
 ):
     """Generate and save a comparison plot using pre-processed data."""
 
@@ -56,7 +57,7 @@ def create_comparison_plots(
     colours = {
         "initial": "#7f8c8d", # Grey for Untrained
         "final": "#FFA500",   # Adjusted to DarkOrange for 1000 Classes
-        "pca": dict(zip(pca_sizes_for_plot, sns.color_palette('Blues', n_colors=len(pca_sizes_for_plot)))),
+        "pca": dict(zip(pca_sizes_for_plot, sns.color_palette(colors, n_colors=len(pca_sizes_for_plot)))),
     }
 
     # --- Plotting (Single Plot) ---
