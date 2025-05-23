@@ -5,7 +5,7 @@ description = "A repository for studying the emergence of representational simil
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [
-    {name = "Yash Mehta", email = "yashsmehta95@gmail.com"}
+    {name = "xxx", email = "xxx@gmail.com"}
 ]
 license = {text = "MIT"}
 keywords = ["deep learning", "visual representations", "neural networks", "representation learning", "cognitive science"]
