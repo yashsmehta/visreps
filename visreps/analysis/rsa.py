@@ -146,15 +146,14 @@ def compute_rsa_alignment(
         )
 
     # --- Internal Flag for Saving RSMs --- (Manually change to True to enable saving)
-    save_rsms = True
+    save_rsms = False
     if save_rsms:
         try:
-            save_dir = os.path.join("model_checkpoints", "RSMs", f"pca4cls")
+            save_dir = os.path.join("model_checkpoints", "RSMs", f"{cfg.neural_dataset}", f"pca4cls")
             os.makedirs(save_dir, exist_ok=True)
             
             # Construct filename based on whether reconstruct_from_pcs is True
             filename_parts = [
-                f"rsms_{cfg.neural_dataset}",
                 f"pca_labels_{cfg.pca_labels}",
                 f"cfgid_{cfg.cfg_id}",
                 f"seed_{cfg.seed}"
