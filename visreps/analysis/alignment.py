@@ -7,6 +7,7 @@ from omegaconf import DictConfig
 import pandas as pd
 
 from visreps.analysis.rsa import compute_rsa_alignment
+from visreps.analysis.encoding_score import compute_encoding_alignment
 
 logger = logging.getLogger(__name__)
 
@@ -40,8 +41,15 @@ def compute_neural_alignment(
     acts_aligned: Dict[str, torch.Tensor],
     neural_aligned: torch.Tensor,
 ) -> List[dict]:
-    """Thin wrapper around `compute_rsa_alignment` to keep the public signature unchanged."""
-    return compute_rsa_alignment(cfg, acts_aligned, neural_aligned)
+    """Compute neural alignment using either RSA or encoding score based on cfg.analysis."""
+    analysis_type = cfg.get("analysis", "rsa").lower()
+    
+    if analysis_type == "rsa":
+        return compute_rsa_alignment(cfg, acts_aligned, neural_aligned)
+    elif analysis_type == "encoding_score":
+        return compute_encoding_alignment(cfg, acts_aligned, neural_aligned)
+    else:
+        raise ValueError(f"Unknown analysis type: {analysis_type}. Use 'rsa' or 'encoding_score'.")
 
 
 def prepare_data_for_alignment(

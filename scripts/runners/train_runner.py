@@ -7,15 +7,15 @@ BASE_CONFIG = "configs/train/base.json"
 
 # Define the parameter grid for training
 PARAM_GRID = {
-    "exp_name": ["imagenet_pca_none"],
-    "arch.nonlinearity": ["relu"],
     "seed": [1],
-    "arch.dropout": [0.3],
-    "arch.batchnorm": [True],
+    "model_class": ["custom_cnn"],
     "model_name": ["CustomCNN"],
     "pca_labels": [True],
-    "pca_n_classes": [2, 4, 8, 16, 32],
-    "pca_labels_folder": ["pca_labels_none"],
+    "pca_labels_folder": ["pca_labels_clip"],
+    "pca_n_classes": [2, 4, 8, 16, 32, 64],
+    "checkpoint_dir": ["clip_pca"],
+    "dataset": ["imagenet"],
+    "log_checkpoints": [True],
 }
 
 

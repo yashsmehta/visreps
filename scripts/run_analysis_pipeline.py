@@ -6,7 +6,10 @@ import re
 import sys
 
 # --- Hardcoded list of target epochs to process ---
-TARGET_EPOCHS = [5, 10] # Example: process only epochs 5, and 10
+TARGET_EPOCHS = [20] # Example: process only epochs 5, and 10
+# --------------------------------------------------
+# --- Hardcoded base directory for model checkpoints ---
+BASE_DIR = 'model_checkpoints/imagenet_cnn' # Example: process only models in this directory
 # --------------------------------------------------
 
 def run_command(command, print_command=False):
@@ -33,8 +36,6 @@ def run_command(command, print_command=False):
 
 def main():
     parser = argparse.ArgumentParser(description="Run feature extraction and eigenspectra analysis pipeline for models in a directory structure.")
-    parser.add_argument('--base_dir', type=str, default='model_checkpoints/imagenet_pca',
-                        help='Base directory containing experiment folders (e.g., model_checkpoints/imagenet_pca)')
     parser.add_argument('--dataset', type=str, default='imagenet-mini-50', # Default might need adjustment based on experiments
                         choices=['tiny-imagenet', 'imagenet', 'imagenet-mini-50'],
                         help='Dataset used for the experiments (needed for extract_representations.py)')
@@ -47,15 +48,16 @@ def main():
 
     args = parser.parse_args()
 
-    if not os.path.isdir(args.base_dir):
-        print(f"Error: Base directory not found: {args.base_dir}", file=sys.stderr)
+    # Use the hardcoded BASE_DIR instead of args.base_dir
+    if not os.path.isdir(BASE_DIR):
+        print(f"Error: Base directory not found: {BASE_DIR}", file=sys.stderr)
         sys.exit(1)
 
-    # Derive experiment name from base_dir
-    exp_name_from_base = os.path.basename(os.path.normpath(args.base_dir))
+    # Derive experiment name from BASE_DIR
+    exp_name_from_base = os.path.basename(os.path.normpath(BASE_DIR))
 
-    # Find all checkpoint files
-    checkpoint_pattern = os.path.join(args.base_dir, 
+    # Find all checkpoint files using BASE_DIR
+    checkpoint_pattern = os.path.join(BASE_DIR, 
                                       "*", 
                                       "checkpoint*.pth")
     all_checkpoint_files = glob.glob(checkpoint_pattern)
@@ -100,11 +102,11 @@ def main():
         print(f"\nProcessing file {i+1}/{total_to_process}: {ckpt_path}") 
 
         try:
-            # Extract parts from path: base_dir/<cfg_dir>/<ckpt_file>
-            rel_path = os.path.relpath(ckpt_path, args.base_dir)
+            # Extract parts from path: BASE_DIR/<cfg_dir>/<ckpt_file>
+            rel_path = os.path.relpath(ckpt_path, BASE_DIR)
             parts = rel_path.split(os.sep)
             if len(parts) != 2:
-                print(f"  Warning: Skipping unexpected path structure (expected base_dir/cfgXX/ckpt.pth): {ckpt_path}")
+                print(f"  Warning: Skipping unexpected path structure (expected BASE_DIR/cfgXX/ckpt.pth): {ckpt_path}")
                 failure_count += 1
                 continue
             cfg_dir = parts[0]

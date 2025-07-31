@@ -38,7 +38,7 @@ def VGG16(pretrained_dataset="imagenet1k", num_classes=200):
     
     return model
 
-def ResNet18(pretrained_dataset="imagenet1k", num_classes=200):
+def ResNet18(pretrained_dataset="imagenet1k", num_classes=1000):
     """ResNet18 with optional ImageNet pretraining."""
     if pretrained_dataset == "imagenet1k":
         model = models.resnet18(weights=models.ResNet18_Weights.IMAGENET1K_V1)

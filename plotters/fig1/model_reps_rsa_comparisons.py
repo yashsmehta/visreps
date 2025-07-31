@@ -6,6 +6,7 @@ import torch
 import scipy.stats
 from pathlib import Path
 import seaborn as sns
+from matplotlib.ticker import MultipleLocator, AutoMinorLocator, FormatStrFormatter
 
 # Adapted from visreps.analysis.rsa.py
 _CORR_FUNCS = {
@@ -76,7 +77,7 @@ def plot_rsa_scores_grouped(
     n_pca_cls_val, 
     n_pcs_for_title, 
     correlation_method, 
-    output_dir="plots"
+    output_dir="plotters/fig1"
 ):
     """Plots stylized RSA scores and saves the plot."""
     if not layer_names or (not any(not np.isnan(s) for s in scores_f1f2 if isinstance(s, float)) and \
@@ -87,40 +88,87 @@ def plot_rsa_scores_grouped(
 
     os.makedirs(output_dir, exist_ok=True)
     
-    sns.set_theme(style="whitegrid", context="paper")
+    plt.style.use("seaborn-v0_8-paper")
+    original_rc_params = plt.rcParams.copy()
 
-    x_indices = np.arange(len(layer_names))
+    try:
+        plt.rcParams.update({
+            'font.family': 'sans-serif', 'font.sans-serif': ['Arial', 'DejaVu Sans'],
+            'font.size': 17,       # Base size: 11 * 1.5 = 16.5 -> 17
+            'axes.titlesize': 17,  # Title font size (though title is removed): 11 * 1.5 = 16.5 -> 17
+            'axes.labelsize': 15,  # X and Y axis labels: 10 * 1.5 = 15
+            'xtick.labelsize': 18, # X tick labels: 12 * 1.5 = 18
+            'ytick.labelsize': 18, # Y tick labels: 12 * 1.5 = 18
+            'legend.fontsize': 12, # Legend font size: 8 * 1.5 = 12
+            'axes.linewidth': 1.0  # Linewidth for axes frame (spines)
+        })
 
-    fig, ax = plt.subplots(figsize=(12, 7))
+        # Define colors
+        color_f1f2 = 'silver'
+        color_t1t2 = 'dimgray'
+        color_f1t1 = '#FF6B6B' # Softer red
 
-    # Plot F1 vs F2: "1k reconstructed corr (between seeds)" - horizontal line marker
-    label_f1f2 = "1k reconstructed corr (between seeds)"
-    ax.plot(x_indices, scores_f1f2, marker='_', linestyle='None', markersize=20, markeredgewidth=3, label=label_f1f2, color=sns.color_palette()[0])
+        x_indices = np.arange(len(layer_names))
+        bar_width = 0.25
+        fig, ax = plt.subplots(figsize=(8, 6))
 
-    # Plot T1 vs T2: "{n_pca_cls} classes corr (between seeds)" - horizontal line marker
-    label_t1t2 = f"{n_pca_cls_val} classes corr (between seeds)"
-    ax.plot(x_indices, scores_t1t2, marker='_', linestyle='None', markersize=20, markeredgewidth=3, label=label_t1t2, color=sns.color_palette()[1])
-    
-    # Plot F1 vs T1: "1k vs {n_pca_cls} classes corr" - cross marker
-    label_f1t1 = f"1k vs {n_pca_cls_val} classes corr"
-    ax.plot(x_indices, scores_f1t1, marker='x', linestyle='None', markersize=10, markeredgewidth=2, label=label_f1t1, color=sns.color_palette()[2])
+        # Plot F1 vs F2
+        label_f1f2 = "Inter-seed (1K rec.)"
+        ax.bar(x_indices - bar_width, scores_f1f2, bar_width, label=label_f1f2, color=color_f1f2)
 
-    ax.set_ylabel(f"RSA Score ({correlation_method})")
-    ax.set_xlabel("Layer")
-    ax.set_title(f"Inter-Model Layer RSA Comparison (pc{n_pcs_for_title})")
-    ax.set_xticks(x_indices)
-    ax.set_xticklabels(layer_names, rotation=45, ha="right")
-    ax.legend(frameon=False)
-    ax.grid(True, linestyle='--', alpha=0.7)
-    
-    sns.despine(trim=True)
+        # Plot T1 vs T2
+        label_t1t2 = f"Inter-seed ({n_pca_cls_val} CLS)"
+        ax.bar(x_indices, scores_t1t2, bar_width, label=label_t1t2, color=color_t1t2)
+        
+        # Plot F1 vs T1
+        label_f1t1 = f"1K vs {n_pca_cls_val} CLS"
+        ax.bar(x_indices + bar_width, scores_f1t1, bar_width, label=label_f1t1, color=color_f1t1)
 
-    fig.tight_layout()
-    
-    plot_filename = f"rsa_comparison_pc{n_pcs_for_title}_{correlation_method}_stylized.png"
-    plot_path = os.path.join(output_dir, plot_filename)
-    plt.savefig(plot_path)
-    print(f"Plot saved to {plot_path}")
+        ax.set_ylabel(f"RSA ({correlation_method})")
+        # ax.set_xlabel("Layer") # X-axis title removed
+
+        ax.set_xticks(x_indices)
+        ax.set_xticklabels(layer_names, rotation=45, ha="right", fontsize=plt.rcParams['xtick.labelsize'])
+        
+        # X-axis tick parameters
+        ax.tick_params(axis='x', which='major', direction='out', length=4, width=plt.rcParams['axes.linewidth'], top=False, right=False)
+
+        # Y-axis limits and ticks
+        ax.set_ylim(0, 1) # Set Y-axis from 0 to 1
+        ax.yaxis.set_major_locator(MultipleLocator(0.5)) # Major ticks at 0, 0.5, 1
+        ax.yaxis.set_minor_locator(MultipleLocator(0.25)) # Minor ticks at 0.25, 0.75
+        ax.yaxis.set_minor_formatter(FormatStrFormatter("%.2f"))
+
+        # Y-axis tick parameters
+        ax.tick_params(axis='y', which='major', direction='out', length=4, width=plt.rcParams['axes.linewidth'], right=False, top=False)
+        ax.tick_params(axis='y', which='minor', direction='out', length=2, width=plt.rcParams['axes.linewidth']*0.75, 
+                       labelsize=int(plt.rcParams['ytick.labelsize'] * 0.75), labelleft=True, right=False, top=False)
+        
+        # Grid
+        ax.grid(True, which='major', linestyle='--', linewidth=0.5, alpha=0.7)
+        ax.grid(True, which='minor', linestyle=':', linewidth=0.3, alpha=0.5)
+
+        # Spines
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['bottom'].set_linewidth(plt.rcParams['axes.linewidth'])
+        ax.spines['left'].set_linewidth(plt.rcParams['axes.linewidth'])
+        
+        # Legend
+        # handles, labels = ax.get_legend_handles_labels()
+        # if handles:
+        #     ax.legend(handles, labels, frameon=True, facecolor='white', edgecolor='black', 
+        #               loc='center left', bbox_to_anchor=(1, 0.5), fontsize=plt.rcParams['legend.fontsize']) # Legend to the right
+        
+        fig.tight_layout() # Reverted layout adjustment
+        
+        plot_filename = f"rsa_comparison_pc{n_pcs_for_title}_{correlation_method}_bars.png"
+        plot_path = os.path.join(output_dir, plot_filename)
+        plt.savefig(plot_path, dpi=300)
+        print(f"Plot saved to {plot_path}")
+
+    finally:
+        plt.rcParams.update(original_rc_params)
 
 def main():
     parser = argparse.ArgumentParser(description="Compare RSMs based on n_pcs and plot stylized layer-wise RSA scores.")
@@ -128,7 +176,7 @@ def main():
                         help="PCA classes integer value (e.g., 2, 4), used to form directory name 'pc<value>' and for labels. Default: 2.")
     parser.add_argument("--correlation_method", default="Kendall", choices=["Pearson", "Spearman", "Kendall"],
                         help="Correlation method for comparing RSMs (default: Kendall).")
-    parser.add_argument("--output_dir", default="plots", help="Directory to save the output plot (default: plots).")
+    parser.add_argument("--output_dir", default="plotters/fig1", help="Directory to save the output plot (default: plotters/fig1).")
     parser.add_argument("--base_rsm_dir", default="model_checkpoints/RSMs", help="Base directory for RSM files.")
     
     args = parser.parse_args()
