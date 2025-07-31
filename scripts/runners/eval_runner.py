@@ -9,18 +9,20 @@ BASE_CONFIG_PATH = "configs/eval/base.json"
 
 # Evaluation parameter grid
 PARAM_GRID = {
-    "checkpoint_dir": ["/data/shared/imagenet_1k"],
+    # "checkpoint_dir": ["/data/ymehta3/clip_pca/"],
+    "checkpoint_dir": ["/data/rgautha1/for_yash/imagenet1k"],
+    # "checkpoint_dir": ["model_checkpoints/resnet18_1k"],
     "cfg_id": [1], # folder: cfg1 
     "seed": [1], # folder: cfg1a, cfg1b, cfg1c
-    "results_csv": ["pc_reconstruction_analysis.csv"],
+    "results_csv": ["clip_embeddings_full-vs-pcs.csv"],
     "notes": [""],
     "compare_rsm_correlation": ["Spearman"],
-    "reconstruct_from_pcs": [True],
-    "pca_k": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
-    "neural_dataset": ["things"],
-    # "subject_idx": [0, 1, 2, 3, 4, 5, 6, 7],
-    # "region": ["early visual stream"],
-    "eval_checkpoint_at_epoch": [18],
+    "reconstruct_from_pcs": [False],
+    # "pca_k": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+    "neural_dataset": ["nsd"],
+    "subject_idx": [0, 1, 2, 3, 4, 5, 6, 7],
+    "region": ["early visual stream", "ventral visual stream"],
+    "eval_checkpoint_at_epoch": [20],
 }
 
 

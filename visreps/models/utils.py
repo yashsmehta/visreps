@@ -308,7 +308,7 @@ def setup_checkpoint_dir(cfg, model):
     Create the checkpoint directory (if needed), store config info, and return
     the directory path and the extended config dict.
     """
-    checkpoint_dir = make_checkpoint_dir(cfg.exp_name)
+    checkpoint_dir = make_checkpoint_dir(cfg.checkpoint_dir)
     cfg_dict = {
         "total_params": sum(p.numel() for p in model.parameters()),
         "trainable_params": sum(p.numel() for p in model.parameters() if p.requires_grad),
