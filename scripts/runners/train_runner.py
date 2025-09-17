@@ -8,13 +8,15 @@ BASE_CONFIG = "configs/train/base.json"
 # Define the parameter grid for training
 PARAM_GRID = {
     "seed": [1],
-    "model_class": ["custom_cnn"],
-    "model_name": ["CustomCNN"],
     "pca_labels": [True],
+    "num_epochs": [25],
     "pca_labels_folder": ["pca_labels_clip"],
-    "pca_n_classes": [2, 4, 8, 16, 32, 64],
-    "checkpoint_dir": ["clip_pca"],
-    "dataset": ["imagenet"],
+    "pca_n_classes": [8, 16, 32, 64],
+    "checkpoint_interval": [5],
+    "log_interval": [10],
+    "warmup_epochs": [5],
+    "checkpoint_dir": ["imagenet_mini_200_pca"],
+    "dataset": ["imagenet-mini-200"],
     "log_checkpoints": [True],
 }
 

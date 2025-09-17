@@ -280,45 +280,39 @@ def load_model(cfg, device, num_classes=None):
     return model.to(device)
 
 
-def make_checkpoint_dir(folder, parent_dir="model_checkpoints"):
-    """
-    Create a new subdirectory for a training checkpoint within a specified parent directory.
-
-    This function constructs a directory path using the provided `folder` name under the `parent_dir`.
-    It ensures that the directory exists and then creates a new subdirectory within it to store the
-    checkpoint. The subdirectory is named by incrementing the count of existing directories.
-
-    Args:
-        folder (str): The name of the main folder under which the checkpoint directory will be created.
-        parent_dir (str): The parent directory where the `folder` will be located. Defaults to 'model_checkpoints'.
-
-    Returns:
-        str: The path to the newly created checkpoint subdirectory.
-    """
-    checkpoint_dir = os.path.join(parent_dir, folder)
-    os.makedirs(checkpoint_dir, exist_ok=True)
-    ith_folder = len(os.listdir(checkpoint_dir)) + 1
-    checkpoint_subdir = os.path.join(checkpoint_dir, "cfg" + str(ith_folder))
-    os.makedirs(checkpoint_subdir, exist_ok=True)
-    return checkpoint_subdir
-
-
 def setup_checkpoint_dir(cfg, model):
     """
-    Create the checkpoint directory (if needed), store config info, and return
-    the directory path and the extended config dict.
+    Create the checkpoint directory with proper naming scheme and store config info.
+
+    Naming scheme:
+    - PCA training: cfg{pca_n_classes}{seed_letter}
+    - Non-PCA training: cfg1{seed_letter}
     """
-    checkpoint_dir = make_checkpoint_dir(cfg.checkpoint_dir)
+    # Validate seed and get letter
+    seed_letter = get_seed_letter(cfg.seed)
+
+    # Determine cfg number based on training type
+    if getattr(cfg, 'pca_labels', False):
+        cfg_num = cfg.pca_n_classes
+    else:
+        cfg_num = 1
+
+    # Create checkpoint path
+    subdir_name = f"cfg{cfg_num}{seed_letter}"
+    checkpoint_path = os.path.join("model_checkpoints", cfg.checkpoint_dir, subdir_name)
+    os.makedirs(checkpoint_path, exist_ok=True)
+
+    # Prepare and save config
     cfg_dict = {
         "total_params": sum(p.numel() for p in model.parameters()),
         "trainable_params": sum(p.numel() for p in model.parameters() if p.requires_grad),
         **OmegaConf.to_container(cfg, resolve=True),
     }
-    # Save the config.json
-    with open(os.path.join(checkpoint_dir, "config.json"), "w") as f:
+
+    with open(os.path.join(checkpoint_path, "config.json"), "w") as f:
         json.dump(cfg_dict, f, indent=2)
-    
-    return checkpoint_dir, cfg_dict
+
+    return checkpoint_path, cfg_dict
 
 
 def save_checkpoint(checkpoint_dir, epoch, model, optimizer, metrics, cfg_dict):

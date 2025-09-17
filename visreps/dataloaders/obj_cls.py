@@ -2,6 +2,7 @@ import os
 import json
 import torch
 import warnings
+from pathlib import Path
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
 from torchvision import datasets
@@ -307,16 +308,17 @@ def prepare_tinyimgnet_data(cfg, pca_labels, shuffle):
         )
     return datasets, loaders
 
-def prepare_imgnet_data(cfg, pca_labels, shuffle, dataset_env_var="IMAGENET_DATA_DIR"):
+def prepare_imgnet_data(cfg, pca_labels, shuffle, base_path=None):
     """Prepares ImageNet or related datasets (like mini variants).
     
     Args:
         cfg: Configuration object.
         pca_labels: Boolean indicating if PCA labels should be used.
         shuffle: Boolean indicating if data should be shuffled.
-        dataset_env_var: The environment variable key for the dataset base path.
+        base_path: Direct path to dataset. If None, uses IMAGENET_DATA_DIR env var.
     """
-    base_path = cfg.get("dataset_path", utils.get_env_var(dataset_env_var)) # Use the provided env var
+    if base_path is None:
+        base_path = cfg.get("dataset_path", utils.get_env_var("IMAGENET_DATA_DIR"))
     datasets, loaders = {}, {}
     
     # Determine splits: For feature extraction (shuffle=False), use 'all'. Otherwise, use ['train', 'test']
@@ -358,11 +360,22 @@ def get_obj_cls_loader(cfg, shuffle=True):
     if dataset_name == "tiny-imagenet":
         datasets, loaders = prepare_tinyimgnet_data(cfg, pca_labels, shuffle)
     elif dataset_name == "imagenet":
-        # Call prepare_imgnet_data with the standard ImageNet env var
-        datasets, loaders = prepare_imgnet_data(cfg, pca_labels, shuffle, dataset_env_var="IMAGENET_DATA_DIR")
-    elif dataset_name == "imagenet-mini-50":
-        # Call prepare_imgnet_data with the ImageNet-Mini-50 env var
-        datasets, loaders = prepare_imgnet_data(cfg, pca_labels, shuffle, dataset_env_var="IMAGENET_MINI_50_DATA_DIR")
+        datasets, loaders = prepare_imgnet_data(cfg, pca_labels, shuffle)
+    elif dataset_name.startswith("imagenet-mini-"):
+        # Extract number of images per class from dataset name
+        try:
+            num_images = int(dataset_name.split("-")[-1])
+        except ValueError:
+            raise ValueError(f"Invalid imagenet-mini format: {dataset_name}. Expected imagenet-mini-<number>")
+        
+        # Construct path to mini dataset (sibling of main ImageNet)
+        imagenet_base = Path(utils.get_env_var("IMAGENET_DATA_DIR"))
+        mini_path = imagenet_base.parent / f"imagenet-mini-{num_images}"
+        
+        if not mini_path.exists():
+            raise ValueError(f"ImageNet mini dataset not found at {mini_path}")
+        
+        datasets, loaders = prepare_imgnet_data(cfg, pca_labels, shuffle, base_path=str(mini_path))
     else:
         raise ValueError(f"Unsupported dataset: {dataset_name}")
 
