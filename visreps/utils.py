@@ -385,7 +385,7 @@ class ConfigVerifier:
     """Validates configuration for both training and evaluation modes."""
 
     VALID_MODES = {"train", "eval"}
-    VALID_DATASETS = {"imagenet", "tiny-imagenet", "imagenet-mini-50"}
+    VALID_DATASETS = {"imagenet", "tiny-imagenet", "imagenet-mini-10", "imagenet-mini-50", "imagenet-mini-200"}
     VALID_MODEL_CLASSES = {"custom_cnn", "standard_cnn"}
     VALID_MODEL_SOURCES = {"checkpoint", "torchvision"}
     VALID_REGIONS = {
@@ -730,4 +730,7 @@ def setup_scheduler(optimizer, cfg):
         return main_scheduler
 
 def get_seed_letter(seed):
-    return {1: 'a', 2: 'b', 3: 'c'}.get(seed)
+    """Convert seed (1-9) to letter (a-i)."""
+    if not isinstance(seed, int) or seed < 1 or seed > 9:
+        raise ValueError(f"Seed must be an integer between 1-9, got {seed}")
+    return chr(ord('a') + seed - 1)
