@@ -12,8 +12,8 @@
   "load_model_from": "checkpoint",
   "checkpoint":
   {
-    "checkpoint_dir": "model_checkpoints/clip_pca",
-    "checkpoint_model": "checkpoint_epoch_10.pth"
+    "checkpoint_dir": "model_checkpoints/imagenet_mini_50_1k",
+    "checkpoint_model": "checkpoint_epoch_15.pth"
   },
   "torchvision":
   {
@@ -22,7 +22,7 @@
   },
   "apply_srp": true,
   "mode": "eval",
-  "region": "early visual stream",
+  "region": "ventral visual stream",
   "subject_idx": 0,
   "analysis": "rsa",
   "batchsize": 256,
