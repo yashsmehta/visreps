@@ -260,8 +260,8 @@ def prepare_tinyimgnet_data(cfg, pca_labels, shuffle):
     # Fetch the local dir path first to trigger potential error from get_env_var
     local_dir_path = utils.get_env_var("TINY_IMAGENET_LOCAL_DIR")
 
-    # Now join the path
-    pca_base_path = os.path.join(local_dir_path, cfg.get("pca_labels_folder"))
+    # PCA labels are stored in project root's pca_labels directory
+    pca_base_path = os.path.join("pca_labels", cfg.get("pca_labels_folder"))
     
     datasets, loaders = {}, {}
     
@@ -288,11 +288,7 @@ def prepare_tinyimgnet_data(cfg, pca_labels, shuffle):
         transform = transforms.Compose(tfms)
         # Use the folder_split to point to the correct directory
         dataset = TinyImageNetDataset(base_path, folder_split, transform)
-        
-        if not pca_labels and "n_classes" not in cfg:
-            cfg["n_classes"] = dataset.num_classes
-            print(f"Setting n_classes to {dataset.num_classes} based on dataset")
-            
+
         # Use the main split name ('train', 'val', or potentially 'all' if we rename 'val') for PCA wrapping
         dataset = wrap_with_pca(dataset, pca_base_path, cfg, split) if pca_labels else dataset
         
@@ -332,15 +328,10 @@ def prepare_imgnet_data(cfg, pca_labels, shuffle, base_path=None):
         
         # Instantiate the dataset for the current split ('train', 'test', or 'all')
         dataset = ImageNetDataset(base_path, split=split, transform=tfms)
-        
-        # Set num_classes in cfg if not already present (primarily for training)
-        if not pca_labels and "n_classes" not in cfg:
-             cfg["n_classes"] = dataset.num_classes
-             print(f"Setting n_classes to {dataset.num_classes} based on dataset")
 
         # Wrap with PCA labels if specified (usually only during training/evaluation, not extraction)
         if pca_labels:
-            pca_base_path = os.path.join(utils.get_env_var("IMAGENET_LOCAL_DIR"), cfg.get("pca_labels_folder"))
+            pca_base_path = os.path.join("pca_labels", cfg.get("pca_labels_folder"))
             dataset = wrap_with_pca(dataset, pca_base_path, cfg, split)
         
         datasets[split] = dataset

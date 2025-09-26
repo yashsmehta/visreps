@@ -29,7 +29,7 @@ def main():
         raise ValueError(f"No valid feature key found. Available: {list(data_dict.keys())}")
 
     # Set output directory
-    labels_dir = os.path.join("datasets", "obj_cls", "imagenet", LABELS_FOLDER)
+    labels_dir = os.path.join("pca_labels", LABELS_FOLDER)
     os.makedirs(labels_dir, exist_ok=True)
     print(f"Saving PCA labels to: {labels_dir}")
     
