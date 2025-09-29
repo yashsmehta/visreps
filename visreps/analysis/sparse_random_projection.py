@@ -47,9 +47,9 @@ def _validate_transformer(
     return True
 
 def _fit_new_transformer(
-    D: int, 
-    k: int, 
-    density: Optional[float], 
+    D: int,
+    k: int,
+    density: Optional[float],
     seed: Optional[int]
 ) -> Optional[SparseRandomProjection]:
     """
@@ -65,15 +65,15 @@ def _fit_new_transformer(
         A fitted SparseRandomProjection transformer, or None if fitting fails.
     """
     density_param = density if density is not None else 'auto'
-    rprint(f"Fitting NEW SRP transformer (D={D}, k={k}, density='{density_param}', seed={seed})...", style="info")
-    
+    rprint(f"🔧 Fitting SRP (D={D}→k={k})", style="info")
+
     try:
         transformer = SparseRandomProjection(
             n_components=k,
             density=density_param,
             random_state=seed
         )
-        dummy_data = np.zeros((1, D), dtype=np.float32) 
+        dummy_data = np.zeros((1, D), dtype=np.float32)
         transformer.fit(dummy_data)
         return transformer
     except Exception as e:
@@ -119,34 +119,32 @@ def get_srp_transformer(
     should_fit_new = False
 
     if os.path.exists(transformer_path):
-        rprint(f"Found potential cache file: {transformer_path}", style="info")
         try:
             loaded_transformer = joblib.load(transformer_path)
             if _validate_transformer(loaded_transformer, k, density, seed):
                 transformer = loaded_transformer
-                rprint(f"Successfully loaded and validated cached SRP transformer.", style="success")
+                # Silently succeed when loading from cache
             else:
                 rprint("Cached transformer validation failed. Will refit.", style="warning")
-                should_fit_new = True 
+                should_fit_new = True
         except Exception as e:
-            rprint(f"Error loading or validating cached transformer '{transformer_path}': {e}. Will refit.", style="warning")
+            rprint(f"Error loading cached transformer: {e}. Will refit.", style="warning")
             should_fit_new = True
             try:
                 os.remove(transformer_path)
             except OSError as remove_err:
-                rprint(f"Could not remove problematic cache file '{transformer_path}': {remove_err}", style="warning")
+                rprint(f"Could not remove problematic cache file: {remove_err}", style="warning")
     else:
-        rprint(f"No cache file found at '{transformer_path}'. Will fit a new transformer.", style="info")
         should_fit_new = True 
 
     if should_fit_new:
         transformer = _fit_new_transformer(D, k, density, seed)
-        
+
         if transformer is not None:
             try:
                 joblib.dump(transformer, transformer_path)
-                rprint(f"Cached newly fitted transformer to '{transformer_path}'.", style="info")
+                # Silently cache on success
             except Exception as e:
-                rprint(f"Failed to cache transformer to '{transformer_path}': {e}", style="warning")
+                rprint(f"Failed to cache transformer: {e}", style="warning")
 
     return transformer 

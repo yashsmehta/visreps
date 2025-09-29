@@ -119,8 +119,7 @@ class ImageNetDataset(Dataset):
 
         self.samples = []
         skipped = set()
-        print(f"Scanning {base_path} for ImageNet images...")
-        
+
         # Scan for all valid images first
         valid_folders = set(self.folder_labels.keys())
         if not os.path.isdir(base_path):
@@ -143,16 +142,11 @@ class ImageNetDataset(Dataset):
                     img_id = fname  # Use filename for potential PCA matching later
                     self.samples.append((img_path, label, img_id))
                     
-        if skipped:
-            print(f"Warning: Skipped {len(skipped)} folders not found in {label_file} or not directories.")
-        
         total_found = len(self.samples)
-        print(f"Found {total_found} total valid image files.")
-        
+
         # Apply train/test split only if split is 'train' or 'test'
         if split in ["train", "test"]:
             if total_found == 0:
-                 print(f"Warning: No images found to split for '{split}' split.")
                  self.samples = [] # Ensure samples is empty list
             else:
                  # Use a fixed seed for reproducible splits if needed, otherwise random split
@@ -163,7 +157,6 @@ class ImageNetDataset(Dataset):
                      self.samples = [self.samples[i] for i in indices[:split_idx]]
                  else: # split == "test"
                      self.samples = [self.samples[i] for i in indices[split_idx:]]
-            print(f"Using {split.capitalize()} split: {len(self.samples)} samples")
         # If split is 'all', self.samples remains the full list
 
     def __len__(self):
@@ -256,20 +249,20 @@ def wrap_with_pca(dataset, base_path, cfg, split):
 # -----------------------------------------------------------------------------
 def prepare_tinyimgnet_data(cfg, pca_labels, shuffle):
     base_path = cfg.get("dataset_path", utils.get_env_var("TINY_IMAGENET_DATA_DIR"))
-    
+
     # Fetch the local dir path first to trigger potential error from get_env_var
     local_dir_path = utils.get_env_var("TINY_IMAGENET_LOCAL_DIR")
 
     # PCA labels are stored in project root's pca_labels directory
     pca_base_path = os.path.join("pca_labels", cfg.get("pca_labels_folder"))
-    
+
     datasets, loaders = {}, {}
-    
+
     # Determine splits: Use 'val' as 'all' for extraction (shuffle=False), otherwise use ['train', 'test']
     # Tiny ImageNet conventionally uses 'val' for testing/evaluation.
     splits_to_load = ["val"] if not shuffle else ["train", "val"]
-    print(f"Preparing Tiny ImageNet data for splits: {splits_to_load}")
-    
+    split_info = []
+
     for split in splits_to_load:
         # Determine actual folder name ('train' or 'val')
         folder_split = "train" if split == "train" else "val"
@@ -302,11 +295,14 @@ def prepare_tinyimgnet_data(cfg, pca_labels, shuffle):
             num_workers=cfg.get("num_workers", 4),
             shuffle=shuffle # Pass the original shuffle flag
         )
+        split_info.append(f"{dict_key}={len(dataset)}")
+
+    print(f"📊 Tiny ImageNet: {', '.join(split_info)}")
     return datasets, loaders
 
 def prepare_imgnet_data(cfg, pca_labels, shuffle, base_path=None):
     """Prepares ImageNet or related datasets (like mini variants).
-    
+
     Args:
         cfg: Configuration object.
         pca_labels: Boolean indicating if PCA labels should be used.
@@ -316,10 +312,10 @@ def prepare_imgnet_data(cfg, pca_labels, shuffle, base_path=None):
     if base_path is None:
         base_path = cfg.get("dataset_path", utils.get_env_var("IMAGENET_DATA_DIR"))
     datasets, loaders = {}, {}
-    
+
     # Determine splits: For feature extraction (shuffle=False), use 'all'. Otherwise, use ['train', 'test']
     splits_to_load = ["all"] if not shuffle else ["train", "test"]
-    print(f"Preparing ImageNet data for splits: {splits_to_load}")
+    split_info = []
 
     for split in splits_to_load:
         # Augmentation is usually False during feature extraction (controlled by shuffle flag proxy)
@@ -341,6 +337,9 @@ def prepare_imgnet_data(cfg, pca_labels, shuffle, base_path=None):
             num_workers=cfg.get("num_workers", 8),
             shuffle=shuffle, # Shuffle should be False for extraction split='all'
         )
+        split_info.append(f"{split}={len(dataset)}")
+
+    print(f"📊 ImageNet: {', '.join(split_info)}")
     return datasets, loaders
 
 def get_obj_cls_loader(cfg, shuffle=True):
