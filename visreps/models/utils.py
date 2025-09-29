@@ -178,6 +178,7 @@ def get_activations(
             probe_out = model(probe_imgs.to(device))
 
         k_fixed, density, seed, cache_dir = 4096, None, None, "model_checkpoints/srp_cache"
+        num_layers = len(probe_out)
         for name, out in probe_out.items():
             D = out.view(out.size(0), -1).size(1)
             srp[name] = get_srp_transformer(
@@ -187,6 +188,8 @@ def get_activations(
                 seed=seed,
                 cache_dir=cache_dir,
             )
+
+        rprint(f"✓ Loaded SRP transformers for {num_layers} layers", style="success")
 
     # ---------- main loop ----------
     with torch.no_grad():
@@ -285,17 +288,17 @@ def setup_checkpoint_dir(cfg, model):
     Create the checkpoint directory with proper naming scheme and store config info.
 
     Naming scheme:
-    - PCA training: cfg{pca_n_classes}{seed_letter}
-    - Non-PCA training: cfg1{seed_letter}
+    - Both PCA and non-PCA: cfg{num_classes}{seed_letter}
     """
     # Validate seed and get letter
     seed_letter = get_seed_letter(cfg.seed)
 
-    # Determine cfg number based on training type
+    # Determine cfg number based on actual number of classes
     if getattr(cfg, 'pca_labels', False):
         cfg_num = cfg.pca_n_classes
     else:
-        cfg_num = 1
+        # Tiny-ImageNet has 200 classes, everything else (ImageNet variants) has 1000
+        cfg_num = 200 if cfg.get('dataset') == 'tiny-imagenet' else 1000
 
     # Create checkpoint path
     subdir_name = f"cfg{cfg_num}{seed_letter}"
