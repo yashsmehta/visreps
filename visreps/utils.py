@@ -25,6 +25,7 @@ warnings.filterwarnings(
     message="You are using `torch.load` with `weights_only=False`.*",
 )
 warnings.filterwarnings("ignore", category=UserWarning, message="Corrupt EXIF data.*")
+warnings.filterwarnings("ignore", category=UserWarning, message=".*epoch parameter.*scheduler.step.*")
 
 
 def is_interactive_environment():
@@ -418,7 +419,6 @@ class ConfigVerifier:
 
     def _verify_train(self) -> OmegaConf:
         """Verify training configuration."""
-        self.rprint("Validating training configuration...", style="setup")
 
         # Dataset validation
         if self.cfg.dataset not in self.VALID_DATASETS:
@@ -453,7 +453,7 @@ class ConfigVerifier:
             self.cfg.batchsize = 64
             self.rprint("ℹ️  Using default batch size: 64", style="info")
 
-        self.rprint("✅ Training configuration validation successful", style="success")
+        self.rprint("✅ Config validated", style="success")
         return self.cfg
 
     def _verify_eval(self) -> OmegaConf:
@@ -679,38 +679,24 @@ def setup_optimizer(model, cfg):
 
 
 def setup_scheduler(optimizer, cfg):
-    """Setup learning rate scheduler."""
+    """Setup learning rate scheduler with warmup support."""
     scheduler_name = cfg.lr_scheduler.lower()
     warmup_epochs = cfg.get("warmup_epochs", 0)
-    # Get scheduler kwargs from config, default to empty dict if not present
-    scheduler_kwargs = cfg.get("scheduler_kwargs", {})
+    total_epochs = cfg.num_epochs
+
+    # Calculate T_max for the main scheduler (excluding warmup period)
+    T_max = total_epochs - warmup_epochs if warmup_epochs > 0 else total_epochs
 
     # Define main scheduler based on config
     if scheduler_name == "steplr":
-        main_scheduler = StepLR(
-            optimizer,
-            step_size=scheduler_kwargs.get("step_size", 10), # Get from kwargs, provide default
-            gamma=scheduler_kwargs.get("gamma", 0.1) # Get from kwargs, provide default
-        )
+        main_scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
     elif scheduler_name == "multisteplr":
-        if "milestones" not in scheduler_kwargs:
-            raise ValueError("'milestones' must be specified in scheduler_kwargs for MultiStepLR")
-        main_scheduler = MultiStepLR(
-            optimizer,
-            milestones=scheduler_kwargs["milestones"], # Get from kwargs
-            gamma=scheduler_kwargs.get("gamma", 0.1) # Get from kwargs, provide default
-        )
+        # Default milestones at 30%, 60%, 90% of training
+        default_milestones = [int(T_max * 0.3), int(T_max * 0.6), int(T_max * 0.9)]
+        main_scheduler = MultiStepLR(optimizer, milestones=default_milestones, gamma=0.1)
     elif scheduler_name == "cosineannealinglr":
-        total_epochs = cfg.num_epochs
-        # Calculate T_max based on total epochs and warmup
-        T_max = total_epochs - warmup_epochs if warmup_epochs > 0 else total_epochs
-        # Get eta_min from scheduler_kwargs or calculate default based on learning_rate
-        eta_min = scheduler_kwargs.get("eta_min", cfg.learning_rate * 0.05)
-        main_scheduler = CosineAnnealingLR(
-            optimizer,
-            T_max=scheduler_kwargs.get("T_max", T_max), # Allow overriding T_max via kwargs
-            eta_min=eta_min # Use eta_min derived above
-        )
+        eta_min = cfg.learning_rate * 0.05
+        main_scheduler = CosineAnnealingLR(optimizer, T_max=T_max, eta_min=eta_min)
     else:
         raise ValueError(f"Invalid LR scheduler name: {cfg.lr_scheduler}")
 
@@ -718,13 +704,14 @@ def setup_scheduler(optimizer, cfg):
     if warmup_epochs > 0:
         warmup_scheduler = LinearLR(
             optimizer,
-            start_factor=cfg.get("warmup_start_factor", 0.1),
+            start_factor=0.25,
             end_factor=1.0,
             total_iters=warmup_epochs,
         )
-        # Use SequentialLR instead of SequentialScheduler
         return SequentialLR(
-            optimizer, schedulers=[warmup_scheduler, main_scheduler], milestones=[warmup_epochs]
+            optimizer,
+            schedulers=[warmup_scheduler, main_scheduler],
+            milestones=[warmup_epochs]
         )
     else:
         return main_scheduler

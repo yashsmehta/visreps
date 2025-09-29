@@ -1,0 +1,12 @@
+{
+  "seed": [1],
+  "pca_labels": [false],
+  "num_epochs": [10],
+  "pca_labels_folder": ["pca_labels_scattering5"],
+  "checkpoint_interval": [1],
+  "log_interval": [10],
+  "warmup_epochs": [2],
+  "checkpoint_dir": ["trial"],
+  "dataset": ["imagenet-mini-200"],
+  "log_checkpoints": [true]
+}
