@@ -1,74 +1,21 @@
-import json
-import subprocess
-from itertools import product
+import argparse
+from base_runner import ExperimentRunner, load_param_grid
 
-# Configuration file paths
 BASE_CONFIG = "configs/train/base.json"
-
-# Define the parameter grid for training
-PARAM_GRID = {
-    "seed": [1],
-    "pca_labels": [True],
-    "num_epochs": [25],
-    "pca_labels_folder": ["pca_labels_clip"],
-    "pca_n_classes": [8, 16, 32, 64],
-    "checkpoint_interval": [5],
-    "log_interval": [10],
-    "warmup_epochs": [5],
-    "checkpoint_dir": ["imagenet_mini_200_pca"],
-    "dataset": ["imagenet-mini-200"],
-    "log_checkpoints": [True],
-}
-
-
-def flatten_config(config, parent_key="", sep="."):
-    """Recursively flattens a nested configuration dictionary."""
-    flat = {}
-    for k, v in config.items():
-        new_key = f"{parent_key}{sep}{k}" if parent_key else k
-        if isinstance(v, dict):
-            flat.update(flatten_config(v, new_key, sep))
-        else:
-            flat[new_key] = v
-    return flat
-
-
-def load_config(filepath):
-    """Loads a JSON configuration from the given file."""
-    with open(filepath, "r") as file:
-        return json.load(file)
+DEFAULT_GRID = "configs/grids/train_default.json"
 
 
 def main():
-    # Generate all combinations of grid parameters
-    param_names = list(PARAM_GRID.keys())
-    param_combos = list(product(*PARAM_GRID.values()))
+    parser = argparse.ArgumentParser(description="Run training experiments")
+    parser.add_argument("--grid", default=DEFAULT_GRID, help="Parameter grid JSON file")
+    args = parser.parse_args()
 
-    total_runs = len(param_combos)
-    print(f"Running {total_runs} training configurations")
-
-    # Run each combination
-    for combo in param_combos:
-        # Create overrides from the parameter combination
-        overrides = [
-            f"{name}={json.dumps(value)}" for name, value in zip(param_names, combo)
-        ]
-
-        # Add required mode override
-        overrides.append("mode=train")
-
-        cmd = [
-            "python",
-            "-m",
-            "visreps.run",
-            "--config",
-            BASE_CONFIG,
-            "--override",
-        ] + overrides
-
-        cmd_str = " ".join(cmd)
-        print(f"\nExecuting: {cmd_str}")
-        subprocess.run(cmd)
+    runner = ExperimentRunner(
+        base_config=BASE_CONFIG,
+        param_grid=load_param_grid(args.grid),
+        mode="train"
+    )
+    runner.run_all()
 
 
 if __name__ == "__main__":
