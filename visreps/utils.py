@@ -364,6 +364,11 @@ def load_config(config_path, overrides=None):
         raise FileNotFoundError(f"Config file not found: {config_path}")
     cfg = OmegaConf.load(config_path)
 
+    # First pass: Apply overrides to determine which nested config to use
+    if overrides:
+        cfg = OmegaConf.merge(cfg, OmegaConf.from_dotlist(overrides))
+
+    # Merge the appropriate nested config based on (potentially overridden) mode and model_class/load_model_from
     if source_key := (cfg.load_model_from if cfg.mode == "eval" else cfg.model_class):
         other_key = {
             "eval": {"torchvision": "checkpoint", "checkpoint": "torchvision"},
@@ -373,13 +378,16 @@ def load_config(config_path, overrides=None):
             del cfg[other_key]
         merge_nested_config(cfg, source_key)
 
+    # Second pass: Apply overrides again to ensure they take final precedence over nested config
+    if overrides:
+        cfg = OmegaConf.merge(cfg, OmegaConf.from_dotlist(overrides))
+
     if cfg.mode == "eval" and cfg.load_model_from == "torchvision":
         del cfg.cfg_id
 
-    final_cfg = OmegaConf.merge(cfg, OmegaConf.from_dotlist(overrides or []))
-    formatted_cfg = OmegaConf.to_yaml(final_cfg, resolve=True)
+    formatted_cfg = OmegaConf.to_yaml(cfg, resolve=True)
     print(f"Final Configuration:\n{formatted_cfg}\n\n")
-    return final_cfg
+    return cfg
 
 
 class ConfigVerifier:
