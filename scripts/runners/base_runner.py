@@ -27,9 +27,20 @@ class ExperimentRunner:
 
     def run_all(self):
         """Run all parameter combinations in the grid."""
-        # Generate all combinations
-        param_names = list(self.param_grid.keys())
-        param_combos = list(product(*self.param_grid.values()))
+        # Separate grid parameters (lists) from fixed nested configs (dicts/strings)
+        grid_params = {}
+        fixed_params = {}
+
+        for key, value in self.param_grid.items():
+            if isinstance(value, list):
+                grid_params[key] = value
+            else:
+                # Keep dicts and non-list values as fixed params
+                fixed_params[key] = value
+
+        # Generate all combinations from list parameters only
+        param_names = list(grid_params.keys())
+        param_combos = list(product(*grid_params.values()))
 
         total_runs = len(param_combos)
         print(f"Running {total_runs} {self.mode} configurations")
@@ -42,6 +53,7 @@ class ExperimentRunner:
 
             # Build parameters for this run
             params = dict(zip(param_names, combo))
+            params.update(fixed_params)  # Add fixed params
             params.update(self.extra_overrides)
 
             # Allow subclasses to modify params
@@ -54,10 +66,29 @@ class ExperimentRunner:
         """Hook for subclasses to modify parameters before execution."""
         return params
 
+    def _flatten_params(self, params: Dict[str, Any], prefix: str = "") -> List[str]:
+        """Flatten nested dicts into dot-notation overrides."""
+        overrides = []
+        for key, value in params.items():
+            full_key = f"{prefix}.{key}" if prefix else key
+            if isinstance(value, dict):
+                # Recursively flatten nested dicts
+                overrides.extend(self._flatten_params(value, full_key))
+            else:
+                # Use json.dumps for proper escaping, but only for complex types
+                if isinstance(value, (bool, int, float)):
+                    overrides.append(f"{full_key}={json.dumps(value)}")
+                elif isinstance(value, str):
+                    # Don't double-quote strings
+                    overrides.append(f"{full_key}={value}")
+                else:
+                    overrides.append(f"{full_key}={json.dumps(value)}")
+        return overrides
+
     def _run_single(self, params: Dict[str, Any]):
         """Execute a single experiment with given parameters."""
-        # Create overrides from parameters (matching original behavior)
-        overrides = [f"{k}={json.dumps(v)}" for k, v in params.items()]
+        # Create overrides from parameters, handling nested dicts
+        overrides = self._flatten_params(params)
         overrides.append(f"mode={self.mode}")
 
         # Build command
