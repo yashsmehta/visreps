@@ -5,6 +5,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from PIL import Image
 from torchvision import transforms
+import h5py
 
 import visreps.utils as utils
 from visreps.dataloaders.obj_cls import get_transform
@@ -19,27 +20,34 @@ logger = logging.getLogger(__name__)
 # ───────────────────────── NSD ──────────────────────────
 def load_nsd_data(cfg: Dict) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
     """
-    Load fMRI responses and corresponding stimulus images for a specified NSD subject and brain region.
+    Load fMRI responses and stimulus images for a given NSD subject and brain region.
 
     Args:
-        cfg (Dict): Configuration dictionary with keys:
-            - "region" (str): Brain region name.
-            - "subject_idx" (int): Subject index.
+        cfg (Dict): Contains "region" and "subject_idx".
 
     Returns:
-        Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
-            - Dictionary mapping stimulus IDs (str) to fMRI response arrays (np.ndarray).
-            - Dictionary mapping stimulus IDs (str) to image arrays (np.ndarray).
-            Only stimulus IDs present in both fMRI and image data are included.
+        (targets, stimuli): Dicts mapping stimulus IDs to response arrays and image arrays.
     """
     region, subj = cfg["region"], cfg["subject_idx"]
     root = utils.get_env_var("NSD_DATA_DIR")
     fmri_xr = utils.load_pickle(os.path.join(root, "fmri_responses.pkl"))[region][subj]
-    images = {
-        str(k): v
-        for k, v in utils.load_pickle(os.path.join(root, "stimuli.pkl")).items()
-    }
-    ids = {str(i) for i in fmri_xr.coords["stimulus"].values} & images.keys()
+    
+    stimulus_ids = [int(i) for i in fmri_xr.coords["stimulus"].values]
+    
+    # Load images directly from HDF5 file
+    hdf5_path = "/data/shared/datasets/allen2021.natural_scenes/nsddata_stimuli/stimuli/nsd/nsd_stimuli.hdf5"
+    images = {}
+    
+    with h5py.File(hdf5_path, "r") as f:
+        imgBrick = f["imgBrick"]
+        sorted_indices = np.sort(stimulus_ids)
+        loaded_images = imgBrick[sorted_indices]
+        
+        for i, stim_id in enumerate(sorted_indices):
+            images[str(stim_id)] = loaded_images[i]
+    
+    ids = {str(i) for i in stimulus_ids}
+    
     return (
         {i: fmri_xr.sel(stimulus=int(i)).values for i in ids},
         {i: images[i] for i in ids},
@@ -141,73 +149,18 @@ class _StimuliDataset(Dataset):
     def _load_and_transform(self, data_or_path: Any, key: str):
         """
         Load and transform an image from a path, np.ndarray, or PIL.Image.
-        Returns a transformed tensor or a placeholder on error.
+        Raises errors if image loading or transformation fails.
         """
-        img = None
-        path_used = None
-        try:
-            if isinstance(data_or_path, str):
-                path_used = data_or_path
-                with Image.open(path_used) as opened_img:
-                    img = opened_img.convert("RGB")
-            elif isinstance(data_or_path, np.ndarray):
-                img = Image.fromarray(data_or_path.astype("uint8"), "RGB")
-            elif isinstance(data_or_path, Image.Image):
-                img = data_or_path
-            else:
-                logger.warning(
-                    f"Unexpected data type {type(data_or_path)} for key {key}. Returning placeholder."
-                )
+        if isinstance(data_or_path, str):
+            img = Image.open(data_or_path).convert("RGB")
+        elif isinstance(data_or_path, np.ndarray):
+            img = Image.fromarray(data_or_path.astype("uint8"), "RGB")
+        elif isinstance(data_or_path, Image.Image):
+            img = data_or_path.convert("RGB") if data_or_path.mode != "RGB" else data_or_path
+        else:
+            raise TypeError(f"Unsupported data type {type(data_or_path)} for key {key}")
 
-            if img is not None:
-                if img.mode != "RGB":
-                    img = img.convert("RGB")
-                return self.tr(img)
-        except FileNotFoundError:
-            logger.warning(
-                f"Image file not found for key {key} at path {path_used}. Returning placeholder."
-            )
-        except OSError as e:
-            err_loc = f"at path {path_used}" if path_used else "from data"
-            if "truncated" in str(e):
-                logger.warning(
-                    f"OSError (truncated) processing image key {key} {err_loc}. Applying transform to placeholder."
-                )
-            else:
-                logger.error(
-                    f"Unhandled OSError for key {key} {err_loc}: {e}. Returning placeholder."
-                )
-        except Exception as e:
-            err_loc = f"at path {path_used}" if path_used else "from data"
-            logger.error(
-                f"Unexpected error for key {key} {err_loc}: {e}. Returning placeholder."
-            )
-
-        try:
-            target_size = (224, 224)
-            if hasattr(self.tr, "transforms"):
-                for t in self.tr.transforms:
-                    if isinstance(
-                        t,
-                        (
-                            transforms.Resize,
-                            transforms.CenterCrop,
-                            transforms.RandomResizedCrop,
-                        ),
-                    ):
-                        size = getattr(t, "size", target_size)
-                        if isinstance(size, int):
-                            size = (size, size)
-                        if isinstance(size, tuple) and len(size) == 2:
-                            target_size = size
-                            break
-            placeholder = Image.new("RGB", target_size, color="grey")
-            return self.tr(placeholder)
-        except Exception as placeholder_e:
-            logger.error(
-                f"Failed to create/transform placeholder for key {key}: {placeholder_e}"
-            )
-            return torch.zeros((3, 224, 224))
+        return self.tr(img)
 
     def __getitem__(self, idx):
         key = self.keys[idx]
