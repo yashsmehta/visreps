@@ -181,13 +181,20 @@ def get_activations(
         num_layers = len(probe_out)
         for name, out in probe_out.items():
             D = out.view(out.size(0), -1).size(1)
-            srp[name] = get_srp_transformer(
+            transformer = get_srp_transformer(
                 D=D,
                 k=min(k_fixed, D),
                 density=density,
                 seed=seed,
                 cache_dir=cache_dir,
             )
+            # Convert sklearn sparse matrix to PyTorch sparse tensor on GPU
+            sparse_matrix = transformer.components_  # shape (k, D)
+            coo = sparse_matrix.tocoo()
+            indices = torch.from_numpy(np.vstack([coo.row, coo.col])).long()
+            values = torch.from_numpy(coo.data).float()
+            proj_matrix = torch.sparse_coo_tensor(indices, values, coo.shape).to(device)
+            srp[name] = proj_matrix
 
         rprint(f"✓ Loaded SRP transformers for {num_layers} layers", style="success")
 
@@ -197,20 +204,11 @@ def get_activations(
             ids.extend(keys)
             feats = model(imgs.to(device))
             for name, out in feats.items():
-                out_cpu = out.cpu().half()                        # save RAM
-                transformer = srp.get(name)
-                if apply_srp and transformer is not None:
-                    flat = out_cpu.view(out_cpu.size(0), -1).float().numpy()
-                    try:
-                        proj = transformer.transform(flat)
-                        del flat # Explicitly delete flat array
-                        out_cpu = torch.from_numpy(proj).to(out_cpu.dtype) # Overwrite out_cpu
-                        del proj # Explicitly delete proj array
-                    except Exception:
-                        print("Failed to project, falling back to raw activations")
-                        del flat
-                        pass
-                activations[name].append(out_cpu)
+                proj_matrix = srp.get(name)
+                if apply_srp and proj_matrix is not None:
+                    flat = out.view(out.size(0), -1).float()  # (batch, D) on GPU
+                    out = torch.sparse.mm(proj_matrix, flat.t()).t()  # (batch, k)
+                activations[name].append(out.cpu().half())  # move to CPU only for storage
 
     return {n: torch.cat(b, 0) for n, b in activations.items()}, ids
 
