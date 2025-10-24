@@ -397,14 +397,8 @@ class ConfigVerifier:
     VALID_DATASETS = {"imagenet", "tiny-imagenet", "imagenet-mini-10", "imagenet-mini-50", "imagenet-mini-200"}
     VALID_MODEL_CLASSES = {"custom_cnn", "standard_cnn"}
     VALID_MODEL_SOURCES = {"checkpoint", "torchvision"}
-    VALID_REGIONS = {
-        "early visual stream",
-        "midventral visual stream",
-        "ventral visual stream",
-    }
-    VALID_ANALYSES = {"rsa"}
-    VALID_NEURAL_DATASETS = {"nsd", "things"}
-    VALID_LAYERS = {"conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2", "fc3"}
+    VALID_ANALYSES = {"rsa", "encoding_score"}
+    VALID_NEURAL_DATASETS = {"nsd", "things", "nsd_synthetic", "cusack"}
 
     def __init__(self, cfg: OmegaConf):
         """Initialize verifier with configuration."""
@@ -495,13 +489,6 @@ class ConfigVerifier:
                 self.cfg.subject_idx = "N/A"
 
         elif self.cfg.neural_dataset.lower() == "nsd":
-            # Existing checks specific to 'nsd'
-            if self.cfg.region.lower() not in self.VALID_REGIONS:
-                self.rprint(
-                    f"[red]Invalid region for NSD: {self.cfg.region}. Must be in {self.VALID_REGIONS}[/red]",
-                    style="error",
-                )
-                raise AssertionError(f"Invalid region for NSD: {self.cfg.region}")
 
             # Ensure subject_idx is an integer for NSD
             if not isinstance(self.cfg.subject_idx, int) or not 0 <= self.cfg.subject_idx < 8:
@@ -510,22 +497,6 @@ class ConfigVerifier:
                     style="error",
                 )
                 raise AssertionError(f"Invalid subject index for NSD: {self.cfg.subject_idx}")
-        else:
-             # Handle other potential future neural datasets if necessary
-             # For now, assume they might need region/subject similar to NSD
-             if self.cfg.region.lower() not in self.VALID_REGIONS:
-                 self.rprint(
-                     f"[red]Invalid region: {self.cfg.region}. Must be in {self.VALID_REGIONS}[/red]",
-                     style="error",
-                 )
-                 raise AssertionError(f"Invalid region: {self.cfg.region}")
-
-             if not isinstance(self.cfg.subject_idx, int) or not 0 <= self.cfg.subject_idx < 8:
-                 self.rprint(
-                     f"[red]Invalid subject index: {self.cfg.subject_idx}. Must be an integer in range [0, 7][/red]",
-                     style="error",
-                 )
-                 raise AssertionError(f"Invalid subject index: {self.cfg.subject_idx}")
 
         if self.cfg.analysis.lower() not in self.VALID_ANALYSES:
             self.rprint(
@@ -544,14 +515,6 @@ class ConfigVerifier:
         if not self.cfg.return_nodes:
             self.rprint("[red]return_nodes list cannot be empty[/red]", style="error")
             raise AssertionError("return_nodes list cannot be empty")
-
-        # Removed hardcoded layer validation - will be done after model loading in evals.py
-        # if not all(node in self.VALID_LAYERS for node in self.cfg.return_nodes):
-        #     self.rprint(
-        #         f"[red]Invalid return nodes: {self.cfg.return_nodes}. Must be in {self.VALID_LAYERS}[/red]",
-        #         style="error",
-        #     )
-        #     raise AssertionError(f"Invalid return nodes: {self.cfg.return_nodes}")
 
         # Model loading validation
         if self.cfg.load_model_from not in self.VALID_MODEL_SOURCES:

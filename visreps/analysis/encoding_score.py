@@ -38,9 +38,9 @@ def ridge_regression_gpu(X_train, y_train, X_test, y_test, alphas=None, device="
     if X_train.shape[0] < 3:
         raise ValueError(f"Need at least 3 training samples for LOO-CV, got {X_train.shape[0]}")
     
-    # Move to device and center data
-    X_train, y_train = X_train.to(device), y_train.to(device)
-    X_test, y_test = X_test.to(device), y_test.to(device)
+    # Move to device and convert to float32 for numerical stability
+    X_train, y_train = X_train.to(device).to(torch.float32), y_train.to(device).to(torch.float32)
+    X_test, y_test = X_test.to(device).to(torch.float32), y_test.to(device).to(torch.float32)
     X_mean, y_mean = X_train.mean(0, keepdim=True), y_train.mean(0, keepdim=True)
     X_train_c, y_train_c = X_train - X_mean, y_train - y_mean
     
@@ -142,9 +142,6 @@ def compute_encoding_alignment(
         List of dictionaries, each containing results for a layer with keys:
             - layer: layer name
             - score: mean R² value
-            - analysis: "encoding_score"
-            - n_train: number of training samples
-            - n_test: number of test samples
     """
     rprint("Computing encoding scores with ridge regression", style="info")
     rprint("Using 80/20 train-test split with LOO-CV for alpha selection", style="info")
