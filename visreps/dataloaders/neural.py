@@ -86,6 +86,42 @@ def load_nsd_synthetic_data(
     )
 
 
+# ────────────────────── CUSACK 2025 ─────────────────────
+def load_cusack_data(cfg: Dict) -> Tuple[Dict[str, np.ndarray], Dict[str, str]]:
+    """
+    Load Cusack 2025 fMRI responses and stimulus images.
+
+    Args:
+        cfg (Dict): Contains "region" and optionally "age_group" ('2month' or '9month')
+
+    Returns:
+        (targets, stimuli):
+            - targets: {stim_id: np.ndarray} - fMRI responses
+            - stimuli: {stim_id: str} - paths to stimulus images
+    """
+    region = cfg["region"]
+    age_group = cfg.get("age_group", "2month")  # Default to 2-month data
+
+    # Load processed fMRI data
+    fmri_path = os.path.join("datasets", "neural", "cusack2025", "fmri_responses.pkl")
+    fmri_data = utils.load_pickle(fmri_path)
+
+    targets = fmri_data[region][age_group]
+
+    # Load stimulus images
+    stimuli_dir = os.path.join("datasets", "neural", "cusack2025", "display_images")
+    stimuli = {}
+
+    for stim_id in targets.keys():
+        img_path = os.path.join(stimuli_dir, f"{stim_id}.png")
+        if os.path.exists(img_path):
+            stimuli[stim_id] = img_path  # Store path for _StimuliDataset to handle
+        else:
+            raise FileNotFoundError(f"Stimulus image not found: {img_path}")
+
+    return targets, stimuli
+
+
 # ──────────────────────── THINGS ────────────────────────
 def load_things_data() -> tuple[dict[str, np.ndarray], dict[str, str]]:
     """
@@ -184,13 +220,15 @@ def _make_loader(stimuli, transform, batch, workers):
         num_workers=workers,
         collate_fn=custom_collate_fn,
         pin_memory=torch.cuda.is_available(),
+        persistent_workers=True,
+        prefetch_factor=2,
     )
 
 
 def get_neural_loader(cfg: Dict) -> Tuple[Dict[str, Any], DataLoader]:
     """
     Returns (targets, dataloader) for the specified neural dataset.
-    Supported datasets: 'nsd', 'things', 'nsd_synthetic'.
+    Supported datasets: 'nsd', 'things', 'nsd_synthetic', 'cusack'.
     """
     dataset_type = cfg.get("neural_dataset")
     if dataset_type == "nsd":
@@ -199,8 +237,10 @@ def get_neural_loader(cfg: Dict) -> Tuple[Dict[str, Any], DataLoader]:
         targets, stimuli = load_things_data()
     elif dataset_type == "nsd_synthetic":
         targets, stimuli = load_nsd_synthetic_data(cfg)
+    elif dataset_type == "cusack":
+        targets, stimuli = load_cusack_data(cfg)
     else:
-        raise ValueError("neural_dataset must be 'nsd', 'things', or 'nsd_synthetic'")
+        raise ValueError("neural_dataset must be 'nsd', 'things', 'nsd_synthetic', or 'cusack'")
 
     transform = get_transform(ds_stats="imgnet")
     dataloader = _make_loader(

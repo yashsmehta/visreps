@@ -7,6 +7,7 @@ from omegaconf import DictConfig
 import pandas as pd
 
 from visreps.analysis.rsa import compute_rsa_alignment
+# from visreps.analysis.encoding_score_ray import compute_encoding_alignment
 from visreps.analysis.encoding_score import compute_encoding_alignment
 
 logger = logging.getLogger(__name__)
@@ -103,13 +104,20 @@ def prepare_data_for_alignment(
         }
         neural = torch.as_tensor(np.stack([neural_data_raw[c] for c in concepts], dtype=np.float32))
 
+    # ---- CUSACK (stimulus-level alignment) ----
+    elif dataset == "cusack":
+        idx = [i for i, k in enumerate(keys) if k in neural_data_raw]
+        neural = np.stack([neural_data_raw[keys[i]] for i in idx])
+        neural = torch.as_tensor(neural, dtype=torch.float32)
+        acts   = {l: a[idx] for l, a in acts_raw.items()}
+
     else:
         raise ValueError(f"Unsupported neural_dataset '{dataset}'")
 
-    # For nsd_synthetic, we use the CSV order, so PCA reorder is skipped.
-    if dataset != "nsd_synthetic":
+    # Reorder samples by first PC for larger datasets
+    if dataset in ("nsd", "things"):
         neural, order = _pca_reorder(neural)
-        acts   = {l: a[order] for l, a in acts.items()}
+        acts = {l: a[order] for l, a in acts.items()}
     
     logger.info(f"Prepared {dataset.upper()} data with {neural.size(0)} samples.")
     return acts, neural
