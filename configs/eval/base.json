@@ -12,8 +12,8 @@
   "load_model_from": "checkpoint",
   "checkpoint":
   {
-    "checkpoint_dir": "model_checkpoints/imagenet_mini_50_1k",
-    "checkpoint_model": "checkpoint_epoch_15.pth"
+    "checkpoint_dir": "/data/rgautha1/for_yash/imagenet1k",
+    "checkpoint_model": "checkpoint_epoch_20.pth"
   },
   "torchvision":
   {
@@ -22,11 +22,11 @@
   },
   "apply_srp": true,
   "mode": "eval",
-  "region": "ventral visual stream",
+  "region": "PIT",
   "subject_idx": 0,
-  "analysis": "rsa",
+  "analysis": "encoding_score",
   "batchsize": 256,
-  "num_workers": 8,
+  "num_workers": 32,
   "log_expdata": false,
   "notes": ""
 }

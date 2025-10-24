@@ -1,8 +1,8 @@
 {
-  "checkpoint_dir": ["/data/rgautha1/for_yash/imagenet1k"],
-  "cfg_id": [1],
-  "seed": [1, 2, 3],
-  "results_csv": ["nsd_full_1k.csv"],
+  "checkpoint_dir": ["/data/rgautha1/for_yash/imagenet1k_pca"],
+  "cfg_id": [3, 4, 5, 6],
+  "seed": [1],
+  "results_csv": ["nsd_full.csv"],
   "notes": [""],
   "compare_rsm_correlation": ["Spearman"],
   "reconstruct_from_pcs": [false],
