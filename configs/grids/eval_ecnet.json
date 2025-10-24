@@ -1,0 +1,14 @@
+{
+  "checkpoint_dir": ["model_checkpoints/imagenet_1k_legacy"],
+  "cfg_id": [1000],
+  "seed": [1],
+  "results_csv": ["trial.csv"],
+  "batchsize": 64,
+  "notes": [""],
+  "compare_rsm_correlation": ["Spearman"],
+  "reconstruct_from_pcs": [false],
+  "neural_dataset": ["nsd"],
+  "subject_idx": [0],
+  "region": ["ventral visual stream"],
+  "eval_checkpoint_at_epoch": [4]
+}
