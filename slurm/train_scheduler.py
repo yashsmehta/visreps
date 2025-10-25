@@ -5,16 +5,18 @@ import os
 from pathlib import Path
 
 # Configuration file paths
-BASE_CONFIG = "configs/train/base.json"
+BASE_CONFIG = "configs/train/cluster_base.json"
 
 # Define the parameter grid for training
 PARAM_GRID = {
-    "exp_name": ["imagenet1k"],
-    "seed": [1, 2, 3],
+    "checkpoint_dir": ["alexnet_pca"],
+    "seed": [1],
     "model_name": ["CustomCNN"],
-    "pca_labels": [False],
-    # "pca_n_classes": [2],
-    # "pca_labels_folder": ["pca_labels/untrained"],
+    "pca_labels": [True],
+    "pca_n_classes": [128],
+    "pca_labels_folder": ["pca_labels_alexnet"],
+    "checkpoint_dir": ["alexnet_pca"],
+    "log_checkpoints": ["True"]
 }
 
 # Slurm configuration
