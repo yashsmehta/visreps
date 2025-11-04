@@ -24,8 +24,11 @@ DS_STD = {
     "imgnet": [0.229, 0.224, 0.225],
 }
 
-def get_transform(ds_stats="imgnet", data_augment=False, image_size=224):
+def get_transform(ds_stats="imgnet", data_augment=False, image_size=224, preprocess=True):
     """Return a composed transform based on dataset stats and augmentation flag."""
+    if not preprocess:
+        return transforms.Compose([transforms.ToTensor()])
+    
     if ds_stats == "tiny-imagenet":
         resize_size, crop_size = 64, 64
     else:
@@ -247,85 +250,89 @@ def wrap_with_pca(dataset, base_path, cfg, split):
 # -----------------------------------------------------------------------------
 # Dataset preparation functions
 # -----------------------------------------------------------------------------
-def prepare_tinyimgnet_data(cfg, pca_labels, shuffle):
+def prepare_tinyimgnet_data(cfg, pca_labels, shuffle, preprocess, train_test_split):
     base_path = cfg.get("dataset_path", utils.get_env_var("TINY_IMAGENET_DATA_DIR"))
 
     # Fetch the local dir path first to trigger potential error from get_env_var
     local_dir_path = utils.get_env_var("TINY_IMAGENET_LOCAL_DIR")
 
-    # PCA labels are stored in project root's pca_labels directory
-    pca_base_path = os.path.join("pca_labels", cfg.get("pca_labels_folder"))
-
     datasets, loaders = {}, {}
 
-    # Determine splits: Use 'val' as 'all' for extraction (shuffle=False), otherwise use ['train', 'test']
-    # Tiny ImageNet conventionally uses 'val' for testing/evaluation.
-    splits_to_load = ["val"] if not shuffle else ["train", "val"]
+    # Determine splits based on train_test_split flag
+    splits_to_load = ["train", "val"] if train_test_split else ["val"]
     split_info = []
 
     for split in splits_to_load:
         # Determine actual folder name ('train' or 'val')
         folder_split = "train" if split == "train" else "val"
         
-        # Augmentation only for train split when shuffle=True
-        augment = cfg.get("data_augment", True) and split == "train" and shuffle
-        tfms = (
-            [transforms.Resize(64), transforms.CenterCrop(64)]
-            + ([
-                transforms.RandomHorizontalFlip(0.5),
-                transforms.RandomRotation(10),
-                transforms.ColorJitter(0.2, 0.2, 0.2)
-              ] if augment else [])
-            + [transforms.ToTensor(), transforms.Normalize(DS_MEAN["tiny-imagenet"], DS_STD["tiny-imagenet"])]
-        )
-        transform = transforms.Compose(tfms)
+        # Augmentation only for train split when shuffle=True and preprocessing enabled
+        augment = cfg.get("data_augment", True) and split == "train" and shuffle and preprocess
+        
+        if not preprocess:
+            transform = transforms.Compose([transforms.ToTensor()])
+        else:
+            tfms = (
+                [transforms.Resize(64), transforms.CenterCrop(64)]
+                + ([
+                    transforms.RandomHorizontalFlip(0.5),
+                    transforms.RandomRotation(10),
+                    transforms.ColorJitter(0.2, 0.2, 0.2)
+                  ] if augment else [])
+                + [transforms.ToTensor(), transforms.Normalize(DS_MEAN["tiny-imagenet"], DS_STD["tiny-imagenet"])]
+            )
+            transform = transforms.Compose(tfms)
+        
         # Use the folder_split to point to the correct directory
         dataset = TinyImageNetDataset(base_path, folder_split, transform)
 
-        # Use the main split name ('train', 'val', or potentially 'all' if we rename 'val') for PCA wrapping
-        dataset = wrap_with_pca(dataset, pca_base_path, cfg, split) if pca_labels else dataset
+        # Wrap with PCA labels if specified
+        if pca_labels:
+            pca_base_path = os.path.join("pca_labels", cfg.get("pca_labels_folder"))
+            dataset = wrap_with_pca(dataset, pca_base_path, cfg, split)
         
         # Use the main split name ('train' or 'val') as the key in the returned dict
-        # If shuffle is False, we want the key to be 'all', so we rename 'val' to 'all'
-        dict_key = "all" if not shuffle and split == "val" else split
+        # If not doing train/test split, rename 'val' to 'all'
+        dict_key = "all" if not train_test_split and split == "val" else split
         datasets[dict_key] = dataset
         loaders[dict_key] = create_dataloader(
             dataset,
             batch_size=cfg.get("batchsize", 32),
             num_workers=cfg.get("num_workers", 4),
-            shuffle=shuffle # Pass the original shuffle flag
+            shuffle=shuffle
         )
         split_info.append(f"{dict_key}={len(dataset)}")
 
     print(f"📊 Tiny ImageNet: {', '.join(split_info)}")
     return datasets, loaders
 
-def prepare_imgnet_data(cfg, pca_labels, shuffle, base_path=None):
+def prepare_imgnet_data(cfg, pca_labels, shuffle, preprocess, train_test_split, base_path=None):
     """Prepares ImageNet or related datasets (like mini variants).
 
     Args:
         cfg: Configuration object.
         pca_labels: Boolean indicating if PCA labels should be used.
         shuffle: Boolean indicating if data should be shuffled.
+        preprocess: Boolean indicating if images should be preprocessed.
+        train_test_split: Boolean indicating whether to load train/test splits or all data.
         base_path: Direct path to dataset. If None, uses IMAGENET_DATA_DIR env var.
     """
     if base_path is None:
         base_path = cfg.get("dataset_path", utils.get_env_var("IMAGENET_DATA_DIR"))
     datasets, loaders = {}, {}
 
-    # Determine splits: For feature extraction (shuffle=False), use 'all'. Otherwise, use ['train', 'test']
-    splits_to_load = ["all"] if not shuffle else ["train", "test"]
+    # Determine splits based on train_test_split flag
+    splits_to_load = ["train", "test"] if train_test_split else ["all"]
     split_info = []
 
     for split in splits_to_load:
-        # Augmentation is usually False during feature extraction (controlled by shuffle flag proxy)
-        augment = cfg.get("data_augment", False) and split == "train" and shuffle
-        tfms = get_transform(ds_stats="imgnet", data_augment=augment, image_size=224)
+        augment = cfg.get("data_augment", False) and split == "train" and shuffle and preprocess
+        tfms = get_transform(ds_stats="imgnet", data_augment=augment, image_size=224, preprocess=preprocess)
         
         # Instantiate the dataset for the current split ('train', 'test', or 'all')
         dataset = ImageNetDataset(base_path, split=split, transform=tfms)
 
-        # Wrap with PCA labels if specified (usually only during training/evaluation, not extraction)
+        # Wrap with PCA labels if specified
         if pca_labels:
             pca_base_path = os.path.join("pca_labels", cfg.get("pca_labels_folder"))
             dataset = wrap_with_pca(dataset, pca_base_path, cfg, split)
@@ -335,22 +342,22 @@ def prepare_imgnet_data(cfg, pca_labels, shuffle, base_path=None):
             dataset,
             batch_size=cfg.get("batchsize", 512),
             num_workers=cfg.get("num_workers", 8),
-            shuffle=shuffle, # Shuffle should be False for extraction split='all'
+            shuffle=shuffle,
         )
         split_info.append(f"{split}={len(dataset)}")
 
     print(f"📊 ImageNet: {', '.join(split_info)}")
     return datasets, loaders
 
-def get_obj_cls_loader(cfg, shuffle=True):
+def get_obj_cls_loader(cfg, shuffle=True, preprocess=True, train_test_split=True):
     """Return datasets and dataloaders for object classification."""
     dataset_name = cfg.get("dataset", "tiny-imagenet")
     pca_labels = cfg.get("pca_labels", False)
 
     if dataset_name == "tiny-imagenet":
-        datasets, loaders = prepare_tinyimgnet_data(cfg, pca_labels, shuffle)
+        datasets, loaders = prepare_tinyimgnet_data(cfg, pca_labels, shuffle, preprocess, train_test_split)
     elif dataset_name == "imagenet":
-        datasets, loaders = prepare_imgnet_data(cfg, pca_labels, shuffle)
+        datasets, loaders = prepare_imgnet_data(cfg, pca_labels, shuffle, preprocess, train_test_split)
     elif dataset_name.startswith("imagenet-mini-"):
         # Extract number of images per class from dataset name
         try:
@@ -365,8 +372,7 @@ def get_obj_cls_loader(cfg, shuffle=True):
         if not mini_path.exists():
             raise ValueError(f"ImageNet mini dataset not found at {mini_path}")
         
-        datasets, loaders = prepare_imgnet_data(cfg, pca_labels, shuffle, base_path=str(mini_path))
+        datasets, loaders = prepare_imgnet_data(cfg, pca_labels, shuffle, preprocess, train_test_split, base_path=str(mini_path))
     else:
         raise ValueError(f"Unsupported dataset: {dataset_name}")
-
     return datasets, loaders
