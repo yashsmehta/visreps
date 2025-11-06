@@ -12,7 +12,7 @@ import numpy as np
 CSV_1K = "logs/cusack_1k.csv"
 CSV_PCA = "logs/cusack_pca.csv"
 REGION = "vvc"  # Change this to plot different regions: "evc", "vvc", "V1", etc.
-PCA_N_CLASSES = 64  # PCA model to compare
+PCA_N_CLASSES = 4  # PCA model to compare
 LAYERS = ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2"]
 AGE_GROUPS = ["2month", "9month"]
 
@@ -72,10 +72,10 @@ for idx, age_group in enumerate(AGE_GROUPS):
     x_pos = np.arange(len(LAYERS))
     ax.plot(x_pos, layer_scores_pca, color=blue, linewidth=2.5, 
             marker='o', markersize=8, markeredgecolor='black', 
-            markeredgewidth=1.0, label=f'{PCA_N_CLASSES}-class PCA')
+            markeredgewidth=1.0, label='Principal axis consolidation')
     ax.plot(x_pos, layer_scores_1k, color=orange, linewidth=2.5, 
             marker='o', markersize=8, markeredgecolor='black', 
-            markeredgewidth=1.0, label='1000-way')
+            markeredgewidth=1.0, label='Conventional ImageNet training')
     
     # Add legend
     ax.legend(loc='best', fontsize=9, frameon=False)
@@ -86,7 +86,7 @@ for idx, age_group in enumerate(AGE_GROUPS):
     ax.set_xlabel("Network layer", fontsize=11, fontweight='bold')
     
     if idx == 0:
-        ax.set_ylabel("RSA", fontsize=11, fontweight='bold')
+        ax.set_ylabel("RSA correlation", fontsize=11, fontweight='bold')
     
     # Title formatting
     age_label = age_group.replace('month', ' months')
