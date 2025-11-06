@@ -9,13 +9,12 @@ BASE_CONFIG = "configs/train/cluster_base.json"
 
 # Define the parameter grid for training
 PARAM_GRID = {
-    "checkpoint_dir": ["alexnet_pca"],
     "seed": [1],
     "model_name": ["CustomCNN"],
     "pca_labels": [True],
-    "pca_n_classes": [128],
-    "pca_labels_folder": ["pca_labels_alexnet"],
-    "checkpoint_dir": ["alexnet_pca"],
+    "pca_n_classes": [8, 16, 32, 64],
+    "pca_labels_folder": ["pca_labels_dreamsim"],
+    "checkpoint_dir": ["dreamsim_pca"],
     "log_checkpoints": ["True"]
 }
 
