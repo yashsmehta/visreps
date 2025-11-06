@@ -4,9 +4,9 @@ import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
-FEATURES_PATH = "/data/apassi1/layer_activations/ImageNet/layer11.npz"
-LABELS_FOLDER = "pca_labels_scattering11"  # Directory name for saving labels
-N_BITS = 6  # Number of PCA components
+FEATURES_PATH = "datasets/obj_cls/imagenet/features_dreamsim.npz"
+LABELS_FOLDER = "pca_labels_dreamsim"  # Directory name for saving labels
+N_BITS = 8  # Number of PCA components
 
 def main():
     # Load data
@@ -20,7 +20,7 @@ def main():
     image_names = [os.path.basename(str(name)) for name in image_names]
 
     # Detect feature type
-    feature_keys = {'fc2': True, 'clip_features': True, 'features': True}
+    feature_keys = {'fc2': True, 'clip_features': True, 'features': True, 'dreamsim_features': True}
     for key in feature_keys:
         if key in data_dict:
             feature_array = data_dict[key]
