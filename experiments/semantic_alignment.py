@@ -1,39 +1,11 @@
-from bonner.datasets.allen2021_natural_scenes._stimuli import load_captions
-# captions = load_captions()
-# print(captions[123])  # list[str] for NSD stimulus 123
+import numpy as np
 
-from google import genai
-from google.genai import types
+features_path = "datasets/neural/nsd/gemini_representations.npz"
+data = np.load(features_path, allow_pickle=True)
+gemini_representations = data['gemini_representations']
+stimulus_ids = data['stimulus_ids']
 
-import os
-from dotenv import load_dotenv
+print(gemini_representations.shape)
+print(stimulus_ids.shape)
 
-from visreps.dataloaders.neural import load_nsd_data
-# load_dotenv()
-# client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
-
-# result = client.models.embed_content(
-#     model="gemini-embedding-001",
-#     contents="What is the meaning of life?",
-#     config=types.EmbedContentConfig(output_dimensionality=768)
-# )
-
-# [embedding_obj] = result.embeddings
-# embedding_length = len(embedding_obj.values)
-
-# print(f"Length of embedding: {embedding_length}")
-nsd_stimuli_cfg = {"neural_dataset": "nsd", "region": "ventral visual stream", "subject_idx": 0}
-
-_, stimuli_dict = load_nsd_data(nsd_stimuli_cfg)
-ids = []
-captions = load_captions()
-print("Length of captions: ", len(captions))
-
-print("Length of stimuli_dict: ", len(stimuli_dict))
-
-for stim_id in stimuli_dict.keys():
-    print(stim_id)
-    print(captions[int(stim_id)])
-    print(stimuli_dict[stim_id].shape)
-    print("--------------------------------")
-    break
+exit()
