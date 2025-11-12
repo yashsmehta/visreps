@@ -22,3 +22,5 @@ settings.json
 tests/outputs/
 plots/
 slurm_logs/
+.CLAUDE.md
+.cursor/
