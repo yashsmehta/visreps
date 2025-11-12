@@ -37,8 +37,15 @@ def random_orthonormal(d, k=2, rng=None):
     return Q[:, :k]
 
 def palette(n):
-    base = [CBLUE, CVERMIL, CGREEN, CMAG, "#56B4E9", "#E69F00"]
-    return [base[i % len(base)] for i in range(n)]
+    # Generate distinct colors using tab20, tab20b, tab20c colormaps
+    # This gives us 60 distinct colors (20+20+20)
+    tab20 = plt.cm.tab20(np.linspace(0, 1, 20))
+    tab20b = plt.cm.tab20b(np.linspace(0, 1, 20))
+    tab20c = plt.cm.tab20c(np.linspace(0, 1, 20))
+    all_colors = np.vstack([tab20, tab20b, tab20c])
+    # Convert to hex
+    colors = [mpl.colors.rgb2hex(c[:3]) for c in all_colors]
+    return [colors[i % len(colors)] for i in range(n)]
 
 def strip_axes(ax):
     ax.set_xticks([]); ax.set_yticks([])
@@ -83,7 +90,8 @@ for k in range(N_CLASSES):
     ax.scatter(X2[m,0], X2[m,1], s=MARKER_SIZE, alpha=ALPHA, c=[cols[k]],
                edgecolors='none', rasterized=True)
 strip_axes(ax)
-ax.set_title("ImageNet 1K Classes", pad=2.5)
+t1 = ax.text(0.5, 1.03, "ImageNet ", transform=ax.transAxes, ha="right", va="bottom", fontsize=9.5)
+ax.text(0.5, 1.03, "1K Classes", transform=ax.transAxes, ha="left", va="bottom", fontsize=9.5, weight="bold")
 
 # (b) 2-class PC1 median split; PC1 arrow through (x, y = med2)
 ax = axes[1]
@@ -100,7 +108,8 @@ cx = (xmin + xmax) / 2.0
 ax.annotate("", xy=(cx+Lx, med2), xytext=(cx-Lx, med2),
             arrowprops=dict(arrowstyle="<->", lw=1.8, color="black"))
 ax.text(cx+Lx*1.05, med2, "PC1", fontsize=9, weight="bold", va="center", ha="left")
-ax.set_title("ImageNet 2 Classes", pad=2.5)
+ax.text(0.5, 1.03, "ImageNet ", transform=ax.transAxes, ha="right", va="bottom", fontsize=9.5)
+ax.text(0.5, 1.03, "2 Classes", transform=ax.transAxes, ha="left", va="bottom", fontsize=9.5, weight="bold")
 
 # (c) 4-class quadrant split; PC1/PC2 arrows cross at (med1, med2)
 ax = axes[2]
@@ -122,7 +131,8 @@ ax.annotate("", xy=(med1, med2+Ly), xytext=(med1, med2-Ly),
             arrowprops=dict(arrowstyle="<->", lw=1.6, color="black"))
 ax.text(med1+Lx*1.05, med2, "PC1", fontsize=8.5, weight="bold", va="center", ha="left")
 ax.text(med1, med2+Ly*1.05, "PC2", fontsize=8.5, weight="bold", va="bottom", ha="center")
-ax.set_title("ImageNet 4 Classes", pad=2.5)
+ax.text(0.5, 1.03, "ImageNet ", transform=ax.transAxes, ha="right", va="bottom", fontsize=9.5)
+ax.text(0.5, 1.03, "4 Classes", transform=ax.transAxes, ha="left", va="bottom", fontsize=9.5, weight="bold")
 
 # Panel letters
 for i, ax in enumerate(axes):
