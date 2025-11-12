@@ -321,8 +321,8 @@ def save_checkpoint(checkpoint_dir, epoch, model, optimizer, metrics, cfg_dict):
     torch.save(
         {
             "epoch": epoch,
-            "model": model,  # Save full model
-            "optimizer_state_dict": optimizer.state_dict(),
+            "model": model,
+            # "optimizer_state_dict": optimizer.state_dict(), don't save optimizer state dict
             "metrics": metrics,
             "config": cfg_dict,
         },
