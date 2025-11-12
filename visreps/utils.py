@@ -5,7 +5,6 @@ import os
 import pickle
 import warnings
 import torch
-import torch.optim as optim
 from torch.optim.lr_scheduler import StepLR, MultiStepLR, CosineAnnealingLR, LinearLR, SequentialLR
 from filelock import FileLock, Timeout
 from rich.console import Console
@@ -15,6 +14,7 @@ from dotenv import load_dotenv
 import sys
 import csv
 import wandb
+import pandas as pd
 
 # print("--- Importing visreps/utils.py ---")
 
@@ -321,7 +321,17 @@ def save_results(df, cfg, timeout=60):
 
     try:
         with lock:
-            write_header = not results_path.exists()
+            # Align columns to existing CSV if it exists
+            if results_path.exists():
+                existing_cols = pd.read_csv(results_path, nrows=0).columns.tolist()
+                for col in existing_cols:
+                    if col not in clean_df.columns:
+                        clean_df[col] = ""
+                clean_df = clean_df[existing_cols]
+                write_header = False
+            else:
+                write_header = True
+            
             clean_df.to_csv(results_path, mode="a", header=write_header, index=False)
             rprint(f"Successfully saved results to {results_path}", style="success")
         # Remove lock file after successful save
