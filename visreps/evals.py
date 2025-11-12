@@ -22,7 +22,7 @@ def _load_cfg(cfg):
     base = OmegaConf.load(path)
     epoch = int(cfg.checkpoint_model.split('_')[-1].split('.')[0])
     base.epoch = epoch
-    for k in ("mode", "exp_name", "lr_scheduler"):
+    for k in ("mode", "exp_name", "lr_scheduler", "n_classes"):
         base.pop(k, None)
     return OmegaConf.merge(base, cfg)
 
