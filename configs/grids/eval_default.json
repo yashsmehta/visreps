@@ -1,13 +1,13 @@
 {
-  "checkpoint_dir": ["/data/rgautha1/for_yash/imagenet1k"],
-  "cfg_id": [1],
-  "seed": [1, 2, 3],
-  "results_csv": ["nsd_full_1k.csv"],
+  "checkpoint_dir": ["/data/ymehta3/alexnet_pca"],
+  "cfg_id": [128],
+  "seed": [1],
+  "results_csv": ["base.csv"],
   "notes": [""],
   "compare_rsm_correlation": ["Spearman"],
   "reconstruct_from_pcs": [false],
   "neural_dataset": ["nsd"],
-  "subject_idx": [0, 1, 3],
-  "region": ["V1", "V2", "V3", "V4", "VO", "PIT", "OFA", "FFA", "FBA", "OPA", "PPA", "TE2p"],
+  "subject_idx": [0],
+  "region": ["early visual stream", "ventral visual stream"],
   "eval_checkpoint_at_epoch": [20]
 }
