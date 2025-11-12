@@ -19,8 +19,7 @@ def main():
         image_names = [name.decode('utf-8') for name in image_names]
     image_names = [os.path.basename(str(name)) for name in image_names]
 
-    # Detect feature type
-    feature_keys = {'fc2': True, 'clip_features': True, 'features': True, 'dreamsim_features': True}
+    feature_keys = ['fc2', 'clip_features', 'features', 'dreamsim_features']
     for key in feature_keys:
         if key in data_dict:
             feature_array = data_dict[key]
