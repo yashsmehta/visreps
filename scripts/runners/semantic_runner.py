@@ -4,7 +4,7 @@ from typing import Dict, Any
 from base_runner import ExperimentRunner, load_param_grid
 
 BASE_CONFIG = "configs/eval/base.json"
-DEFAULT_GRID = "configs/grids/semantic_align.json"
+DEFAULT_GRID = "configs/grids/eval_default.json"
 GEMINI_FEATURES_PATH = "datasets/neural/nsd/gemini_representations.npz"
 
 
