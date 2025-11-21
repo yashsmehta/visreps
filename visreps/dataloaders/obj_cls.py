@@ -174,6 +174,28 @@ class ImageNetDataset(Dataset):
             image = self.transform(image)
         return image, label
 
+    def get_wnid_from_label(self, label_idx: int) -> str:
+        """Convert a class index (0-999) to its WordNet ID."""
+        for wnid, idx in self.folder_labels.items():
+            if int(idx) == label_idx:
+                return wnid
+        raise ValueError(f"Label index {label_idx} not found.")
+
+    def get_wordnet_synset(self, label_idx: int):
+        """Returns the NLTK Synset object for the class index."""
+        import nltk
+        from nltk.corpus import wordnet as wn
+        
+        try: wn.ensure_loaded()
+        except LookupError: nltk.download('wordnet'); nltk.download('omw-1.4')
+
+        wnid = self.get_wnid_from_label(label_idx)
+        try:
+            return wn.synset_from_pos_and_offset('n', int(wnid[1:]))
+        except Exception as e:
+            print(f"Error retrieving synset for {wnid}: {e}")
+            return None
+
 class TinyImageNetDataset(Dataset):
     """
     Loader for Tiny ImageNet using torchvision's ImageFolder.
