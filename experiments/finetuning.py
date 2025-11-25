@@ -3,7 +3,9 @@ Linear probe evaluation via pre-extracted features.
 Extracts features once to disk, trains linear classifier on GPU, optionally cleans up.
 """
 import argparse
+import csv
 import os
+import re
 import shutil
 import torch
 import torch.nn as nn
@@ -28,35 +30,50 @@ def _load_cfg(cfg):
     return OmegaConf.merge(base, cfg)
 
 
-def extract_and_cache_features(model, loader, layer, device, cache_path):
-    """Extract features for entire dataset and save to disk."""
-    if os.path.exists(cache_path):
-        rprint(f"Loading cached features from {cache_path}", style="info")
-        data = torch.load(cache_path, weights_only=True)
-        return data['features'], data['labels']
+def extract_all_layers_features(model, loader, layers, device, cache_dir, split_name):
+    """Extract features from ALL layers in a single pass, save each to disk."""
+    # Check if all layers already cached
+    cache_paths = {layer: os.path.join(cache_dir, layer, f"{split_name}.pt") for layer in layers}
+    all_cached = all(os.path.exists(p) for p in cache_paths.values())
     
-    rprint(f"Extracting features to {cache_path}...", style="info")
-    all_features = []
+    layers_str = ", ".join(layers)
+    if all_cached:
+        rprint(f"Loading cached {split_name} features: [{layers_str}]", style="info")
+        return {
+            layer: torch.load(path, weights_only=True)
+            for layer, path in cache_paths.items()
+        }
+    
+    rprint(f"Extracting {split_name} features: [{layers_str}]", style="info")
+    
+    # Accumulators for each layer
+    all_features = {layer: [] for layer in layers}
     all_labels = []
     
     model.eval()
     with torch.no_grad():
-        for imgs, labels in tqdm(loader, desc="Extracting"):
+        for imgs, labels in tqdm(loader, desc=f"Extracting {split_name}"):
             imgs = imgs.to(device)
             feats = model(imgs)
-            out = feats[layer].view(imgs.size(0), -1)  # Flatten
-            all_features.append(out.cpu())
+            for layer in layers:
+                out = feats[layer].view(imgs.size(0), -1)  # Flatten
+                all_features[layer].append(out.cpu())
             all_labels.append(labels)
     
-    features = torch.cat(all_features, dim=0)
-    labels = torch.cat(all_labels, dim=0)
+    labels_tensor = torch.cat(all_labels, dim=0)
     
-    # Save to disk
-    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
-    torch.save({'features': features, 'labels': labels}, cache_path)
-    rprint(f"Saved {len(features)} samples to {cache_path}", style="success")
+    # Save each layer to its own file
+    results = {}
+    for layer in layers:
+        features_tensor = torch.cat(all_features[layer], dim=0)
+        cache_path = cache_paths[layer]
+        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+        data = {'features': features_tensor, 'labels': labels_tensor}
+        torch.save(data, cache_path)
+        results[layer] = data
+        rprint(f"  Saved {layer}: {features_tensor.shape}", style="success")
     
-    return features, labels
+    return results
 
 
 def create_feature_loader(features, labels, batch_size, shuffle=True):
@@ -111,21 +128,23 @@ def train_linear_probe(train_loader, val_loader, feature_dim, num_classes,
         val_acc = 100. * val_correct / val_total
         rprint(f"Epoch {epoch+1} | Train: {train_acc:.2f}% | Val: {val_acc:.2f}%", style="success")
     
-    return classifier, val_acc
+    return classifier, train_acc, val_acc
 
 
 def main():
     parser = argparse.ArgumentParser(description="Linear probe on pre-extracted features.")
     # Model loading
-    parser.add_argument("--checkpoint_dir", type=str, default="/data/ymehta3/alexnet_pca")
+    # parser.add_argument("--checkpoint_dir", type=str, default="/data/ymehta3/alexnet_pca")
+    parser.add_argument("--checkpoint_dir", type=str, default="/data/ymehta3/imagenet1k")
     parser.add_argument("--checkpoint_model", type=str, default="checkpoint_epoch_20.pth")
-    parser.add_argument("--cfg_id", type=int, default=32)
+    parser.add_argument("--cfg_id", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=1)
     
     # Probe settings
-    parser.add_argument("--layer", type=str, default="fc1")
+    parser.add_argument("--layers", type=str, nargs='+', default=["conv4", "fc1", "fc2"], 
+                        help="Layer(s) to extract features from")
     parser.add_argument("--batchsize", type=int, default=4096, help="Large batch OK since no CNN")
-    parser.add_argument("--epochs", type=int, default=5)
+    parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--num_workers", type=int, default=8)
     
@@ -133,66 +152,101 @@ def main():
     parser.add_argument("--cache_dir", type=str, default="feature_cache")
     parser.add_argument("--no_cleanup", action="store_true", help="Keep cached features after training")
     
+    # Output
+    parser.add_argument("--results_csv", type=str, default="linear_probe_results.csv")
+    
     args = parser.parse_args()
     
     # Setup
     cfg = OmegaConf.create(vars(args))
     cfg.load_model_from = "checkpoint"
-    cfg.return_nodes = [args.layer]
+    cfg.return_nodes = args.layers
     cfg = _load_cfg(cfg)
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     rprint(f"Using device: {device}")
     
+    # Extract epoch from checkpoint name (e.g., "checkpoint_epoch_20.pth" → 20)
+    epoch_match = re.search(r'epoch_(\d+)', args.checkpoint_model)
+    checkpoint_epoch = int(epoch_match.group(1)) if epoch_match else -1
+    
     # 1. Load model & configure feature extractor
-    rprint("\n[1/5] Loading model...", style="info")
+    rprint("\n[1/4] Loading model...", style="info")
     base_model = mutils.load_model(cfg, device)
     feature_extractor = mutils.configure_feature_extractor(cfg, base_model)
     
     # 2. Get data loaders (for extraction)
-    rprint("\n[2/5] Loading data...", style="info")
-    cfg.dataset = "imagenet"
-    cfg.pca_labels = False
-    # Use smaller batch for extraction (images go through CNN)
-    extraction_cfg = OmegaConf.create({**OmegaConf.to_container(cfg), "batchsize": 256})
+    rprint("\n[2/4] Loading data...", style="info")
+    extraction_cfg = OmegaConf.create({
+        **OmegaConf.to_container(cfg),
+        "dataset": "imagenet",
+        "pca_labels": False,
+        "data_augment": False,
+        "batchsize": 256,
+    })
     _, loaders = get_obj_cls_loader(extraction_cfg, shuffle=False, preprocess=True, train_test_split=True)
     
-    # 3. Extract features to disk
-    rprint("\n[3/5] Extracting features...", style="info")
+    # Prepare CSV output
+    csv_exists = os.path.exists(args.results_csv)
+    csv_file = open(args.results_csv, 'a', newline='')
+    csv_writer = csv.writer(csv_file)
+    if not csv_exists:
+        csv_writer.writerow(['checkpoint_dir', 'cfg_id', 'checkpoint_model', 'epoch', 
+                            'train_acc', 'test_acc', 'layer'])
+    
     seed_letter = get_seed_letter(cfg.seed)
-    cache_base = os.path.join(args.cache_dir, f"cfg{cfg.cfg_id}{seed_letter}", args.layer)
+    cache_base = os.path.join(args.cache_dir, f"cfg{cfg.cfg_id}{seed_letter}")
+    results = []
     
-    train_features, train_labels = extract_and_cache_features(
-        feature_extractor, loaders['train'], args.layer, device,
-        os.path.join(cache_base, "train.pt")
+    # 3. Extract features
+    train_data = extract_all_layers_features(
+        feature_extractor, loaders['train'], args.layers, device, cache_base, "train"
     )
-    val_features, val_labels = extract_and_cache_features(
-        feature_extractor, loaders['test'], args.layer, device,
-        os.path.join(cache_base, "val.pt")
-    )
-    
-    feature_dim = train_features.shape[1]
-    rprint(f"Feature dim: {feature_dim}, Train: {len(train_features)}, Val: {len(val_features)}")
-    
-    # 4. Create feature loaders (fast—no CNN, just tensors)
-    rprint("\n[4/5] Creating feature loaders...", style="info")
-    train_loader = create_feature_loader(train_features, train_labels, args.batchsize, shuffle=True)
-    val_loader = create_feature_loader(val_features, val_labels, args.batchsize, shuffle=False)
-    
-    # 5. Train linear probe
-    rprint("\n[5/5] Training linear probe...", style="info")
-    classifier, final_acc = train_linear_probe(
-        train_loader, val_loader, feature_dim, num_classes=1000,
-        device=device, epochs=args.epochs, lr=args.lr
+    val_data = extract_all_layers_features(
+        feature_extractor, loaders['test'], args.layers, device, cache_base, "val"
     )
     
-    rprint(f"\n✓ Final validation accuracy: {final_acc:.2f}%", style="success")
+    # 4. Train linear probes
+    for i, layer in enumerate(args.layers):
+        rprint(f"\nTraining probe {i+1}/{len(args.layers)}: {layer}", style="info")
+        
+        train_features = train_data[layer]['features']
+        train_labels = train_data[layer]['labels']
+        val_features = val_data[layer]['features']
+        val_labels = val_data[layer]['labels']
+        
+        feature_dim = train_features.shape[1]
+        rprint(f"Feature dim: {feature_dim}, Train: {len(train_features)}, Val: {len(val_features)}")
+        
+        # Create feature loaders
+        train_loader = create_feature_loader(train_features, train_labels, args.batchsize, shuffle=True)
+        val_loader = create_feature_loader(val_features, val_labels, args.batchsize, shuffle=False)
+        
+        # Train linear probe
+        classifier, train_acc, test_acc = train_linear_probe(
+            train_loader, val_loader, feature_dim, num_classes=1000,
+            device=device, epochs=args.epochs, lr=args.lr
+        )
+        
+        # Record result
+        row = [args.checkpoint_dir, cfg.cfg_id, args.checkpoint_model, 
+               checkpoint_epoch, f"{train_acc:.2f}", f"{test_acc:.2f}", layer]
+        csv_writer.writerow(row)
+        csv_file.flush()
+        results.append((layer, train_acc, test_acc))
+        
+        rprint(f"✓ {layer}: Train={train_acc:.2f}%, Test={test_acc:.2f}%", style="success")
     
-    # Cleanup by default (use --no_cleanup to keep)
+    # Cleanup all cached features
     if not args.no_cleanup:
-        rprint(f"Cleaning up cache at {cache_base}...", style="warning")
         shutil.rmtree(cache_base, ignore_errors=True)
-        rprint("Cache deleted.", style="success")
+    
+    csv_file.close()
+    
+    # Summary
+    rprint(f"\nResults saved to {args.results_csv}", style="success")
+    for layer, train_acc, test_acc in results:
+        rprint(f"  {layer}: Train={train_acc:.2f}%, Test={test_acc:.2f}%")
 
 
 if __name__ == "__main__":
