@@ -13,10 +13,32 @@ logger = logging.getLogger(__name__)
 # Internal helpers
 # -----------------------------------------------------------------------------
 
+
+def _kendall_tau_a(x: np.ndarray, y: np.ndarray) -> tuple:
+    """Kendall tau-a: (C - D) / n_pairs. No tie adjustment."""
+    n = len(x)
+    if n < 2:
+        return (float("nan"), float("nan"))
+
+    tau_b = scipy.stats.kendalltau(x, y).statistic
+    if np.isnan(tau_b):
+        return (float("nan"), float("nan"))
+
+    # Convert tau-b to tau-a: tau_a = (C-D)/n0, tau_b = (C-D)/sqrt((n0-t_x)*(n0-t_y))
+    n0 = n * (n - 1) // 2
+    t_x = sum(c * (c - 1) // 2 for c in np.unique(x, return_counts=True)[1])
+    t_y = sum(c * (c - 1) // 2 for c in np.unique(y, return_counts=True)[1])
+
+    # Cast to float64 to avoid integer overflow for large n
+    denom = np.sqrt(np.float64(n0 - t_x) * np.float64(n0 - t_y))
+    tau_a = float("nan") if denom == 0 else float(tau_b * denom / n0)
+    return (tau_a, float("nan"))
+
+
 _CORR_FUNCS = {
     "pearson": scipy.stats.pearsonr,
     "spearman": scipy.stats.spearmanr,
-    "kendall": scipy.stats.kendalltau,
+    "kendall": _kendall_tau_a,
 }
 
 
@@ -63,7 +85,7 @@ def compute_rsm(
 
 
 def compute_rsm_correlation(
-    rsm1: torch.Tensor, rsm2: torch.Tensor, *, correlation: str = "Spearman"
+    rsm1: torch.Tensor, rsm2: torch.Tensor, *, correlation: str = "Kendall"
 ) -> float:
     """Correlation between two RSMs using Pearson / Spearman / Kendall.
 
