@@ -1,11 +1,23 @@
+"""
+Compute eigenvectors (principal components) from extracted features.
+
+This script performs PCA on fc2 features and saves the top N eigenvectors
+for use in generating coarse-grained PCA labels.
+
+Note on Feature Source:
+    For AlexNet, the features file `features_alexnet.npz` was extracted using
+    PRETRAINED torchvision AlexNet (ImageNet1K weights), containing fc2
+    activations for 1.26M ImageNet training images.
+"""
 import os
 import numpy as np
 
 # Configuration
-model_name='alexnet'
+model_name='vit'
+# Note: For alexnet, features extracted from PRETRAINED torchvision AlexNet
 FEATURES_PATH = f"datasets/obj_cls/imagenet/features_{model_name}.npz"
 OUTPUT_PATH = f"datasets/obj_cls/imagenet/eigenvectors_{model_name}.npz"
-N_COMPONENTS = 13  # Good practice to save more than you need (e.g., 64)
+N_COMPONENTS = 20 # num of PCs to save (resulting num classes = 2^N_COMPONENTS)
 BATCH_SIZE = 10000
 
 def batched_pca(X, n_components, batch_size):
@@ -32,17 +44,13 @@ def batched_pca(X, n_components, batch_size):
     return vecs[:, idx], vals[idx], mean, total_var
 
 def main():
+    print(f"Loading features from {FEATURES_PATH}...")
     os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
     
     data = np.load(FEATURES_PATH, allow_pickle=True)
-    # Identify feature key
-    for key in ['fc2', 'clip_features', 'features', 'dreamsim_features']:
-        if key in data:
-            features = data[key]
-            break
-    else:
-        raise ValueError("No valid feature key found.")
+    features = data[f'{model_name}_features']
 
+    print(f"Features shape: {features.shape}")
     components, eigenvalues, mean, total_var = batched_pca(features, N_COMPONENTS, BATCH_SIZE)
     
     # Save the model
