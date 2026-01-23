@@ -21,8 +21,8 @@ PARAM_GRID = {
 # Slurm configuration
 SLURM_CONFIG = {
     "job-name": "visreps",
-    "output": "slurm/slurm_logs/%j.out",
-    "error": "slurm/slurm_logs/%j.err",
+    "output": "scripts/slurm/slurm_logs/%j.out",
+    "error": "scripts/slurm/slurm_logs/%j.err",
     "ntasks": "1",
     "cpus-per-task": "32",
     "gres": "gpu:1",
@@ -84,8 +84,8 @@ def generate_slurm_script(job_name, overrides):
 
 def main():
     # Create logs directory if it doesn't exist
-    Path("slurm/slurm_logs").mkdir(parents=True, exist_ok=True)
-    Path("slurm/tmp").mkdir(parents=True, exist_ok=True)
+    Path("scripts/slurm/slurm_logs").mkdir(parents=True, exist_ok=True)
+    Path("scripts/slurm/tmp").mkdir(parents=True, exist_ok=True)
     
     # Generate all combinations of grid parameters
     param_names = list(PARAM_GRID.keys())
@@ -103,7 +103,7 @@ def main():
         overrides.append("mode=train")
 
         # Create temporary script file
-        script_path = f"slurm/tmp/train_job_{i+1}.sh"
+        script_path = f"scripts/slurm/tmp/train_job_{i+1}.sh"
         script_content = generate_slurm_script(f"job_{i+1}", overrides)
         
         with open(script_path, "w") as f:
