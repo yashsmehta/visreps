@@ -4,7 +4,7 @@ import os
 import sys
 
 # Add project root to path so we can import from visreps
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # Mock config and utils if needed, or just use the dataset directly
 import visreps.utils as utils
