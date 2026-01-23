@@ -10,11 +10,22 @@ logger.add(lambda _: None, level="WARNING")
 
 from bonner.datasets.allen2021_natural_scenes import load_rois, load_betas
 
+# =============================================================================
 # Configuration
-subject_indices = [0, 1, 3]
-output_dir = "/home/ymehta3/research/VisionAI/visreps/datasets/neural/nsd_full"
+# =============================================================================
+roi_type = "streams"  # "streams" (early/ventral) or "finegrained" (V1-V4, FFA, etc.)
+subjects = [0, 1, 3]
+output_dir = f"/home/ymehta3/research/VisionAI/visreps/datasets/neural/nsd/{roi_type}"
 
-roi_regions = {
+# =============================================================================
+# ROI definitions
+# =============================================================================
+STREAMS_ROIS = {
+    "early": ["early visual stream"],
+    "ventral": ["ventral visual stream"],
+}
+
+FINEGRAINED_ROIS = {
     "V1": ["V1v", "V1d"],
     "V2": ["V2v", "V2d"],
     "V3": ["V3v", "V3d"],
@@ -29,8 +40,16 @@ roi_regions = {
     "TE2p": ["TE2p"],
 }
 
-def filter_betas_by_roi(betas, rois, roi_labels, preferred_source="Kastner2015"):
-    """Filter betas to only include voxels in specified ROI labels."""
+
+def filter_betas_by_roi(betas, rois, roi_labels, source=None):
+    """Filter betas to only include voxels in specified ROI labels.
+    
+    Args:
+        betas: Neural response data
+        rois: ROI masks
+        roi_labels: List of ROI label strings to include
+        source: If specified, only use ROIs from this source (e.g., "streams", "Kastner2015")
+    """
     # Index ROIs by label
     rois_by_label = {}
     for idx in rois.roi.values:
@@ -46,7 +65,11 @@ def filter_betas_by_roi(betas, rois, roi_labels, preferred_source="Kastner2015")
         if roi_label not in rois_by_label:
             continue
         entries = rois_by_label[roi_label]
-        use_entries = [idx for idx in entries if idx[0] == preferred_source] or entries
+        # Filter by source if specified, otherwise prefer Kastner2015 for fine-grained
+        if source:
+            use_entries = [idx for idx in entries if idx[0] == source] or entries
+        else:
+            use_entries = [idx for idx in entries if idx[0] == "Kastner2015"] or entries
 
         for idx in use_entries:
             roi_data = rois.sel(roi=idx).values > 0
@@ -64,43 +87,65 @@ def filter_betas_by_roi(betas, rois, roi_labels, preferred_source="Kastner2015")
 
     return betas.sel(neuroid=valid_neuroids)
 
-# Process subjects
-print("=" * 80)
-print("PROCESSING NSD DATA")
-print("=" * 80)
+def main():
+    # Select ROI config based on type
+    if roi_type == "streams":
+        roi_regions = STREAMS_ROIS
+        source = "streams"
+        output_subdir = "nsd_streams"
+    else:
+        roi_regions = FINEGRAINED_ROIS
+        source = None  # Will default to Kastner2015
+        output_subdir = "nsd_full"
 
-fmri_data = {region: {} for region in roi_regions}
+    output_path = os.path.join(output_dir, output_subdir)
 
-for subject_idx in subject_indices:
-    print(f"\nProcessing Subject {subject_idx}...")
-    betas = load_betas(subject=subject_idx, resolution="1pt8mm", preprocessing="fithrf_GLMdenoise_RR", z_score=True)
-    rois = load_rois(subject=subject_idx, resolution="1pt8mm")
+    print("=" * 80)
+    print(f"PROCESSING NSD DATA ({roi_type} ROIs)")
+    print("=" * 80)
+    print(f"Regions: {list(roi_regions.keys())}")
 
-    for region_name, roi_labels in roi_regions.items():
-        print(f"  {region_name}...", end=" ")
-        roi_betas = filter_betas_by_roi(betas, rois, roi_labels)
-        averaged_betas = roi_betas.groupby("stimulus").mean(dim="presentation")
-        fmri_data[region_name][subject_idx] = averaged_betas
-        print(f"{roi_betas.sizes['neuroid']} voxels, {averaged_betas.sizes['stimulus']} stimuli")
+    fmri_data = {region: {} for region in roi_regions}
 
-# Calculate file size
-print("\n" + "=" * 80)
-print("FILE SIZE ESTIMATE")
-print("=" * 80)
+    for subject_idx in subjects:
+        print(f"\nProcessing Subject {subject_idx}...")
+        betas = load_betas(subject=subject_idx, resolution="1pt8mm", 
+                          preprocessing="fithrf_GLMdenoise_RR", z_score=True)
+        rois = load_rois(subject=subject_idx, resolution="1pt8mm")
 
-fmri_size_gb = sum(xr_data.values.nbytes for subjects_data in fmri_data.values() for xr_data in subjects_data.values()) / (1024**3)
-print(f"\nfmri_responses.pkl: {fmri_size_gb:.2f} GB")
+        for region_name, roi_labels in roi_regions.items():
+            print(f"  {region_name}...", end=" ")
+            roi_betas = filter_betas_by_roi(betas, rois, roi_labels, source=source)
+            averaged_betas = roi_betas.groupby("stimulus").mean(dim="presentation")
+            fmri_data[region_name][subject_idx] = averaged_betas
+            print(f"{roi_betas.sizes['neuroid']} voxels, {averaged_betas.sizes['stimulus']} stimuli")
 
-# Save data
-print("\n" + "=" * 80)
-print("SAVING DATA")
-print("=" * 80)
+    # Calculate file size
+    print("\n" + "=" * 80)
+    print("FILE SIZE ESTIMATE")
+    print("=" * 80)
 
-os.makedirs(output_dir, exist_ok=True)
+    fmri_size_gb = sum(
+        xr_data.values.nbytes for subjects_data in fmri_data.values() 
+        for xr_data in subjects_data.values()
+    ) / (1024**3)
+    print(f"\nfmri_responses.pkl: {fmri_size_gb:.2f} GB")
 
-print(f"\nSaving to {output_dir}/fmri_responses.pkl")
-with open(os.path.join(output_dir, "fmri_responses.pkl"), "wb") as f:
-    pickle.dump(fmri_data, f)
+    # Save data
+    print("\n" + "=" * 80)
+    print("SAVING DATA")
+    print("=" * 80)
 
-print("Done!")
-print("=" * 80)
+    os.makedirs(output_path, exist_ok=True)
+
+    output_file = os.path.join(output_path, "fmri_responses.pkl")
+    print(f"\nSaving to {output_file}")
+    with open(output_file, "wb") as f:
+        pickle.dump(fmri_data, f)
+
+    print("Done!")
+    print("=" * 80)
+
+
+if __name__ == "__main__":
+    main()
