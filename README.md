@@ -19,27 +19,51 @@ Collectively, these findings indicate that broader categorical distinctions are 
 
 1. **Clone the Repository**
    ```bash
-   git clone git@github.com:[username]/[repository-name].git
-   cd [repository-name]
+   git clone git@github.com:yashsmehta/visreps.git
+   cd visreps
    ```
 
-2. **Configure Environment**
-   Edit `.env` file in the project root:
-   ```bash
-   PROJECT_HOME="/path/to/[repository-name]"
-   ```
-
-3. **Set Up Python Environment**
-   Install uv package manager and create a virtual environment:
+2. **Set Up Python Environment**
    ```bash
    curl -LsSf https://astral.sh/uv/install.sh | sh
    uv sync
    source .venv/bin/activate
    ```
 
+3. **Configure Environment**
+   Create a `.env` file in the project root with paths to your datasets:
+   ```bash
+   IMAGENET_DATA_DIR=/path/to/imagenet/train
+   IMAGENET_LOCAL_DIR=/path/to/imagenet
+   NSD_DATA_DIR=/path/to/nsd/processed
+   ```
+
 ## Usage
 
-The code is organized into two main components: training and evaluation. The common entry point is run.py, which uses configuration files located in the configs folder. Simply modify or specify the desired configuration file to run your experiments.
+### Training
+Train models with different label granularities:
+```bash
+# Train with 32 PCA-derived classes
+python -m visreps.run --mode train --config configs/train/cluster_base.json \
+    --override pca_labels=true pca_n_classes=32 seed=1
+
+# SLURM grid search
+python scripts/slurm/train_scheduler.py
+```
+
+### Evaluation
+Evaluate brain-model alignment:
+```bash
+# RSA on NSD fMRI data
+python -m visreps.run --mode eval --config configs/eval/cluster_base.json \
+    --override cfg_id=32 seed=1 analysis=rsa neural_dataset=nsd
+
+# Encoding score on THINGS behavioral data
+python -m visreps.run --mode eval --config configs/eval/cluster_base.json \
+    --override cfg_id=32 seed=1 analysis=encoding_score neural_dataset=things
+```
+
+Configuration files are in `configs/train/` and `configs/eval/`. Use `--override` to modify parameters from the command line.
 
 ## License
 
@@ -54,8 +78,7 @@ If you use this code in your research, please cite:
   author = {Author Names},
   title = {{Probing the Granularity of Human-Machine Alignment}},
   year = {2025},
-  url = {https://github.com/[username]/[repository-name]},
-  note = {Accessed: 2025-02-20}
+  url = {https://github.com/yashsmehta/visreps},
 }
 ```
 
