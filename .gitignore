@@ -24,3 +24,7 @@ plots/
 slurm_logs/
 .CLAUDE.md
 .cursor/
+
+# Ignore all CSV files except those in pca_labels
+*.csv
+!pca_labels/**/*.csv
