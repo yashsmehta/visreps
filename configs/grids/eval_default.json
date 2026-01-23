@@ -1,13 +1,13 @@
 {
-  "checkpoint_dir": ["/data/ymehta3/alexnet_pca"],
-  "cfg_id": [128],
+  "checkpoint_dir": ["model_checkpoints/alexnet_l2norm_imagenet", "model_checkpoints/alexnet_raw_imagenet"],
+  "cfg_id": [32],
   "seed": [1],
-  "results_csv": ["base.csv"],
+  "results_csv": ["raw_v_l2norm.csv"],
   "notes": [""],
-  "compare_rsm_correlation": ["Spearman"],
-  "reconstruct_from_pcs": [false],
+  "nsd_type": ["streams_shared"],
   "neural_dataset": ["nsd"],
-  "subject_idx": [0],
+  "analysis": ["rsa"],
+  "subject_idx": [0, 1, 2, 3, 4, 5, 6, 7],
   "region": ["early visual stream", "ventral visual stream"],
   "eval_checkpoint_at_epoch": [20]
 }
