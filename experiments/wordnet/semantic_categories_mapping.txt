@@ -1,0 +1,27 @@
+8 Super-Categories for ImageNet
+============================================================
+
+0: Animals (222 classes)
+   Level 6 synsets: animal.n.01
+
+1: Natural World (209 classes)
+   Level 6 synsets: plant.n.02, plant_organ.n.01, fungus.n.01, alp.n.01, cliff.n.01, reef.n.01, dune.n.01, geyser.n.01, lakeside.n.01, lunar_crater.n.01, promontory.n.01, bar.n.08, seashore.n.01, valley.n.01, volcano.n.02
+
+2: Food & Produce (65 classes)
+   Level 6 synsets: vegetable.n.01, edible_fruit.n.01, starches.n.01
+
+3: Structures & Architecture (82 classes)
+   Level 6 synsets: building.n.01, establishment.n.04, obstruction.n.01, protective_covering.n.01, top.n.09, memorial.n.03, tower.n.01, supporting_structure.n.01, housing.n.01, column.n.06, bridge.n.01, defensive_structure.n.01, coil.n.01, colonnade.n.01, landing.n.02, fountain.n.01, house_of_cards.n.02, building_complex.n.01, stadium.n.01, shelter.n.01, pool.n.01, workplace.n.01, arch.n.04
+
+4: Domestic & Apparel (104 classes)
+   Level 6 synsets: clothing.n.01, footwear.n.02, cloth_covering.n.01, towel.n.01, bib.n.01, dishrag.n.01, handkerchief.n.01, mask.n.01, furnishing.n.02, floor_cover.n.01, toiletry.n.01, powder.n.03
+
+5: Vehicles & Transport (25 classes)
+   Level 6 synsets: conveyance.n.03
+
+6: Tools & Electronics (198 classes)
+   Level 6 synsets: device.n.01, equipment.n.01, implement.n.01, system.n.01, memory.n.04, medium.n.01
+
+7: General Objects (95 classes)
+   Level 6 synsets: container.n.01, consumer_goods.n.01, product.n.02, brick.n.01, coating.n.01, screen.n.04
+
