@@ -6,7 +6,7 @@ from pathlib import Path
 
 # Configuration
 BASE_CONFIG_PATH = "configs/eval/base.json"
-SLURM_LOG_DIR = "slurm/slurm_logs"
+SLURM_LOG_DIR = "scripts/slurm/slurm_logs"
 SAVE_SLURM_LOGS = True
 
 # Evaluation parameter grid
@@ -90,7 +90,7 @@ def generate_slurm_script(job_name: str, overrides: list) -> str:
 def main():
     # Create logs directory if it doesn't exist
     Path(SLURM_LOG_DIR).mkdir(parents=True, exist_ok=True)
-    Path("slurm/tmp").mkdir(parents=True, exist_ok=True)
+    Path("scripts/slurm/tmp").mkdir(parents=True, exist_ok=True)
     
     # Generate all combinations of grid parameters
     param_names = list(PARAM_GRID.keys())
@@ -135,7 +135,7 @@ def main():
         job_name_suffix = "_".join(job_suffix_parts)
         
         # Create temporary script file
-        script_path = f"slurm/tmp/eval_{job_name_suffix}.sh"
+        script_path = f"scripts/slurm/tmp/eval_{job_name_suffix}.sh"
         script_content = generate_slurm_script(job_name_suffix, overrides)
         
         with open(script_path, "w") as f:

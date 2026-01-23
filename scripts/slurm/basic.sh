@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=visreps
-#SBATCH --output=slurm/slurm_logs/test_%j.out
-#SBATCH --error=slurm/slurm_logs/test_%j.err
+#SBATCH --output=scripts/slurm/slurm_logs/test_%j.out
+#SBATCH --error=scripts/slurm/slurm_logs/test_%j.err
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
 #SBATCH --gres=gpu:1
