@@ -14,7 +14,7 @@ import pandas as pd
 import seaborn as sns
 from matplotlib.ticker import MultipleLocator, AutoMinorLocator, FormatStrFormatter
 
-import plotters.utils_plotter as plt_utils
+from plotters.utils import plotter_utils as plt_utils
 import plotters.fig4.full_vs_pcs_nsd as fig4_plotter
 
 def _load_csv(path: str) -> pd.DataFrame:

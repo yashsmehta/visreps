@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 import os
 from scipy import stats
-from plotting_utils import plot_brain_score_barplot, get_best_layer_scores
+from plotters.utils import plot_brain_score_barplot, get_best_layer_scores
 
 
 # ============================================================================

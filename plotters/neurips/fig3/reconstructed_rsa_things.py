@@ -15,7 +15,7 @@ from pydantic import constr
 import seaborn as sns
 from matplotlib.ticker import MultipleLocator, AutoMinorLocator, FormatStrFormatter
 
-import plotters.utils_plotter as plt_utils
+from plotters.utils import plotter_utils as plt_utils
 
 # -----------------------------------------------------------------------------
 # PLOTTER ----------------------------------------------------------------------
