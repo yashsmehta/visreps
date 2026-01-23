@@ -27,7 +27,7 @@ class Trainer:
         self.datasets, self.loaders = get_obj_cls_loader(self.cfg)
         num_classes = self.cfg.pca_n_classes if self.cfg.pca_labels else self.datasets["train"].num_classes
         self.model = model_utils.load_model(self.cfg, self.device, num_classes=num_classes)
-        self.criterion = nn.CrossEntropyLoss()
+        self.criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
         self.optimizer = utils.setup_optimizer(self.model, self.cfg)
         self.scheduler = utils.setup_scheduler(self.optimizer, self.cfg)
 
