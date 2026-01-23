@@ -41,16 +41,23 @@ def compute_encoding_alignment(
 
     results = []
     for layer, acts in activations_dict.items():
-        # Flatten and z-normalize
+        # Flatten activations
         X = acts.flatten(start_dim=1) if acts.ndim > 2 else acts
         X = backend.asarray(X.float())
-        X = (X - X.mean(dim=0)) / (X.std(dim=0) + 1e-8)
+
+        # Split BEFORE normalization to avoid data leakage
         X_tr, X_te = X[tr_idx], X[te_idx]
 
-        # Fit ridge with per-voxel alpha selection
-        model = RidgeCV(alphas=alphas, cv=n_folds)
+        # Z-normalize using training statistics only
+        train_mean = X_tr.mean(dim=0)
+        train_std = X_tr.std(dim=0) + 1e-8
+        X_tr = (X_tr - train_mean) / train_std
+        X_te = (X_te - train_mean) / train_std
+
+        # Fit ridge with per-voxel alpha selection (fit_intercept=True for non-centered Y)
+        model = RidgeCV(alphas=alphas, cv=n_folds, fit_intercept=True)
         model.fit(X_tr, Y_tr)
-        
+
         pred = backend.asarray(model.predict(X_te))
         score = float(_pearson_r(pred, Y_te).mean().cpu())
         all_alphas = backend.to_numpy(model.best_alphas_)
