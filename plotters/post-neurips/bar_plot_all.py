@@ -3,14 +3,14 @@ import pandas as pd
 import numpy as np
 import os
 from scipy import stats
-from plotting_utils import plot_brain_score_barplot, get_best_layer_scores
+from plotters.utils import plot_brain_score_barplot, get_best_layer_scores
 
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
 REGION_TO_PLOT = 'ventral visual stream'  # Options: 'early visual stream', 'ventral visual stream', etc.
-ARCHITECTURES_TO_PLOT = ['alexnet', 'dino', 'clip', 'dreamsim']  # Which architectures to include
-MAX_PCA_CLASSES = 128  # Maximum PCA class count (e.g., 64 means 2-64)
+ARCHITECTURES_TO_PLOT = ['alexnet', 'dino']  # Which architectures to include
+MAX_PCA_CLASSES = 4096  # Maximum PCA class count (e.g., 64 means 2-64)
 
 
 # --- Main Script ---
@@ -26,7 +26,7 @@ if __name__ == "__main__":
     all_pca_classes = [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
     pca_classes_to_plot = [c for c in all_pca_classes if c <= MAX_PCA_CLASSES]
     
-    out_png = f"plotters/post-neurips/barplt_best_layer_region_{REGION_TO_PLOT.lower().replace(' ','_')}.png"
+    out_png = f"plotters/post-neurips/dino_vs_alexnet_{REGION_TO_PLOT.lower().replace(' ','_')}.png"
 
     # ---------------- load PCA data (all layers) ----------------
     df_pca = pd.read_csv(os.path.join(base_log_path, pca_csv))
