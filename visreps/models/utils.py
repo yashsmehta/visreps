@@ -1,6 +1,7 @@
 from collections import defaultdict
 import json
 import os
+import sys
 import torch
 import torchvision
 from omegaconf import OmegaConf
@@ -12,8 +13,12 @@ from tqdm import tqdm
 import psutil                     # Added import
 import resource                   # Added import (optional, for peak process memory)
 
-from visreps.models import standard_cnn
-from visreps.models.custom_cnn import CustomCNN, TinyCustomCNN
+from visreps.models import standard_model
+from visreps.models import custom_model
+from visreps.models.custom_model import CustomCNN, TinyCustomCNN
+
+# Backward compat: old checkpoints reference 'visreps.models.custom_cnn'
+sys.modules['visreps.models.custom_cnn'] = custom_model
 from visreps.utils import rprint
 from visreps.utils import get_seed_letter
 from visreps.analysis.sparse_random_projection import get_srp_transformer
@@ -75,6 +80,25 @@ class FeatureExtractor(nn.Module):
             if hasattr(self.model, 'fc'):
                 mapping['fc1'] = 'fc'
                 seen_modules.add(id(self.model.fc))
+        
+        elif isinstance(self.model, torchvision.models.VisionTransformer):
+            # ViT specific mapping
+            # Patch embedding conv
+            if hasattr(self.model, 'conv_proj'):
+                mapping['patch_embed'] = 'conv_proj'
+                seen_modules.add(id(self.model.conv_proj))
+            
+            # Transformer encoder blocks (block1, block2, ..., block12 for ViT-Base)
+            # torchvision names them encoder.layers.encoder_layer_{i}
+            if hasattr(self.model, 'encoder') and hasattr(self.model.encoder, 'layers'):
+                for i, block in enumerate(self.model.encoder.layers):
+                    mapping[f'block{i+1}'] = f'encoder.layers.encoder_layer_{i}'
+                    seen_modules.add(id(block))
+            
+            # Classification head
+            if hasattr(self.model, 'heads') and hasattr(self.model.heads, 'head'):
+                mapping['head'] = 'heads.head'
+                seen_modules.add(id(self.model.heads.head))
                 
         elif hasattr(self.model, 'features') and hasattr(self.model, 'classifier'):
             # AlexNet/VGG style
@@ -199,6 +223,7 @@ def get_activations(
         rprint(f"✓ Loaded SRP transformers for {num_layers} layers", style="success")
 
     # ---------- main loop ----------
+    FP16_MAX = 65504.0  # float16 max value
     with torch.no_grad():
         for imgs, keys in tqdm(dataloader, desc="Extracting model activations"):
             ids.extend(keys)
@@ -208,7 +233,8 @@ def get_activations(
                 if apply_srp and proj_matrix is not None:
                     flat = out.view(out.size(0), -1).float()  # (batch, D) on GPU
                     out = torch.sparse.mm(proj_matrix, flat.t()).t()  # (batch, k)
-                activations[name].append(out.cpu().half())  # move to CPU only for storage
+                # Clamp to float16 range before half() to avoid overflow → inf
+                activations[name].append(out.clamp(-FP16_MAX, FP16_MAX).cpu().half())
 
     return {n: torch.cat(b, 0) for n, b in activations.items()}, ids
 
@@ -220,7 +246,7 @@ def load_model(cfg, device, num_classes=None):
     Args:
         cfg: Configuration with keys depending on mode:
             - For training:
-                model_class ('custom_cnn'/'standard_cnn'),
+                model_class ('custom_model'/'standard_model'),
                 model_name,
                 pretrained,
                 custom (dict with additional args for CustomCNN)
@@ -246,11 +272,11 @@ def load_model(cfg, device, num_classes=None):
         return checkpoint['model'].to(device)
 
     # Otherwise, determine model class and name
-    model_class = getattr(cfg, 'model_class', 'standard_cnn')
+    model_class = getattr(cfg, 'model_class', 'standard_model')
     model_name = getattr(cfg, 'model_name', 'AlexNet')
 
     # Initialize custom CNN
-    if model_class == 'custom_cnn':
+    if model_class == 'custom_model':
         custom_cfg = getattr(cfg, 'arch', {})
         model_params = {
             'num_classes': num_classes,
@@ -258,9 +284,7 @@ def load_model(cfg, device, num_classes=None):
                 'conv': getattr(custom_cfg, 'conv_trainable', '11111'),
                 'fc': getattr(custom_cfg, 'fc_trainable', '111')
             },
-            'nonlinearity': getattr(custom_cfg, 'nonlinearity', 'relu'),
-            'dropout': getattr(custom_cfg, 'dropout', True),
-            'batchnorm': getattr(custom_cfg, 'batchnorm', True),
+            'dropout': getattr(custom_cfg, 'dropout', 0.5),
             'pooling_type': getattr(custom_cfg, 'pooling_type', 'max')
         }
         if 'tiny' in model_name.lower():
@@ -270,9 +294,9 @@ def load_model(cfg, device, num_classes=None):
         
     else:
         # Initialize standard CNN
-        model_fn = getattr(standard_cnn, model_name, None)
+        model_fn = getattr(standard_model, model_name, None)
         if model_fn is None:
-            raise ValueError(f"Model '{model_name}' not found in standard_cnn.")
+            raise ValueError(f"Model '{model_name}' not found in standard_model.")
         pretrained_dataset = getattr(cfg, 'pretrained_dataset', "none")
         
         # Load model - classifier layer is already replaced in model_fn

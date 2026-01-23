@@ -4,7 +4,7 @@ import torch
 import numpy as np
 from omegaconf import OmegaConf
 from dotenv import load_dotenv
-from visreps.models import standard_cnn
+from visreps.models import standard_model
 from visreps.models import utils as model_utils
 from visreps.models.utils import configure_feature_extractor
 from visreps.dataloaders.obj_cls import get_obj_cls_loader
@@ -228,7 +228,7 @@ def main():
     if args.load_from == 'standard':
         print(f"Loading standard AlexNet model (source: {args.pretrained_dataset})...")
         cfg = OmegaConf.create({
-            "model_class": "standard_cnn", "model_name": "AlexNet",
+            "model_class": "standard_model", "model_name": "AlexNet",
             "pretrained_dataset": args.pretrained_dataset,
             "return_nodes": all_layers_to_extract,
             "load_model_from": args.load_from,
