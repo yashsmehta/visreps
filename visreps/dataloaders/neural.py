@@ -29,8 +29,10 @@ def load_nsd_data(cfg: Dict) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarra
         (targets, stimuli): Dicts mapping stimulus IDs to response arrays and image arrays.
     """
     region, subj = cfg["region"], cfg["subject_idx"]
+    nsd_type = cfg.get("nsd_type", "finegrained")
     root = utils.get_env_var("NSD_DATA_DIR")
-    fmri_xr = utils.load_pickle(os.path.join(root, "fmri_responses.pkl"))[region][subj]
+    fmri_path = os.path.join(root, nsd_type, "fmri_responses.pkl")
+    fmri_xr = utils.load_pickle(fmri_path)[region][subj]
     
     stimulus_ids = [int(i) for i in fmri_xr.coords["stimulus"].values]
     
