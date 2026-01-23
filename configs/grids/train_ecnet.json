@@ -9,8 +9,8 @@
   "dataset": ["imagenet"],
   "log_checkpoints": [true],
   "batchsize": 64,
-  "model_class": "standard_cnn",
-  "standard_cnn": {
+  "model_class": "standard_model",
+  "standard_model": {
     "model_name": "ECTiedNet",
     "pretrained_dataset": "none"
   }

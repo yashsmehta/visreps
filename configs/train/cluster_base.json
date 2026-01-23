@@ -21,8 +21,8 @@
   "pca_labels": false,
   "pca_n_classes": 32,
   "pca_labels_folder": "pca_labels_alexnet",
-  "model_class": "custom_cnn",
-  "custom_cnn": {
+  "model_class": "custom_model",
+  "custom_model": {
     "model_name": "CustomCNN",
     "arch": {
       "nonlinearity": "relu",
@@ -33,7 +33,7 @@
       "batchnorm": true
     }
   },
-  "standard_cnn": {
+  "standard_model": {
     "model_name": "AlexNet",
     "pretrained_dataset": "none"
   }
