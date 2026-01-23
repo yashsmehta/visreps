@@ -7,7 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from tqdm import tqdm
 
-def create_imagenet_mini(imagenet_dir: Path, num_images: int = 50):
+def create_imagenet_mini(imagenet_dir: Path, num_images: int = 10):
     """Creates a mini version of ImageNet by sampling images from each class."""
     dest_dir = imagenet_dir.parent / f"imagenet-mini-{num_images}"
     dest_dir.mkdir(parents=True, exist_ok=True)
