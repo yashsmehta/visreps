@@ -382,7 +382,7 @@ def load_config(config_path, overrides=None):
     if source_key := (cfg.load_model_from if cfg.mode == "eval" else cfg.model_class):
         other_key = {
             "eval": {"torchvision": "checkpoint", "checkpoint": "torchvision"},
-            "train": {"custom_cnn": "standard_cnn", "standard_cnn": "custom_cnn"},
+            "train": {"custom_model": "standard_model", "standard_model": "custom_model"},
         }[cfg.mode][source_key]
         if other_key in cfg:
             del cfg[other_key]
@@ -405,10 +405,11 @@ class ConfigVerifier:
 
     VALID_MODES = {"train", "eval"}
     VALID_DATASETS = {"imagenet", "tiny-imagenet", "imagenet-mini-10", "imagenet-mini-50", "imagenet-mini-200"}
-    VALID_MODEL_CLASSES = {"custom_cnn", "standard_cnn"}
+    VALID_MODEL_CLASSES = {"custom_model", "standard_model"}
     VALID_MODEL_SOURCES = {"checkpoint", "torchvision"}
     VALID_ANALYSES = {"rsa", "encoding_score"}
     VALID_NEURAL_DATASETS = {"nsd", "things", "nsd_synthetic", "cusack"}
+    VALID_NSD_TYPES = {"finegrained", "streams", "streams_shared"}
 
     def __init__(self, cfg: OmegaConf):
         """Initialize verifier with configuration."""
@@ -498,7 +499,11 @@ class ConfigVerifier:
                 )
                 self.cfg.subject_idx = "N/A"
 
-        elif self.cfg.neural_dataset.lower() == "nsd":
+        # Remove nsd_type for non-NSD datasets (only meaningful for NSD)
+        if self.cfg.neural_dataset.lower() != "nsd" and hasattr(self.cfg, 'nsd_type'):
+            del self.cfg.nsd_type
+
+        if self.cfg.neural_dataset.lower() == "nsd":
 
             # Ensure subject_idx is an integer for NSD
             if not isinstance(self.cfg.subject_idx, int) or not 0 <= self.cfg.subject_idx < 8:
@@ -507,6 +512,15 @@ class ConfigVerifier:
                     style="error",
                 )
                 raise AssertionError(f"Invalid subject index for NSD: {self.cfg.subject_idx}")
+
+            # Validate nsd_type
+            nsd_type = getattr(self.cfg, "nsd_type", "finegrained")
+            if nsd_type not in self.VALID_NSD_TYPES:
+                self.rprint(
+                    f"[red]Invalid nsd_type: {nsd_type}. Must be in {self.VALID_NSD_TYPES}[/red]",
+                    style="error",
+                )
+                raise AssertionError(f"Invalid nsd_type: {nsd_type}")
 
         if self.cfg.analysis.lower() not in self.VALID_ANALYSES:
             self.rprint(
@@ -561,23 +575,23 @@ class ConfigVerifier:
 
     def _verify_model_config(self) -> None:
         """Verify model-specific configuration."""
-        if self.cfg.model_class == "standard_cnn":
-            if hasattr(self.cfg, "custom_cnn"):
+        if self.cfg.model_class == "standard_model":
+            if hasattr(self.cfg, "custom_model"):
                 self.rprint(
-                    "[red]Invalid config: custom_cnn key present in standard_cnn mode[/red]",
+                    "[red]Invalid config: custom_model key present in standard_model mode[/red]",
                     style="error",
                 )
                 raise AssertionError(
-                    "custom_cnn key should not be present in standard_cnn mode"
+                    "custom_model key should not be present in standard_model mode"
                 )
-        else:  # custom_cnn
-            if hasattr(self.cfg, "standard_cnn"):
+        else:  # custom_model
+            if hasattr(self.cfg, "standard_model"):
                 self.rprint(
-                    "[red]Invalid config: standard_cnn key present in custom_cnn mode[/red]",
+                    "[red]Invalid config: standard_model key present in custom_model mode[/red]",
                     style="error",
                 )
                 raise AssertionError(
-                    "standard_cnn key should not be present in custom_cnn mode"
+                    "standard_model key should not be present in custom_model mode"
                 )
 
             # Validate custom CNN architecture parameters
