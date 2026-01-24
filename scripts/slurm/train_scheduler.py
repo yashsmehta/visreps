@@ -11,11 +11,11 @@ from pathlib import Path
 BASE_CONFIG = "configs/train/cluster_base.json"
 
 PARAM_GRID = {
-    "seed": [1],
+    "seed": [1, 2, 3],
     "model_name": ["CustomCNN"],
     "pca_labels": [True],
-    "pca_n_classes": [8, 16, 32, 64],
-    "pca_labels_folder": ["pca_labels_dreamsim"],
+    "pca_n_classes": [2, 4, 8, 16, 32, 64],
+    "pca_labels_folder": ["pca_labels_vit", "pca_labels_clip", "pca_labels_dino"],
     "log_checkpoints": ["True"],
 }
 
