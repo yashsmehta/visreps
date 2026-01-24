@@ -1,4 +1,5 @@
 # CLAUDE.md
+I want simple, intuitive and easy to understand code. If the user is asking for a complex code change / ambiguous query (which could be interpretted in multiple ways), first you should read the relevant files, and confirm with the user that what you are thinking is indeed what the user meant before going ahead with code changes and implementation.
 
 **Always activate the virtual environment first:**
 ```bash
