@@ -1,24 +1,27 @@
 import json
+import os
 import subprocess
 from itertools import product
-import os
 from pathlib import Path
 
-# Configuration file paths
+# =============================================================================
+# USER CONFIGURATION - Modify these for your experiments
+# =============================================================================
+
 BASE_CONFIG = "configs/train/cluster_base.json"
 
-# Define the parameter grid for training
 PARAM_GRID = {
     "seed": [1],
     "model_name": ["CustomCNN"],
     "pca_labels": [True],
     "pca_n_classes": [8, 16, 32, 64],
     "pca_labels_folder": ["pca_labels_dreamsim"],
-    "checkpoint_dir": ["dreamsim_pca"],
-    "log_checkpoints": ["True"]
+    "log_checkpoints": ["True"],
 }
 
-# Slurm configuration
+# Used when pca_labels is False
+DEFAULT_CHECKPOINT_DIR = "default"
+
 SLURM_CONFIG = {
     "job-name": "visreps",
     "output": "scripts/slurm/slurm_logs/%j.out",
@@ -32,92 +35,77 @@ SLURM_CONFIG = {
     "account": "mbonner5_gpu",
 }
 
-def flatten_config(config, parent_key="", sep="."):
-    """Recursively flattens a nested configuration dictionary."""
-    flat = {}
-    for k, v in config.items():
-        new_key = f"{parent_key}{sep}{k}" if parent_key else k
-        if isinstance(v, dict):
-            flat.update(flatten_config(v, new_key, sep))
-        else:
-            flat[new_key] = v
-    return flat
+# =============================================================================
+# INTERNAL
+# =============================================================================
 
-def load_config(filepath):
-    """Loads a JSON configuration from the given file."""
-    with open(filepath, "r") as file:
-        return json.load(file)
 
-def generate_slurm_script(job_name, overrides):
-    """Generates a Slurm script for the given parameters."""
-    script = ["#!/bin/bash"]
-    
-    # Add Slurm directives
-    for key, value in SLURM_CONFIG.items():
-        script.append(f"#SBATCH --{key}={value}")
-    
-    # Add environment setup
-    script.extend([
+def get_checkpoint_dir(params):
+    """Derive checkpoint_dir from pca_labels_folder when pca_labels=True.
+
+    "pca_labels_dreamsim" -> "dreamsim_pca"
+    "pca_labels_dino"     -> "dino_pca"
+    """
+    if params.get("pca_labels"):
+        folder = params.get("pca_labels_folder", "")
+        base = folder.removeprefix("pca_labels_")
+        return f"{base}_pca"
+    return DEFAULT_CHECKPOINT_DIR
+
+
+def build_overrides(params):
+    """Convert params dict to CLI override strings."""
+    overrides = [f"{k}={json.dumps(v)}" for k, v in params.items()]
+    overrides.append(f"checkpoint_dir={json.dumps(get_checkpoint_dir(params))}")
+    overrides.append("mode=train")
+    return overrides
+
+
+def generate_slurm_script(overrides):
+    """Generate SLURM batch script content."""
+    lines = ["#!/bin/bash"]
+    lines += [f"#SBATCH --{k}={v}" for k, v in SLURM_CONFIG.items()]
+    lines += [
         "",
-        "# Activate the virtual environment",
         "source .venv/bin/activate",
-        "",
-        "# Print debug information",
-        "echo \"Running on node: $(hostname)\"",
-        "echo \"GPU information:\"",
+        'echo "Running on: $(hostname)"',
         "nvidia-smi",
         "",
-        "# Run the training script"
-    ])
+        f"python -m visreps.run --config {BASE_CONFIG} --override " + " ".join(overrides),
+        "deactivate",
+    ]
+    return "\n".join(lines)
 
-    # Construct the training command
-    cmd = [
-        "python -m visreps.run",
-        f"--config {BASE_CONFIG}",
-        "--override"
-    ] + [f"{override}" for override in overrides]
-    
-    script.append(" ".join(cmd))
-    script.append("\ndeactivate")
-    
-    return "\n".join(script)
+
+def iter_param_combinations():
+    """Yield all parameter combinations as dicts."""
+    keys = list(PARAM_GRID.keys())
+    for values in product(*PARAM_GRID.values()):
+        yield dict(zip(keys, values))
+
 
 def main():
-    # Create logs directory if it doesn't exist
     Path("scripts/slurm/slurm_logs").mkdir(parents=True, exist_ok=True)
     Path("scripts/slurm/tmp").mkdir(parents=True, exist_ok=True)
-    
-    # Generate all combinations of grid parameters
-    param_names = list(PARAM_GRID.keys())
-    param_combos = list(product(*PARAM_GRID.values()))
 
-    total_runs = len(param_combos)
-    print(f"Submitting {total_runs} Slurm jobs")
+    combinations = list(iter_param_combinations())
+    print(f"Submitting {len(combinations)} SLURM jobs\n")
 
-    # Submit each combination as a separate Slurm job
-    for i, combo in enumerate(param_combos):
-        # Create overrides from the parameter combination
-        overrides = [
-            f"{name}={json.dumps(value)}" for name, value in zip(param_names, combo)
-        ]
-        overrides.append("mode=train")
+    for i, params in enumerate(combinations, start=1):
+        overrides = build_overrides(params)
+        script_path = f"scripts/slurm/tmp/train_job_{i}.sh"
 
-        # Create temporary script file
-        script_path = f"scripts/slurm/tmp/train_job_{i+1}.sh"
-        script_content = generate_slurm_script(f"job_{i+1}", overrides)
-        
         with open(script_path, "w") as f:
-            f.write(script_content)
-        
-        # Submit the job
-        cmd = ["sbatch", script_path]
-        print(f"\nSubmitting job_{i+1} with overrides:")
-        for override in overrides:
-            print(f"  {override}")
-        subprocess.run(cmd)
-        
-        # Clean up temporary script
+            f.write(generate_slurm_script(overrides))
+
+        print(f"Job {i}:")
+        for o in overrides:
+            print(f"  {o}")
+        print()
+
+        subprocess.run(["sbatch", script_path])
         os.remove(script_path)
+
 
 if __name__ == "__main__":
     main()
