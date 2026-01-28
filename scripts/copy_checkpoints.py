@@ -2,7 +2,7 @@
 import os, subprocess
 
 # --- Config ---
-folders = ['imagenet1k', 'alexnet_pca', 'dino_pca', 'dreamsim_pca']
+folders = ['default', 'alexnet_pca', 'vit_pca', 'clip_pca', 'dino_pca']
 remote_base = "/scratch4/mbonner5/ymehta3/visreps/model_checkpoints"
 local_base = "/data/ymehta3"
 files_to_copy = ["checkpoint_epoch_20.pth", "config.json", "training_metrics.csv"]
@@ -26,7 +26,7 @@ for folder in folders:
     remote_folder = f"{remote_base}/{folder}"
     subdirs = subprocess.check_output(
         ["ssh", "-o", f"ControlPath={control_path}", f"{user}@{host}",
-         f"ls -d {remote_folder}/cfg*a 2>/dev/null"],
+         f"ls -d {remote_folder}/cfg*[bc] 2>/dev/null"],
         text=True
     ).split()
 
