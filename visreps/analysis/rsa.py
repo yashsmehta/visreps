@@ -43,7 +43,7 @@ _CORR_FUNCS = {
 
 
 def _rank(x: torch.Tensor) -> torch.Tensor:
-    """Row‑wise dense ranking via double argsort (ties get consecutive ranks)."""
+    """Row-wise dense ranking via double argsort (ties get consecutive ranks)."""
     return torch.argsort(torch.argsort(x, dim=1), dim=1).float()
 
 
@@ -54,11 +54,11 @@ def _rank(x: torch.Tensor) -> torch.Tensor:
 def compute_rsm(
     representations: torch.Tensor, *, correlation: str = "Pearson", correction: float = 1e-12
 ) -> torch.Tensor:
-    """Return an (n_samples × n_samples) RSM built with Pearson or Spearman.
+    """Return an (n_samples x n_samples) RSM built with Pearson or Spearman.
 
     Args:
-        representations: Row‑major activations (n_samples, n_features).
-        correlation: "Pearson" or "Spearman" (case‑insensitive).
+        representations: Row-major activations (n_samples, n_features).
+        correlation: "Pearson" or "Spearman" (case-insensitive).
         correction: Numerical stabiliser added to variances.
     """
     corr = correlation.lower()
@@ -92,11 +92,11 @@ def compute_rsm_correlation(
     Returns NaN if correlation cannot be computed (e.g., zero variance).
     """
     if rsm1.shape != rsm2.shape or rsm1.ndim != 2:
-        raise ValueError("RSMs must share the same 2‑D shape")
+        raise ValueError("RSMs must share the same 2-D shape")
 
     n = rsm1.size(0)
     if n <= 1:
-        logger.warning("RSM dimension ≤ 1; correlation undefined")
+        logger.warning("RSM dimension <= 1; correlation undefined")
         return float("nan")
 
     idx = torch.triu_indices(n, n, offset=1, device=rsm1.device)
@@ -126,8 +126,7 @@ def compute_rsa_alignment(
     """Compute RSA alignment for each layer in *activations_dict*.
 
     Args:
-        cfg: Configuration dictionary. Must contain 'exp_name' and 'cfg_id'
-             if saving RSMs. May also contain:
+        cfg: Configuration dictionary. May contain:
             make_rsm_correlation: method for building RSMs (default "Pearson").
             compare_rsm_correlation: method for comparing RSMs (default "Kendall").
         activations_dict: Dictionary mapping layer names to activation tensors.
@@ -136,7 +135,6 @@ def compute_rsa_alignment(
     Returns:
         List of dictionaries, each containing results for a layer.
     """
-
     make_rsm_corr = cfg.get("make_rsm_correlation", "Pearson")
     cmp_rsm_corr = cfg.get("compare_rsm_correlation", "Kendall")
 
@@ -145,12 +143,12 @@ def compute_rsa_alignment(
 
     neural_rsm = compute_rsm(neural_data, correlation=make_rsm_corr)
     results = []
-    layer_rsms = {}  # Dictionary to store layer RSMs
+    layer_rsms = {}
 
     for layer, acts in activations_dict.items():
         flat_acts = acts.flatten(start_dim=1) if acts.ndim > 2 else acts
         layer_rsm = compute_rsm(flat_acts, correlation=make_rsm_corr)
-        layer_rsms[layer] = layer_rsm  # Store layer RSM
+        layer_rsms[layer] = layer_rsm
         score = compute_rsm_correlation(layer_rsm, neural_rsm, correlation=cmp_rsm_corr)
 
         rprint(
@@ -173,17 +171,17 @@ def compute_rsa_alignment(
         try:
             save_dir = os.path.join("model_checkpoints", "RSMs", f"{cfg.neural_dataset}", f"pca4cls")
             os.makedirs(save_dir, exist_ok=True)
-            
+
             # Construct filename based on whether reconstruct_from_pcs is True
             filename_parts = [
                 f"pca_labels_{cfg.pca_labels}",
                 f"cfgid_{cfg.cfg_id}",
                 f"seed_{cfg.seed}"
             ]
-            
+
             if cfg.reconstruct_from_pcs:
                 filename_parts.insert(2, f"pca_k_{cfg.pca_k}")
-                
+
             save_path = os.path.join(save_dir, "_".join(filename_parts) + ".npz")
 
             # Prepare data to save (convert to numpy)
@@ -200,4 +198,3 @@ def compute_rsa_alignment(
             rprint(f"Error saving RSMs: {e}", style="error")
 
     return results
-
