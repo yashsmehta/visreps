@@ -1,26 +1,17 @@
 """Encoding score: Ridge regression with per-voxel alpha selection (himalaya)."""
 
 import numpy as np
-import torch
 from typing import Dict, List
 from himalaya.backend import set_backend
 from himalaya.ridge import RidgeCV
+from himalaya.scoring import correlation_score
 from visreps.utils import rprint
-
-
-def _pearson_r(y_pred: torch.Tensor, y_true: torch.Tensor) -> torch.Tensor:
-    """Pearson correlation per column."""
-    yp = y_pred - y_pred.mean(dim=0)
-    yt = y_true - y_true.mean(dim=0)
-    num = (yp * yt).sum(dim=0)
-    denom = torch.sqrt((yp**2).sum(dim=0) * (yt**2).sum(dim=0)) + 1e-10
-    return num / denom
 
 
 def compute_encoding_alignment(
     cfg: Dict,
-    activations_dict: Dict[str, torch.Tensor],
-    neural_data: torch.Tensor,
+    activations_dict: Dict[str, "torch.Tensor"],
+    neural_data: "torch.Tensor",
 ) -> List[Dict]:
     """Compute encoding score per layer using ridge regression."""
     backend = set_backend("torch_cuda", on_error="warn")
@@ -58,8 +49,8 @@ def compute_encoding_alignment(
         model = RidgeCV(alphas=alphas, cv=n_folds, fit_intercept=True)
         model.fit(X_tr, Y_tr)
 
-        pred = backend.asarray(model.predict(X_te))
-        score = float(_pearson_r(pred, Y_te).mean().cpu())
+        pred = model.predict(X_te)
+        score = float(correlation_score(Y_te, pred).mean())
         all_alphas = backend.to_numpy(model.best_alphas_)
         alpha_median = float(np.median(all_alphas))
 
