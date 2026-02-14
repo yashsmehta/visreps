@@ -12,7 +12,11 @@ from utils import get_loaders, extract_features, save_features
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", type=str, default="imagenet")
+    parser.add_argument(
+        "--dataset", type=str, default="imagenet",
+        choices=["imagenet", "imagenet-mini-50"],
+        help="Dataset to extract features from (default: imagenet)"
+    )
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
