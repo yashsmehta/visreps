@@ -13,7 +13,11 @@ from utils import get_loaders, extract_features, save_features
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", type=str, default="imagenet")
+    parser.add_argument(
+        "--dataset", type=str, default="imagenet",
+        choices=["imagenet", "imagenet-mini-50"],
+        help="Dataset to extract features from (default: imagenet)"
+    )
     args = parser.parse_args()
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -24,7 +28,7 @@ def main():
     print(f"Loaded CLIP ViT-L/14 on {device}")
 
     # Setup data
-    loader_list = get_loaders(args.dataset, batch_size=512)
+    loader_list = get_loaders(args.dataset, batch_size=128)
     for loader in loader_list:
         loader.dataset.transform = preprocess
 

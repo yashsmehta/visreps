@@ -11,7 +11,11 @@ from utils import get_loaders, extract_features, save_features
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", type=str, default="imagenet")
+    parser.add_argument(
+        "--dataset", type=str, default="imagenet",
+        choices=["imagenet", "imagenet-mini-50"],
+        help="Dataset to extract features from (default: imagenet)"
+    )
     parser.add_argument("--model", type=str, default="vit_large_patch16_224")
     args = parser.parse_args()
 
@@ -23,7 +27,7 @@ def main():
     print(f"Loaded {args.model} on {device}")
 
     # Setup data with model-specific transforms
-    loader_list = get_loaders(args.dataset, batch_size=512)
+    loader_list = get_loaders(args.dataset, batch_size=128)
     data_config = timm.data.resolve_model_data_config(model)
     preprocess = timm.data.create_transform(**data_config, is_training=False)
     for loader in loader_list:
