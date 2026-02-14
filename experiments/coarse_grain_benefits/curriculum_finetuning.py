@@ -1,25 +1,27 @@
 """
-Curriculum Learning Experiment: Coarse → Fine Training
+Curriculum Learning Experiment: Source → Target Granularity Fine-Tuning
 
-Tests whether pre-training on coarse labels (e.g., 64-way) followed by
-fine-tuning on 1000-way classification produces better representations
-than direct 1000-way training.
+Fine-tunes a model trained at one label granularity on a different granularity.
+Supports any direction: coarse→fine, fine→coarse, or coarse→coarse.
 
-Supports multiple transfer modes:
+Examples:
+  64-way → 1000-way   (coarse pre-training helps fine-grained?)
+  1000-way → 32-way   (does fine-grained knowledge transfer to coarse?)
+  32-way → 64-way     (curriculum across coarse levels)
+
+Transfer modes:
 - full: Train all layers (standard fine-tuning)
 - late_layers: Freeze conv1-4, train conv5 + fc layers (hierarchical transfer)
 - fc_only: Freeze all conv layers, train only fc layers
 - head_only: Freeze everything except the new classification head
 
-Protocol:
-1. Load a coarse-trained model (e.g., 64-way, 20 epochs)
-2. Replace final classifier layer (64 → 1000 outputs)
-3. Apply transfer mode (freeze appropriate layers)
-4. Fine-tune trainable layers on ImageNet-1000
-5. Save checkpoint every epoch for later analysis
+Usage:
+  python curriculum_finetuning.py --source_cfg_id 64  --target_cfg_id 1000
+  python curriculum_finetuning.py --source_cfg_id 1000 --target_cfg_id 32
+  python curriculum_finetuning.py --source_cfg_id 32  --target_cfg_id 64
 
 Output:
-- Checkpoints: {output_dir}/cfg{coarse_id}_to_1000_{mode}_{seed}/checkpoint_epoch_{n}.pth
+- Checkpoints: {output_dir}/cfg{source}_to_{target}_{mode}_{seed}/checkpoint_epoch_{n}.pth
 - Metrics CSV: {output_dir}/curriculum_finetuning_metrics.csv
 """
 
@@ -47,8 +49,24 @@ from visreps.utils import calculate_cls_accuracy
 
 from utils import (
     get_device, ensure_output_dir, load_coarse_model,
-    get_config_name, DEFAULT_CHECKPOINT_DIR, OUTPUT_DIR
+    get_config_name, OUTPUT_DIR
 )
+
+
+# =============================================================================
+# Coarse Model Configuration
+# =============================================================================
+# Change this to switch between coarse-label families (e.g., "alexnet", "dino").
+# Checkpoint dir and PCA labels folder are derived automatically:
+#   Checkpoint dir: /data/ymehta3/{COARSE_MODEL}_pca/
+#   PCA labels:     pca_labels/pca_labels_{COARSE_MODEL}/
+
+COARSE_MODEL = "alexnet"
+COARSE_CHECKPOINT_DIR = f"/data/ymehta3/{COARSE_MODEL}_pca"
+COARSE_LABELS_FOLDER = f"pca_labels_{COARSE_MODEL}"
+
+# 1000-way models always live here
+FINE_CHECKPOINT_DIR = "/data/ymehta3/default"
 
 
 # =============================================================================
@@ -142,14 +160,16 @@ def replace_classifier_head(model, old_num_classes, new_num_classes=1000):
     return model
 
 
-def get_imagenet_loaders(batch_size=256, num_workers=8):
-    """Get ImageNet train and validation dataloaders."""
+def get_imagenet_loaders(target_cfg_id=1000, batch_size=256, num_workers=8):
+    """Get ImageNet dataloaders with labels matching target_cfg_id."""
     cfg = {
         "dataset": "imagenet",
         "batchsize": batch_size,
         "num_workers": num_workers,
-        "pca_labels": False,
-        "data_augment": True,  # Use augmentation for training
+        "pca_labels": target_cfg_id != 1000,
+        "pca_n_classes": target_cfg_id,
+        "pca_labels_folder": COARSE_LABELS_FOLDER,
+        "data_augment": True,
     }
 
     datasets, loaders = get_obj_cls_loader(cfg, shuffle=True, preprocess=True, train_test_split=True)
@@ -214,7 +234,8 @@ def save_checkpoint(checkpoint_dir, epoch, model, optimizer, scheduler, metrics,
 
 
 def run_curriculum_finetuning(
-    coarse_cfg_id=64,
+    source_cfg_id=64,
+    target_cfg_id=1000,
     seed=1,
     num_epochs=10,
     learning_rate=0.002,
@@ -224,61 +245,57 @@ def run_curriculum_finetuning(
     warmup_epochs=1,
     transfer_mode="full",
     eval_freq=2,
-    checkpoint_dir=None,
     output_dir=None,
 ):
     """
-    Fine-tune a coarse-trained model on 1000-way ImageNet classification.
+    Fine-tune a model from one label granularity to another.
 
     Args:
-        coarse_cfg_id: The coarse granularity to start from (e.g., 64)
+        source_cfg_id: Granularity of the pretrained model (e.g., 64, 1000)
+        target_cfg_id: Granularity to fine-tune towards (e.g., 1000, 32)
         seed: Training seed (1, 2, or 3)
         num_epochs: Number of fine-tuning epochs
-        learning_rate: Learning rate for fine-tuning (default: 1/10th of original)
+        learning_rate: Learning rate for fine-tuning
         weight_decay: Weight decay for AdamW
         batch_size: Batch size for training
         num_workers: Number of dataloader workers
         warmup_epochs: Number of warmup epochs
-        transfer_mode: Which layers to train. Options:
-            - "full": Train all layers (default, standard fine-tuning)
-            - "late_layers": Freeze conv1-4, train conv5 + fc (hierarchical transfer)
-            - "fc_only": Freeze all conv, train only fc layers
-            - "head_only": Only train the new classification head
+        transfer_mode: Which layers to train (full, late_layers, fc_only, head_only)
         eval_freq: Frequency (in epochs) to evaluate accuracy (default: 2)
-        checkpoint_dir: Directory containing coarse checkpoints
         output_dir: Directory to save fine-tuned checkpoints
     """
     device = get_device()
     print(f"Device: {device}")
 
-    if checkpoint_dir is None:
-        checkpoint_dir = DEFAULT_CHECKPOINT_DIR
+    # Source checkpoint dir depends on whether source is 1000-way or coarse
+    source_checkpoint_dir = FINE_CHECKPOINT_DIR if source_cfg_id == 1000 else COARSE_CHECKPOINT_DIR
 
     if output_dir is None:
         output_dir = os.path.join(OUTPUT_DIR, "curriculum_checkpoints")
 
     # Create output directory for this experiment
     seed_letter = chr(ord('a') + seed - 1)
-    exp_name = f"cfg{coarse_cfg_id}_to_1000_{transfer_mode}_{seed_letter}"
+    exp_name = f"cfg{source_cfg_id}_to_{target_cfg_id}_{transfer_mode}_{seed_letter}"
     exp_dir = os.path.join(output_dir, exp_name)
     os.makedirs(exp_dir, exist_ok=True)
 
     print(f"\n{'='*60}")
-    print(f"Curriculum Fine-tuning: {coarse_cfg_id}-way → 1000-way")
+    print(f"Curriculum Fine-tuning: {source_cfg_id}-way → {target_cfg_id}-way")
     print(f"{'='*60}")
+    print(f"Coarse model: {COARSE_MODEL}")
     print(f"Seed: {seed} ({seed_letter})")
     print(f"Transfer mode: {transfer_mode}")
     print(f"Fine-tuning epochs: {num_epochs}")
     print(f"Learning rate: {learning_rate}")
     print(f"Output directory: {exp_dir}")
 
-    # Load coarse model
-    print(f"\n=== Loading {coarse_cfg_id}-way model ===")
-    model = load_coarse_model(coarse_cfg_id, seed, checkpoint_dir, device)
+    # Load source model
+    print(f"\n=== Loading {source_cfg_id}-way model ===")
+    model = load_coarse_model(source_cfg_id, seed, source_checkpoint_dir, device)
 
     # Replace classifier head
     print(f"\n=== Replacing classifier head ===")
-    model = replace_classifier_head(model, coarse_cfg_id, 1000)
+    model = replace_classifier_head(model, source_cfg_id, target_cfg_id)
     model = model.to(device)
 
     # Apply transfer mode (freeze appropriate layers)
@@ -293,9 +310,9 @@ def run_curriculum_finetuning(
     print(f"Trainable parameters: {trainable_params:,}")
     print(f"Frozen parameters: {frozen_params:,}")
 
-    # Load ImageNet data
-    print(f"\n=== Loading ImageNet ===")
-    datasets, loaders = get_imagenet_loaders(batch_size, num_workers)
+    # Load ImageNet data (with PCA labels if target is coarse)
+    print(f"\n=== Loading ImageNet ({target_cfg_id}-way labels) ===")
+    datasets, loaders = get_imagenet_loaders(target_cfg_id, batch_size, num_workers)
     print(f"Train samples: {len(datasets['train'])}")
     print(f"Val samples: {len(datasets['test'])}")
 
@@ -320,7 +337,9 @@ def run_curriculum_finetuning(
 
     # Save config
     config = {
-        'coarse_cfg_id': coarse_cfg_id,
+        'source_cfg_id': source_cfg_id,
+        'target_cfg_id': target_cfg_id,
+        'coarse_model': COARSE_MODEL,
         'seed': seed,
         'num_epochs': num_epochs,
         'learning_rate': learning_rate,
@@ -330,7 +349,7 @@ def run_curriculum_finetuning(
         'transfer_mode': transfer_mode,
         'transfer_mode_config': TRANSFER_MODES[transfer_mode],
         'eval_freq': eval_freq,
-        'source_checkpoint_dir': checkpoint_dir,
+        'source_checkpoint_dir': source_checkpoint_dir,
         'total_params': total_params,
         'trainable_params': trainable_params,
         'frozen_params': frozen_params,
@@ -350,7 +369,8 @@ def run_curriculum_finetuning(
     print(f"  Val Top-1: {val_top1:.2f}%  |  Val Top-5: {val_top5:.2f}%")
 
     results.append({
-        'coarse_cfg_id': coarse_cfg_id,
+        'source_cfg_id': source_cfg_id,
+        'target_cfg_id': target_cfg_id,
         'seed': seed,
         'transfer_mode': transfer_mode,
         'epoch': 0,
@@ -397,7 +417,8 @@ def run_curriculum_finetuning(
 
             # Save results
             results.append({
-                'coarse_cfg_id': coarse_cfg_id,
+                'source_cfg_id': source_cfg_id,
+                'target_cfg_id': target_cfg_id,
                 'seed': seed,
                 'transfer_mode': transfer_mode,
                 'epoch': epoch,
@@ -448,11 +469,15 @@ def run_curriculum_finetuning(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Curriculum fine-tuning: coarse → 1000-way classification"
+        description="Curriculum fine-tuning: source → target granularity"
     )
     parser.add_argument(
-        "--coarse_cfg_id", type=int, default=64,
-        help="Coarse granularity to start from (default: 64)"
+        "--source_cfg_id", type=int, default=64,
+        help="Granularity of pretrained model to load (default: 64)"
+    )
+    parser.add_argument(
+        "--target_cfg_id", type=int, default=1000,
+        help="Granularity to fine-tune towards (default: 1000)"
     )
     parser.add_argument(
         "--seed", type=int, default=1, choices=[1, 2, 3],
@@ -492,10 +517,6 @@ def main():
         help="Frequency (in epochs) to evaluate accuracy (default: 2)"
     )
     parser.add_argument(
-        "--checkpoint_dir", type=str, default=None,
-        help="Directory containing coarse model checkpoints"
-    )
-    parser.add_argument(
         "--output_dir", type=str, default=None,
         help="Directory to save fine-tuned checkpoints"
     )
@@ -503,7 +524,8 @@ def main():
     args = parser.parse_args()
 
     run_curriculum_finetuning(
-        coarse_cfg_id=args.coarse_cfg_id,
+        source_cfg_id=args.source_cfg_id,
+        target_cfg_id=args.target_cfg_id,
         seed=args.seed,
         num_epochs=args.num_epochs,
         learning_rate=args.lr,
@@ -513,7 +535,6 @@ def main():
         warmup_epochs=args.warmup_epochs,
         transfer_mode=args.transfer_mode,
         eval_freq=args.eval_freq,
-        checkpoint_dir=args.checkpoint_dir,
         output_dir=args.output_dir,
     )
 
