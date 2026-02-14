@@ -24,16 +24,20 @@ from visreps.utils import get_seed_letter
 from visreps.analysis.sparse_random_projection import get_srp_transformer
 
 class FeatureExtractor(nn.Module):
-    def __init__(self, model: nn.Module, return_nodes: Dict[str, str] = None):
+    def __init__(self, model: nn.Module, return_nodes: Dict[str, str] = None,
+                 post_relu: bool = True):
         super().__init__()
         self.model = model
         # If return_nodes is a list, convert to dict mapping name to itself
         if isinstance(return_nodes, list):
             return_nodes = {node: node for node in return_nodes}
         self.return_nodes = return_nodes
+        self.post_relu = post_relu
         self.features = {}
         self.handles = []  # Initialize handles list
         self.layer_mapping = self._create_layer_mapping()
+        if self.post_relu:
+            self.layer_mapping = self._remap_to_post_relu(self.layer_mapping)
         self._attach_hooks()
         
     def _create_layer_mapping(self):
@@ -133,7 +137,51 @@ class FeatureExtractor(nn.Module):
             module = dict(self.model.named_modules())[path]
         
         return mapping
-        
+
+    def _remap_to_post_relu(self, mapping):
+        """Remap layer paths from Conv2d/Linear to their downstream activation fn.
+
+        For Sequential containers (AlexNet/VGG/CustomCNN), searches forward from
+        each mapped module to find the next ReLU/GELU/LeakyReLU in the sequence.
+        This gives post-BatchNorm, post-ReLU activations — the actual output that
+        downstream layers (and, by analogy, downstream brain areas) receive.
+        """
+        relu_mapping = {}
+        requested = set(self.return_nodes or [])
+        for semantic_name, module_path in mapping.items():
+            if requested and semantic_name not in requested:
+                relu_mapping[semantic_name] = module_path
+                continue
+            parts = module_path.split('.')
+            if len(parts) == 2:
+                container_name, idx_str = parts
+                container = getattr(self.model, container_name, None)
+                if container is not None and isinstance(container, nn.Sequential):
+                    try:
+                        module_idx = int(idx_str)
+                    except ValueError:
+                        relu_mapping[semantic_name] = module_path
+                        continue
+                    found = False
+                    for i in range(module_idx + 1, len(container)):
+                        if isinstance(container[i], (nn.ReLU, nn.GELU, nn.LeakyReLU)):
+                            relu_mapping[semantic_name] = f'{container_name}.{i}'
+                            found = True
+                            break
+                        # Stop if we hit another Conv/Linear (no activation for this layer)
+                        if isinstance(container[i], (nn.Conv2d, nn.Conv1d, nn.Conv3d, nn.Linear)):
+                            break
+                    if not found:
+                        print(f"Warning: No activation fn found after {semantic_name} "
+                              f"({module_path}), keeping pre-activation")
+                        relu_mapping[semantic_name] = module_path
+                else:
+                    relu_mapping[semantic_name] = module_path
+            else:
+                # Non-Sequential paths (e.g. ResNet 'layer1.0.conv1') — keep original
+                relu_mapping[semantic_name] = module_path
+        return relu_mapping
+
     def _attach_hooks(self):
         # Convert semantic names to actual layer paths
         actual_nodes = {}
