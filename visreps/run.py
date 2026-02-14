@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 import argparse
 from visreps.trainer import Trainer
 import visreps.evals as evals

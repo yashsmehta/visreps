@@ -111,6 +111,13 @@ def prepare_data_for_alignment(
         neural = torch.as_tensor(neural, dtype=torch.float32)
         acts   = {l: a[idx] for l, a in acts_raw.items()}
 
+    # ---- TVSD (stimulus-level alignment) ----
+    elif dataset == "tvsd":
+        idx = [i for i, k in enumerate(keys) if str(k) in neural_data_raw]
+        neural = np.stack([neural_data_raw[str(keys[i])] for i in idx]).squeeze()
+        neural = torch.as_tensor(neural, dtype=torch.float32)
+        acts   = {l: a[idx] for l, a in acts_raw.items()}
+
     else:
         raise ValueError(f"Unsupported neural_dataset '{dataset}'")
 

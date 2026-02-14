@@ -9,11 +9,10 @@ import h5py
 
 import visreps.utils as utils
 from visreps.dataloaders.obj_cls import get_transform
-from bonner.datasets.hebart2022_things_behavior._data import (
+from bonner.datasets.hebart2023_things_data.behavior import (
     load_embeddings as _load_things_embed,
 )
 from bonner.datasets.hebart2019_things._stimuli import StimulusSet as _ThingsStimSet
-
 logger = logging.getLogger(__name__)
 
 
@@ -142,27 +141,55 @@ def load_things_data() -> tuple[dict[str, np.ndarray], dict[str, str]]:
 
     img_paths = {}
     stimset = _ThingsStimSet()
-    for k in stimset.metadata.index:
-        try:
-            relative_filename = stimset.metadata.loc[k, "filename"]
-            relative_path_part = relative_filename.split("images/", 1)[-1]
-            correct_path = os.path.join(
-                stimset.root, "images", "object_images", relative_path_part
-            )
-            if os.path.exists(correct_path):
-                img_paths[k] = correct_path
-            else:
-                logger.warning(
-                    f"Constructed path {correct_path} for image {k} does not exist. Skipping."
-                )
-        except KeyError:
-            logger.error(f"Key {k} not found in _ThingsStimSet metadata. Skipping.")
-        except Exception as e:
-            logger.warning(
-                f"Error constructing path for image {k}: {e}. Skipping.", exc_info=False
-            )
+    for idx in range(len(stimset.metadata)):
+        row = stimset.metadata.iloc[idx]
+        stimulus_id = row["stimulus"]
+        concept = row["concept"]
+        correct_path = os.path.join(
+            stimset.root, "images", "object_images", concept, f"{stimulus_id}.jpg"
+        )
+        if os.path.exists(correct_path):
+            img_paths[stimulus_id] = correct_path
+        else:
+            logger.warning(f"Image path {correct_path} does not exist. Skipping.")
 
     return embeds, img_paths
+
+
+# ──────────────────────── TVSD ────────────────────────
+def load_tvsd_data(cfg: Dict) -> tuple[dict[str, np.ndarray], dict[str, str]]:
+    """
+    Load TVSD macaque MUA responses (pre-cached, averaged across 30 reps)
+    and corresponding THINGS image paths.
+
+    Config keys used: region (V1/V4/IT), subject_idx (0=monkey F, 1=monkey N).
+
+    Expects cached pickle at datasets/neural/tvsd/fmri_responses.pkl
+    with structure: data[region][subject_idx] → xr.DataArray (stimulus, neuroid).
+    Generate with: python scripts/cache_tvsd_data.py
+    """
+    region, subj = cfg["region"], cfg["subject_idx"]
+    fmri_path = os.path.join("datasets", "neural", "tvsd", "fmri_responses.pkl")
+    data_xr = utils.load_pickle(fmri_path)[region][subj]
+
+    stim_ids = [str(s) for s in data_xr.coords["stimulus"].values]
+    targets = {sid: data_xr.sel(stimulus=sid).values for sid in stim_ids}
+
+    # Build THINGS image paths: stim_id format is "{concept}_{instance}", e.g. "alligator_14n"
+    things_root = os.path.join(
+        os.environ.get("BONNER_DATASETS_HOME", os.path.expanduser("~/.cache/bonner-datasets")),
+        "hebart2019.things",
+    )
+    img_paths = {}
+    for sid in stim_ids:
+        concept = "_".join(sid.split("_")[:-1])
+        path = os.path.join(things_root, "images", "object_images", concept, f"{sid}.jpg")
+        if os.path.exists(path):
+            img_paths[sid] = path
+        else:
+            logger.warning(f"TVSD image not found: {path}")
+
+    return targets, img_paths
 
 
 # ─────────────────────── Dataset/Loader ───────────────────────
@@ -241,8 +268,10 @@ def get_neural_loader(cfg: Dict) -> Tuple[Dict[str, Any], DataLoader]:
         targets, stimuli = load_nsd_synthetic_data(cfg)
     elif dataset_type == "cusack":
         targets, stimuli = load_cusack_data(cfg)
+    elif dataset_type == "tvsd":
+        targets, stimuli = load_tvsd_data(cfg)
     else:
-        raise ValueError("neural_dataset must be 'nsd', 'things', 'nsd_synthetic', or 'cusack'")
+        raise ValueError("neural_dataset must be 'nsd', 'things', 'nsd_synthetic', 'cusack', or 'tvsd'")
 
     transform = get_transform(ds_stats="imgnet")
     dataloader = _make_loader(

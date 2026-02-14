@@ -1,12 +1,12 @@
-import time
-import random
+import sqlite3
+import hashlib
+import json
 from pathlib import Path
 import os
 import pickle
 import warnings
 import torch
 from torch.optim.lr_scheduler import StepLR, MultiStepLR, CosineAnnealingLR, LinearLR, SequentialLR
-from filelock import FileLock, Timeout
 from rich.console import Console
 from rich.theme import Theme
 from omegaconf import OmegaConf
@@ -295,61 +295,113 @@ def load_pickle(file_path):
         raise RuntimeError(f"Error loading pickle file at {file_path}: {str(e)}")
 
 
+_RESULTS_DB_PATH = Path("logs/results.db")
+
+_IDENTITY_FIELDS = (
+    "seed", "epoch", "region", "subject_idx", "neural_dataset", "cfg_id",
+    "pca_labels", "pca_n_classes", "pca_labels_folder", "checkpoint_dir",
+    "analysis", "compare_rsm_correlation", "reconstruct_from_pcs", "pca_k",
+)
+
+
+def _compute_run_id(cfg) -> str:
+    """Deterministic hash of experiment identity fields."""
+    identity = {f: cfg.get(f) for f in _IDENTITY_FIELDS}
+    identity["subject_idx"] = str(identity.get("subject_idx"))
+    raw = json.dumps(identity, sort_keys=True)
+    return hashlib.sha256(raw.encode()).hexdigest()[:12]
+
+
+def _init_db(db_path) -> sqlite3.Connection:
+    """Open (or create) the results SQLite database with WAL mode."""
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(db_path), timeout=10)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=10000")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS results (
+            run_id                  TEXT NOT NULL,
+            layer                   TEXT NOT NULL,
+            score                   REAL NOT NULL,
+            analysis                TEXT NOT NULL,
+            seed                    INTEGER NOT NULL,
+            epoch                   INTEGER NOT NULL,
+            region                  TEXT,
+            subject_idx             TEXT,
+            neural_dataset          TEXT NOT NULL,
+            cfg_id                  INTEGER,
+            pca_labels              BOOLEAN NOT NULL,
+            pca_n_classes           INTEGER,
+            pca_labels_folder       TEXT,
+            model_name              TEXT NOT NULL,
+            checkpoint_dir          TEXT,
+            compare_rsm_correlation TEXT,
+            reconstruct_from_pcs    BOOLEAN DEFAULT 0,
+            pca_k                   INTEGER DEFAULT 1,
+            UNIQUE(run_id, layer)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS run_configs (
+            run_id      TEXT PRIMARY KEY,
+            config_json TEXT NOT NULL,
+            created_at  TEXT DEFAULT (datetime('now'))
+        )
+    """)
+    conn.commit()
+    return conn
+
+
 def save_results(df, cfg, timeout=60):
-    """Save results to CSV with file locking in logs/mode/results_csv.csv format.
-    Adds all config parameters from OmegaConf while avoiding metadata."""
-    # Create a clean DataFrame without the metadata
-    clean_df = df.copy()
+    """Save evaluation results to SQLite database at logs/results.db.
 
-    # Convert OmegaConf to primitive container and add all config params
-    config_dict = OmegaConf.to_container(cfg, resolve=True)
-    if isinstance(config_dict, dict):
-        for key, value in config_dict.items():
-            if not key.startswith("_") and not isinstance(value, (dict, list)):
-                clean_df[key] = value
+    Creates two tables: `results` (one row per run+layer) and `run_configs`
+    (full config JSON per run_id). Re-running the same eval replaces old rows.
+    """
+    run_id = _compute_run_id(cfg)
+    conn = _init_db(_RESULTS_DB_PATH)
 
-    # Add random delay
-    random.seed(os.urandom(10))
-    time.sleep(random.uniform(0, 3))
+    config_json = json.dumps(OmegaConf.to_container(cfg, resolve=True))
+    conn.execute(
+        "INSERT OR REPLACE INTO run_configs (run_id, config_json) VALUES (?, ?)",
+        (run_id, config_json),
+    )
 
-    # Setup paths and lock
-    save_dir = Path("logs")
-    save_dir.mkdir(parents=True, exist_ok=True)
-    results_path = save_dir / f"{cfg.results_csv}"
-    lock_path = results_path.with_suffix(".lock")
-    lock = FileLock(str(lock_path), timeout=timeout)
-
-    try:
-        with lock:
-            # Align columns to existing CSV if it exists
-            if results_path.exists():
-                existing_cols = pd.read_csv(results_path, nrows=0).columns.tolist()
-                for col in existing_cols:
-                    if col not in clean_df.columns:
-                        clean_df[col] = ""
-                clean_df = clean_df[existing_cols]
-                write_header = False
-            else:
-                write_header = True
-            
-            clean_df.to_csv(results_path, mode="a", header=write_header, index=False)
-            rprint(f"Successfully saved results to {results_path}", style="success")
-        # Remove lock file after successful save
-        if lock_path.exists():
-            lock_path.unlink()
-    except Timeout:
-        rprint(
-            f"ERROR: Could not acquire lock for {results_path} after {timeout}s",
-            style="error",
+    for _, row in df.iterrows():
+        compare_rsm = row.get("compare_rsm_correlation") if "compare_rsm_correlation" in row.index else cfg.get("compare_rsm_correlation")
+        conn.execute(
+            """INSERT OR REPLACE INTO results
+               (run_id, layer, score, analysis, seed, epoch, region, subject_idx,
+                neural_dataset, cfg_id, pca_labels, pca_n_classes, pca_labels_folder,
+                model_name, checkpoint_dir, compare_rsm_correlation,
+                reconstruct_from_pcs, pca_k)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                run_id,
+                row["layer"],
+                float(row["score"]),
+                row.get("analysis", cfg.get("analysis")),
+                int(cfg.get("seed")),
+                int(cfg.get("epoch", 0)),
+                cfg.get("region"),
+                str(cfg.get("subject_idx")),
+                cfg.get("neural_dataset"),
+                cfg.get("cfg_id"),
+                bool(cfg.get("pca_labels")),
+                cfg.get("pca_n_classes"),
+                cfg.get("pca_labels_folder"),
+                cfg.get("model_name"),
+                cfg.get("checkpoint_dir"),
+                compare_rsm,
+                bool(cfg.get("reconstruct_from_pcs", False)),
+                cfg.get("pca_k", 1),
+            ),
         )
-        raise
-    except Exception as e:
-        rprint(
-            f"ERROR: Failed to save results to {results_path}: {str(e)}", style="error"
-        )
-        raise
 
-    return str(results_path)
+    conn.commit()
+    conn.close()
+    rprint(f"Saved {len(df)} results to {_RESULTS_DB_PATH} (run_id={run_id})", style="success")
+    return str(_RESULTS_DB_PATH)
 
 
 def validate_config(cfg: OmegaConf) -> OmegaConf:
@@ -408,7 +460,7 @@ class ConfigVerifier:
     VALID_MODEL_CLASSES = {"custom_model", "standard_model"}
     VALID_MODEL_SOURCES = {"checkpoint", "torchvision"}
     VALID_ANALYSES = {"rsa", "encoding_score"}
-    VALID_NEURAL_DATASETS = {"nsd", "things", "nsd_synthetic", "cusack"}
+    VALID_NEURAL_DATASETS = {"nsd", "things", "nsd_synthetic", "cusack", "tvsd"}
     VALID_NSD_TYPES = {"finegrained", "streams", "streams_shared"}
 
     def __init__(self, cfg: OmegaConf):
@@ -521,6 +573,17 @@ class ConfigVerifier:
                     style="error",
                 )
                 raise AssertionError(f"Invalid nsd_type: {nsd_type}")
+
+        if self.cfg.neural_dataset.lower() == "tvsd":
+            if not isinstance(self.cfg.subject_idx, int) or self.cfg.subject_idx not in (0, 1):
+                raise AssertionError(
+                    f"Invalid subject_idx for TVSD: {self.cfg.subject_idx}. Must be 0 (monkey F) or 1 (monkey N)"
+                )
+            valid_regions = {"V1", "V4", "IT"}
+            if self.cfg.region not in valid_regions:
+                raise AssertionError(
+                    f"Invalid region for TVSD: {self.cfg.region}. Must be one of {valid_regions}"
+                )
 
         if self.cfg.analysis.lower() not in self.VALID_ANALYSES:
             self.rprint(

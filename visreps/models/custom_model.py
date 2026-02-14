@@ -34,20 +34,38 @@ class BaseCNN(nn.Module):
         return nn.AvgPool2d(kernel_size=kernel_size, stride=stride)
 
     def _set_trainable_layers(self, trainable_layers):
-        """Set trainable layers. Accepts dict with 'conv' and 'fc' as '11100' strings."""
-        conv_modules = [m for m in self.features.modules() if isinstance(m, nn.Conv2d)]
-        fc_modules = [m for m in self.classifier.modules() if isinstance(m, nn.Linear)]
+        """Set trainable layers. Accepts dict with 'conv' and 'fc' as '11100' strings.
 
-        conv_mask = [c == "1" for c in trainable_layers.get("conv", "1" * len(conv_modules))]
-        fc_mask = [c == "1" for c in trainable_layers.get("fc", "1" * len(fc_modules))]
+        Also freezes associated BatchNorm layers — both their parameters (gamma/beta)
+        and their running statistics (kept in eval mode via train() override).
+        """
+        conv_layers = [m for m in self.features.modules() if isinstance(m, nn.Conv2d)]
+        fc_layers = [m for m in self.classifier.modules() if isinstance(m, nn.Linear)]
+        conv_bns = [m for m in self.features.modules() if isinstance(m, (nn.BatchNorm2d, nn.BatchNorm1d))]
+        fc_bns = [m for m in self.classifier.modules() if isinstance(m, (nn.BatchNorm2d, nn.BatchNorm1d))]
 
-        for idx, conv in enumerate(conv_modules):
-            for param in conv.parameters():
-                param.requires_grad = conv_mask[idx]
+        conv_mask = [c == "1" for c in trainable_layers.get("conv", "1" * len(conv_layers))]
+        fc_mask = [c == "1" for c in trainable_layers.get("fc", "1" * len(fc_layers))]
 
-        for idx, fc in enumerate(fc_modules):
-            for param in fc.parameters():
-                param.requires_grad = fc_mask[idx]
+        # Freeze conv/fc weights
+        for layer, trainable in zip(conv_layers + fc_layers, conv_mask + fc_mask):
+            for p in layer.parameters():
+                p.requires_grad = trainable
+
+        # Freeze associated BatchNorm layers (i-th BN corresponds to i-th conv/fc)
+        self._frozen_bns = []
+        for bn, trainable in zip(conv_bns + fc_bns, conv_mask + fc_mask):
+            if not trainable:
+                for p in bn.parameters():
+                    p.requires_grad = False
+                self._frozen_bns.append(bn)
+
+    def train(self, mode=True):
+        """Override to keep frozen BatchNorm layers in eval mode."""
+        super().train(mode)
+        for bn in getattr(self, '_frozen_bns', []):
+            bn.eval()
+        return self
 
     def _initialize_weights(self):
         """He initialization for ReLU networks."""

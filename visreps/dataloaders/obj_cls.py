@@ -105,7 +105,7 @@ class ImageNetDataset(Dataset):
     Folder-to-label mapping is read from a JSON file.
     Can load 'train', 'test', or 'all' splits.
     """
-    def __init__(self, base_path, split = "train", transform=None, train_ratio= 0.8):
+    def __init__(self, base_path, split = "train", transform=None, train_ratio= 0.8, train_fraction=1.0):
         assert split in ["train", "test", "all"], f"Invalid split: {split}"
         self.transform = transform
         label_file = os.path.join(utils.get_env_var("IMAGENET_LOCAL_DIR"), "folder_labels.json")
@@ -145,22 +145,31 @@ class ImageNetDataset(Dataset):
                     img_id = fname  # Use filename for potential PCA matching later
                     self.samples.append((img_path, label, img_id))
                     
+        # Sort for filesystem-independent ordering
+        self.samples.sort(key=lambda s: s[2])
         total_found = len(self.samples)
 
         # Apply train/test split only if split is 'train' or 'test'
         if split in ["train", "test"]:
             if total_found == 0:
-                 self.samples = [] # Ensure samples is empty list
+                 self.samples = []
             else:
-                 # Use a fixed seed for reproducible splits if needed, otherwise random split
-                 # torch.manual_seed(42) # Uncomment for deterministic split
-                 indices = torch.randperm(total_found).tolist()
+                 g = torch.Generator().manual_seed(42)
+                 indices = torch.randperm(total_found, generator=g).tolist()
                  split_idx = int(total_found * train_ratio)
                  if split == "train":
                      self.samples = [self.samples[i] for i in indices[:split_idx]]
                  else: # split == "test"
                      self.samples = [self.samples[i] for i in indices[split_idx:]]
         # If split is 'all', self.samples remains the full list
+
+        # Subsample training split if train_fraction < 1.0
+        if split == "train" and train_fraction < 1.0 and len(self.samples) > 0:
+            g = torch.Generator().manual_seed(42)
+            n_keep = max(1, int(len(self.samples) * train_fraction))
+            indices = torch.randperm(len(self.samples), generator=g).tolist()[:n_keep]
+            self.samples = [self.samples[i] for i in sorted(indices)]
+            print(f"train_fraction={train_fraction}: kept {n_keep} of {split_idx} train samples")
 
     def __len__(self):
         return len(self.samples)
@@ -308,6 +317,16 @@ def prepare_tinyimgnet_data(cfg, pca_labels, shuffle, preprocess, train_test_spl
         # Use the folder_split to point to the correct directory
         dataset = TinyImageNetDataset(base_path, folder_split, transform)
 
+        # Subsample training split if train_fraction < 1.0
+        train_fraction = cfg.get("train_fraction", 1.0)
+        if split == "train" and train_fraction < 1.0 and len(dataset.samples) > 0:
+            g = torch.Generator().manual_seed(42)
+            n_total = len(dataset.samples)
+            n_keep = max(1, int(n_total * train_fraction))
+            indices = torch.randperm(n_total, generator=g).tolist()[:n_keep]
+            dataset.samples = [dataset.samples[i] for i in sorted(indices)]
+            print(f"train_fraction={train_fraction}: kept {n_keep} of {n_total} train samples")
+
         # Wrap with PCA labels if specified
         if pca_labels:
             pca_base_path = os.path.join("pca_labels", cfg.get("pca_labels_folder"))
@@ -352,7 +371,8 @@ def prepare_imgnet_data(cfg, pca_labels, shuffle, preprocess, train_test_split, 
         tfms = get_transform(ds_stats="imgnet", data_augment=augment, image_size=224, preprocess=preprocess)
         
         # Instantiate the dataset for the current split ('train', 'test', or 'all')
-        dataset = ImageNetDataset(base_path, split=split, transform=tfms)
+        train_fraction = cfg.get("train_fraction", 1.0)
+        dataset = ImageNetDataset(base_path, split=split, transform=tfms, train_fraction=train_fraction)
 
         # Wrap with PCA labels if specified
         if pca_labels:

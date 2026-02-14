@@ -45,6 +45,7 @@ dependencies = [
     "google-genai>=1.47.0",
     "dreamsim>=0.2.1",
     "pytest>=8.3.4",
+    "bonner-libraries @ git+https://github.com/BonnerLab/bonner-libraries.git@main",
 ]
 
 [project.optional-dependencies]
