@@ -9,21 +9,20 @@ from plotters.utils import plot_brain_score_barplot, get_best_layer_scores
 # CONFIGURATION
 # ============================================================================
 REGION_TO_PLOT = 'ventral visual stream'  # Options: 'early visual stream', 'ventral visual stream', etc.
-ARCHITECTURES_TO_PLOT = ['alexnet', 'dino']  # Which architectures to include
-MAX_PCA_CLASSES = 4096  # Maximum PCA class count (e.g., 64 means 2-64)
+ARCHITECTURES_TO_PLOT = ['alexnet', 'vit', 'clip', 'dino']  # Which architectures to include
+MAX_PCA_CLASSES = 64  # Maximum PCA class count (e.g., 64 means 2-64)
 
 
 # --- Main Script ---
 if __name__ == "__main__":
     # ---------------- config ----------------
     base_log_path = 'logs/'
-    pca_csv = 'all_pca_classes.csv'
-    dreamsim_pca_csv = 'dreamsim_pca.csv'
-    k1k_csv = 'imagenet1k.csv'
+    pca_csv = 'all_rsa_coarsegrain.csv'
+    k1k_csv = 'all_rsa_1k.csv'
     epoch_to_plot = 20
     
     # Generate pca_classes_to_plot based on MAX_PCA_CLASSES
-    all_pca_classes = [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
+    all_pca_classes = [2, 4, 8, 16, 32, 64]
     pca_classes_to_plot = [c for c in all_pca_classes if c <= MAX_PCA_CLASSES]
     
     out_png = f"plotters/post-neurips/dino_vs_alexnet_{REGION_TO_PLOT.lower().replace(' ','_')}.png"

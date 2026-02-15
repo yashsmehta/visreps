@@ -1,5 +1,5 @@
 """
-Paired box plot comparing two methods/conditions.
+Paired box plot comparing Global vs Hierarchical ViT-based PCA labels.
 
 Creates a figure with 2 subplots:
 1. Early Visual Stream (conv4 layer)
@@ -19,8 +19,8 @@ from pathlib import Path
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
-CSV_PATH = "logs/raw_v_l2norm.csv"
-OUTPUT_PATH = "plotters/post-neurips/raw_vs_l2norm_paired.png"
+CSV_PATH = "logs/vit_global_v_hierarchical.csv"
+OUTPUT_PATH = "plotters/post-neurips/vit_global_vs_hierarchical_paired.png"
 
 # Subplot configurations: (region, layer, title)
 SUBPLOT_CONFIGS = [
@@ -30,10 +30,10 @@ SUBPLOT_CONFIGS = [
 
 # Method identification
 COMPARE_COLUMN = "checkpoint_dir"
-METHOD_A_VALUE = "model_checkpoints/alexnet_raw_imagenet"
-METHOD_B_VALUE = "model_checkpoints/alexnet_l2norm_imagenet"
-METHOD_A_LABEL = "Raw"
-METHOD_B_LABEL = "L2 Norm"
+METHOD_A_VALUE = "model_checkpoints/alexnet_hierarchical_vit"
+METHOD_B_VALUE = "model_checkpoints/alexnet_global_vit"
+METHOD_A_LABEL = "Hierarchical"
+METHOD_B_LABEL = "Global"
 
 # ============================================================================
 # MAIN SCRIPT

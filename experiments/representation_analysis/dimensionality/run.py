@@ -86,7 +86,7 @@ def main():
     print("=" * 60)
 
     # Load data
-    (feats_pretrained, feats_4way,
+    (feats_pretrained, feats_32way,
      pca_labels, sem_labels, synsets, img_paths, loader) = load_data_and_models_all_layers()
 
     layers = ALL_LAYERS
@@ -97,21 +97,21 @@ def main():
     results_pre = compute_all_metrics(feats_pretrained, layers)
 
     print(f"\nAnalyzing {model_names[1]}...")
-    results_4way = compute_all_metrics(feats_4way, layers)
+    results_32way = compute_all_metrics(feats_32way, layers)
 
     # Organize results by metric
     all_results = {
         'Participation Ratio': {
             model_names[0]: results_pre['pr'],
-            model_names[1]: results_4way['pr']
+            model_names[1]: results_32way['pr']
         },
         'Two-NN Dimension': {
             model_names[0]: {l: results_pre['twonn'][l]['dimension'] for l in layers},
-            model_names[1]: {l: results_4way['twonn'][l]['dimension'] for l in layers}
+            model_names[1]: {l: results_32way['twonn'][l]['dimension'] for l in layers}
         },
         'Components (90% var)': {
             model_names[0]: results_pre['n90'],
-            model_names[1]: results_4way['n90']
+            model_names[1]: results_32way['n90']
         }
     }
 
@@ -140,7 +140,7 @@ def main():
     # 3. Eigenspectrum
     eigs_dict = {
         model_names[0]: results_pre['eigenvalues'],
-        model_names[1]: results_4way['eigenvalues']
+        model_names[1]: results_32way['eigenvalues']
     }
     plot_eigenspectrum(
         eigs_dict, ['conv2', 'conv5', 'fc2'], model_names,
@@ -151,7 +151,7 @@ def main():
     # 4. Sparsity
     sparsity_results = {
         model_names[0]: results_pre['sparsity'],
-        model_names[1]: results_4way['sparsity']
+        model_names[1]: results_32way['sparsity']
     }
     plot_sparsity_comparison(
         sparsity_results, layers, model_names,
@@ -165,7 +165,7 @@ def main():
 
     return {
         'pretrained': results_pre,
-        '4way': results_4way
+        '32way': results_32way
     }
 
 

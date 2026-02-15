@@ -58,11 +58,12 @@ def get_cifar100_loaders(batch_size=256, num_workers=4):
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
+    cifar_root = os.path.join(PROJECT_ROOT, 'data', 'obj_cls', 'cifar-100')
     train_dataset = torchvision.datasets.CIFAR100(
-        root=os.path.join(PROJECT_ROOT, 'data'), train=True, download=True, transform=transform
+        root=cifar_root, train=True, download=True, transform=transform
     )
     test_dataset = torchvision.datasets.CIFAR100(
-        root=os.path.join(PROJECT_ROOT, 'data'), train=False, download=True, transform=transform
+        root=cifar_root, train=False, download=True, transform=transform
     )
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
 

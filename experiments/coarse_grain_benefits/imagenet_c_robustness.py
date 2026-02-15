@@ -25,6 +25,7 @@ import torch
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
@@ -55,6 +56,8 @@ LAYER = "fc2"
 N_IMAGES = 5000
 SEVERITY = 3
 TRAIN_FRACTION = 0.6
+BATCH_SIZE = 512
+NUM_WORKERS = 8
 
 CORRUPTIONS = [
     'gaussian_noise', 'shot_noise', 'impulse_noise',
@@ -89,44 +92,54 @@ def load_images_and_labels(loader, n_images):
 
 
 # ─────────────────────────────────────────────────────────────
-# FEATURE EXTRACTION
+# IMAGE PREPROCESSING
 # ─────────────────────────────────────────────────────────────
 PRE_TRANSFORM = transforms.Compose([transforms.Resize(256), transforms.CenterCrop(224)])
-POST_TRANSFORM = transforms.Compose([
+NORMALIZE = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
 ])
 
 
-def extract_features_from_images(extractor, images, layer, device, corruption=None, severity=3, batch_size=64):
-    """Extract features from PIL images, optionally applying corruption."""
+def preprocess_to_arrays(images):
+    """Resize and crop all PIL images to numpy arrays (done once)."""
+    return [np.array(PRE_TRANSFORM(img)) for img in tqdm(images, desc="Pre-resizing")]
+
+
+def prepare_tensors(image_arrays, corruption=None, severity=3):
+    """Corrupt and normalize images in parallel using threads."""
+    def process(arr):
+        if corruption:
+            try:
+                arr = corrupt(arr, corruption_name=corruption, severity=severity)
+            except Exception:
+                pass
+        return NORMALIZE(Image.fromarray(arr.astype(np.uint8)))
+
+    with ThreadPoolExecutor(max_workers=NUM_WORKERS) as pool:
+        tensors = list(tqdm(
+            pool.map(process, image_arrays),
+            total=len(image_arrays),
+            desc=f"Preparing {corruption or 'clean'}",
+            leave=False,
+        ))
+
+    return torch.stack(tensors)
+
+
+# ─────────────────────────────────────────────────────────────
+# FEATURE EXTRACTION
+# ─────────────────────────────────────────────────────────────
+def extract_features(extractor, tensors, layer, device, batch_size=BATCH_SIZE):
+    """Extract features from pre-processed tensors in large GPU batches."""
     features_list = []
-
-    for i in tqdm(range(0, len(images), batch_size), desc=f"Extracting {corruption or 'clean'}", leave=False):
-        batch_images = images[i:i+batch_size]
-        batch_tensors = []
-
-        for img in batch_images:
-            img_resized = PRE_TRANSFORM(img)
-            img_array = np.array(img_resized)
-
-            if corruption and IMAGECORRUPTIONS_AVAILABLE:
-                try:
-                    img_array = corrupt(img_array, corruption_name=corruption, severity=severity)
-                except Exception:
-                    pass
-
-            tensor = POST_TRANSFORM(Image.fromarray(img_array.astype(np.uint8)))
-            batch_tensors.append(tensor)
-
-        batch = torch.stack(batch_tensors)
-
+    for i in range(0, len(tensors), batch_size):
+        batch = tensors[i:i + batch_size]
         with torch.no_grad():
             feats = extractor(batch.to(device))[layer]
             if feats.dim() > 2:
                 feats = feats.view(feats.size(0), -1)
             features_list.append(feats.cpu().numpy())
-
     return np.vstack(features_list)
 
 
@@ -140,8 +153,8 @@ def main():
 
     device = get_device()
     print(f"Device: {device}")
-    print(f"Corruptions: {CORRUPTIONS}")
-    print(f"Severity: {SEVERITY}")
+    print(f"Batch size: {BATCH_SIZE}, Workers: {NUM_WORKERS}")
+    print(f"Corruptions: {len(CORRUPTIONS)}, Severity: {SEVERITY}")
 
     # Load ImageNet validation data
     print("\n=== Loading ImageNet ===")
@@ -151,20 +164,31 @@ def main():
     all_images, all_labels = load_images_and_labels(loaders['test'], N_IMAGES)
     print(f"Loaded {len(all_images)} images")
 
-    # Train/test split (probe trained on train, evaluated on test)
-    indices = np.arange(len(all_images))
-    train_idx, test_idx = train_test_split(indices, train_size=TRAIN_FRACTION, random_state=42, stratify=all_labels)
-    train_images = [all_images[i] for i in train_idx]
-    test_images = [all_images[i] for i in test_idx]
+    # Pre-resize all images to numpy arrays (done once, reused for every corruption)
+    all_arrays = preprocess_to_arrays(all_images)
+    del all_images
+
+    # Train/test split
+    indices = np.arange(len(all_arrays))
+    train_idx, test_idx = train_test_split(indices, train_size=TRAIN_FRACTION, random_state=42)
+    train_arrays = [all_arrays[i] for i in train_idx]
+    test_arrays = [all_arrays[i] for i in test_idx]
     train_labels = all_labels[train_idx]
     test_labels = all_labels[test_idx]
-    print(f"Train: {len(train_images)}, Test: {len(test_images)}")
+    print(f"Train: {len(train_arrays)}, Test: {len(test_arrays)}")
 
+    # Pre-compute clean tensors once (reused across all models)
+    print("\n=== Preparing clean tensors ===")
+    train_tensors = prepare_tensors(train_arrays)
+    test_tensors = prepare_tensors(test_arrays)
+
+    # Phase 1: Train probes for all models on clean features
+    print("\n=== Phase 1: Training probes ===")
+    trained_models = {}
     results = []
 
     for name, checkpoint_path in MODELS.items():
-        print(f"\n=== {name} ===")
-
+        print(f"\n--- {name} ---")
         try:
             model = load_checkpoint_model(checkpoint_path, device)
         except FileNotFoundError as e:
@@ -173,45 +197,54 @@ def main():
 
         extractor = get_feature_extractor(model, LAYER).to(device).eval()
 
-        # Extract clean features for train and test
-        print("  Extracting clean features...")
-        train_features = extract_features_from_images(extractor, train_images, LAYER, device)
-        test_features = extract_features_from_images(extractor, test_images, LAYER, device)
+        train_features = extract_features(extractor, train_tensors, LAYER, device)
+        test_features = extract_features(extractor, test_tensors, LAYER, device)
 
-        # Scale features
         scaler = StandardScaler()
         train_scaled = scaler.fit_transform(train_features)
         test_scaled = scaler.transform(test_features)
 
-        # Train probe on train set, evaluate on test set
         print("  Training linear probe...")
         clf = LogisticRegression(max_iter=1000, solver='lbfgs', n_jobs=-1, verbose=0)
         clf.fit(train_scaled, train_labels)
         clean_acc = clf.score(test_scaled, test_labels)
-        print(f"  Clean test accuracy: {clean_acc*100:.2f}%")
+        print(f"  Clean test accuracy: {clean_acc * 100:.2f}%")
 
-        # Evaluate each corruption on test images only
-        for corruption in CORRUPTIONS:
-            corrupt_features = extract_features_from_images(
-                extractor, test_images, LAYER, device, corruption=corruption, severity=SEVERITY
-            )
-            corrupt_scaled = scaler.transform(corrupt_features)
-            corrupt_acc = clf.score(corrupt_scaled, test_labels)
-            rel_robust = corrupt_acc / clean_acc if clean_acc > 0 else 0
+        trained_models[name] = {
+            'extractor': extractor,
+            'scaler': scaler,
+            'clf': clf,
+            'clean_acc': clean_acc,
+        }
+        torch.cuda.empty_cache()
 
-            print(f"  {corruption}: {corrupt_acc*100:.2f}% (rel: {rel_robust:.3f})")
+    del train_tensors, test_tensors
+
+    # Phase 2: Evaluate corruptions (each prepared once, evaluated on all models)
+    print("\n=== Phase 2: Evaluating corruptions ===")
+    for corruption in CORRUPTIONS:
+        print(f"\n--- {corruption} ---")
+        corrupt_tensors = prepare_tensors(test_arrays, corruption=corruption, severity=SEVERITY)
+
+        for name, info in trained_models.items():
+            corrupt_features = extract_features(info['extractor'], corrupt_tensors, LAYER, device)
+            corrupt_scaled = info['scaler'].transform(corrupt_features)
+            corrupt_acc = info['clf'].score(corrupt_scaled, test_labels)
+            rel_robust = corrupt_acc / info['clean_acc'] if info['clean_acc'] > 0 else 0
+
+            print(f"  {name}: {corrupt_acc * 100:.2f}% (rel: {rel_robust:.3f})")
 
             results.append({
                 'model_name': name,
                 'layer': LAYER,
                 'corruption': corruption,
                 'severity': SEVERITY,
-                'clean_acc': clean_acc,
+                'clean_acc': info['clean_acc'],
                 'corrupt_acc': corrupt_acc,
                 'relative_robustness': rel_robust,
             })
 
-        del model, extractor
+        del corrupt_tensors
         torch.cuda.empty_cache()
 
     # Save
