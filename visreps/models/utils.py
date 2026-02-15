@@ -25,7 +25,7 @@ from visreps.analysis.sparse_random_projection import get_srp_transformer
 
 class FeatureExtractor(nn.Module):
     def __init__(self, model: nn.Module, return_nodes: Dict[str, str] = None,
-                 post_relu: bool = True):
+                 post_relu: bool = True, extract_pre_and_post: bool = True):
         super().__init__()
         self.model = model
         # If return_nodes is a list, convert to dict mapping name to itself
@@ -33,11 +33,22 @@ class FeatureExtractor(nn.Module):
             return_nodes = {node: node for node in return_nodes}
         self.return_nodes = return_nodes
         self.post_relu = post_relu
+        self.extract_pre_and_post = extract_pre_and_post
         self.features = {}
         self.handles = []  # Initialize handles list
-        self.layer_mapping = self._create_layer_mapping()
-        if self.post_relu:
-            self.layer_mapping = self._remap_to_post_relu(self.layer_mapping)
+
+        base_mapping = self._create_layer_mapping()
+
+        if self.extract_pre_and_post:
+            post_mapping = self._remap_to_post_relu(base_mapping)
+            self.layer_mapping, self.return_nodes = self._build_pre_post_mapping(
+                base_mapping, post_mapping
+            )
+        elif self.post_relu:
+            self.layer_mapping = self._remap_to_post_relu(base_mapping)
+        else:
+            self.layer_mapping = base_mapping
+
         self._attach_hooks()
         
     def _create_layer_mapping(self):
@@ -182,6 +193,40 @@ class FeatureExtractor(nn.Module):
                 relu_mapping[semantic_name] = module_path
         return relu_mapping
 
+    def _build_pre_post_mapping(self, base_mapping, post_mapping):
+        """Build expanded mapping with _pre and _post entries for each layer.
+
+        _pre  = raw Conv2d/Linear output (before BatchNorm and ReLU)
+        _post = post-BatchNorm, post-ReLU output
+
+        Layers where no activation function was found (base == post path)
+        are kept as a single entry with no suffix.
+        """
+        combined_mapping = {}
+        expanded_return_nodes = {}
+
+        for semantic_name, output_name in (self.return_nodes or {}).items():
+            base_path = base_mapping.get(semantic_name)
+            post_path = post_mapping.get(semantic_name)
+
+            if base_path is None:
+                print(f"Warning: {semantic_name} not found in base mapping")
+                continue
+
+            if post_path is not None and base_path != post_path:
+                pre_name = f"{semantic_name}_pre"
+                post_name = f"{semantic_name}_post"
+                combined_mapping[pre_name] = base_path
+                combined_mapping[post_name] = post_path
+                expanded_return_nodes[pre_name] = pre_name
+                expanded_return_nodes[post_name] = post_name
+            else:
+                # No activation found downstream — keep single entry
+                combined_mapping[semantic_name] = base_path
+                expanded_return_nodes[semantic_name] = output_name
+
+        return combined_mapping, expanded_return_nodes
+
     def _attach_hooks(self):
         # Convert semantic names to actual layer paths
         actual_nodes = {}
@@ -217,10 +262,16 @@ def configure_feature_extractor(cfg, model):
     if not return_nodes:
         raise ValueError("return_nodes must be specified in config")
     return_nodes = {node: node for node in return_nodes} if isinstance(return_nodes, list) else return_nodes
+    extract_pre_and_post = cfg.get("extract_pre_and_post", True)
     # Use our custom feature extractor
     model.eval()  # Ensure consistent behavior
     print(f"Extracting features from layers: {list(return_nodes.keys())}")
-    return FeatureExtractor(model, return_nodes)
+    if extract_pre_and_post:
+        print("Extracting both pre-BN and post-BN/ReLU activations for each layer")
+    extractor = FeatureExtractor(model, return_nodes,
+                                 extract_pre_and_post=extract_pre_and_post)
+    print(f"Total extraction points: {list(extractor.return_nodes.keys())}")
+    return extractor
 
 
 def get_activations(

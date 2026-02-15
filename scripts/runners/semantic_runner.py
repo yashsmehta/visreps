@@ -30,7 +30,7 @@ class SemanticRunner(ExperimentRunner):
             params["checkpoint_model"] = f"checkpoint_epoch_{epoch}.pth"
             print(f"  Checkpoint: {params['checkpoint_model']}")
             print(f"  Config ID:  cfg{params.get('cfg_id', 'N/A')}")
-            print(f"  Results:    {params.get('results_csv', 'N/A')}")
+            print(f"  Results:    results.db")
         return params
 
     def _run_single(self, params: Dict[str, Any]):

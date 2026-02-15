@@ -5,6 +5,7 @@ from typing import Dict, List
 import numpy as np
 import scipy.stats
 import torch
+from tqdm import tqdm
 from visreps.utils import rprint
 
 logger = logging.getLogger(__name__)
@@ -198,3 +199,118 @@ def compute_rsa_alignment(
             rprint(f"Error saving RSMs: {e}", style="error")
 
     return results
+
+
+def compute_rsa_split_half_bootstrap(
+    cfg: Dict,
+    activations_dict: Dict[str, torch.Tensor],
+    neural_data: torch.Tensor,
+    n_bootstrap: int = 1000,
+    seed: int = 42,
+) -> List[Dict]:
+    """Split-half layer selection + bootstrap evaluation for unbiased model-level RSA.
+
+    Procedure:
+        1. Split stimuli 50/50 (selection half vs evaluation half).
+        2. On the selection half, compute per-layer RSA → pick the best layer.
+        3. Precompute the best-layer model RSM and the neural RSM on the evaluation half.
+        4. Compute the point estimate as the direct RSA on the full evaluation half
+           (no resampling — avoids upward bias from bootstrap duplicates).
+        5. Bootstrap: resample stimulus indices with replacement, reindex the
+           precomputed RSMs (no recomputation), and compare upper triangles.
+           The bootstrap distribution provides CI bounds only.
+
+    Why reindexing works:
+        RSM[i,j] = corr(row_i, row_j) depends only on those two rows, not on
+        the rest of the dataset.  A bootstrap sample with indices ``boot_idx``
+        produces RSM_boot[p,q] = RSM_orig[boot_idx[p], boot_idx[q]].
+        When boot_idx maps two positions to the same stimulus, the off-diagonal
+        entry is 1.0 (self-correlation) — identical to rebuilding from scratch.
+
+    Why the point estimate is NOT the bootstrap mean:
+        Bootstrap resampling with replacement creates duplicate stimuli, producing
+        trivially concordant (1.0, 1.0) pairs in both RSM upper triangles. This
+        systematically inflates the bootstrap mean. The unbiased point estimate
+        is the direct RSA on the full (unresampled) evaluation half.
+
+    Returns:
+        Single-element list with a dict containing: layer, score, ci_low, ci_high,
+        analysis, make_rsm_correlation, compare_rsm_correlation,
+        layer_selection_scores (List[Dict] of per-layer scores on the selection half).
+    """
+    make_rsm_corr = cfg.get("make_rsm_correlation", "Pearson")
+    cmp_rsm_corr = cfg.get("compare_rsm_correlation", "Kendall")
+
+    n_stimuli = neural_data.size(0)
+    rng = np.random.RandomState(seed)
+    perm = rng.permutation(n_stimuli)
+    half = n_stimuli // 2
+    sel_idx, eval_idx = perm[:half], perm[half:]
+
+    rprint(f"Split-half: {half} stimuli for selection, {len(eval_idx)} for evaluation", style="info")
+
+    # ── Step 1: Layer selection on first half ────────────────────────────
+    neural_rsm_sel = compute_rsm(neural_data[sel_idx], correlation=make_rsm_corr)
+
+    selection_scores = []
+    best_layer, best_score = None, -float("inf")
+    for layer, acts in activations_dict.items():
+        flat = acts[sel_idx].flatten(start_dim=1) if acts.ndim > 2 else acts[sel_idx]
+        layer_rsm = compute_rsm(flat, correlation=make_rsm_corr)
+        score = compute_rsm_correlation(layer_rsm, neural_rsm_sel, correlation=cmp_rsm_corr)
+        selection_scores.append({"layer": layer, "score": score})
+        rprint(f"  [selection] {layer:<10} RSA = {score:.4f}", style="info")
+        if score > best_score:
+            best_score = score
+            best_layer = layer
+
+    rprint(f"  Best layer: {best_layer} (score={best_score:.4f})", style="highlight")
+
+    # ── Step 2: Precompute RSMs on evaluation half (done once) ───────────
+    eval_acts = activations_dict[best_layer][eval_idx]
+    eval_acts = eval_acts.flatten(start_dim=1) if eval_acts.ndim > 2 else eval_acts
+
+    rsm_model_full = compute_rsm(eval_acts, correlation=make_rsm_corr)
+    rsm_brain_full = compute_rsm(neural_data[eval_idx], correlation=make_rsm_corr)
+
+    # ── Step 3: Point estimate on the full (unresampled) evaluation half ─
+    point_estimate = compute_rsm_correlation(
+        rsm_model_full, rsm_brain_full, correlation=cmp_rsm_corr
+    )
+    rprint(f"  Eval-half point estimate: {best_layer} RSA = {point_estimate:.4f}", style="info")
+
+    # ── Step 4: Bootstrap via RSM reindexing (for CI only) ───────────────
+    n_eval = len(eval_idx)
+    bootstrap_scores = np.empty(n_bootstrap, dtype=np.float64)
+
+    for i in tqdm(range(n_bootstrap), desc="  Bootstrap", unit="iter"):
+        boot_idx = torch.from_numpy(
+            rng.choice(n_eval, size=n_eval, replace=True)
+        ).to(rsm_model_full.device)
+
+        rsm_model_boot = rsm_model_full[boot_idx][:, boot_idx]
+        rsm_brain_boot = rsm_brain_full[boot_idx][:, boot_idx]
+
+        bootstrap_scores[i] = compute_rsm_correlation(
+            rsm_model_boot, rsm_brain_boot, correlation=cmp_rsm_corr
+        )
+
+    # 95% CI → tails at 2.5% and 97.5%
+    ci_low, ci_high = np.percentile(bootstrap_scores, [2.5, 97.5])
+
+    rprint(
+        f"  Result: {best_layer} RSA = {point_estimate:.4f} "
+        f"[95% CI: {ci_low:.4f}, {ci_high:.4f}]",
+        style="highlight",
+    )
+
+    return [{
+        "layer": best_layer,
+        "score": float(point_estimate),
+        "ci_low": float(ci_low),
+        "ci_high": float(ci_high),
+        "analysis": "rsa",
+        "make_rsm_correlation": make_rsm_corr,
+        "compare_rsm_correlation": cmp_rsm_corr,
+        "layer_selection_scores": selection_scores,
+    }]

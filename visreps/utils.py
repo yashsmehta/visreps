@@ -295,7 +295,7 @@ def load_pickle(file_path):
         raise RuntimeError(f"Error loading pickle file at {file_path}: {str(e)}")
 
 
-_RESULTS_DB_PATH = Path("logs/results.db")
+_RESULTS_DB_PATH = Path("results.db")
 
 _IDENTITY_FIELDS = (
     "seed", "epoch", "region", "subject_idx", "neural_dataset", "cfg_id",
@@ -338,9 +338,16 @@ def _init_db(db_path) -> sqlite3.Connection:
             compare_rsm_correlation TEXT,
             reconstruct_from_pcs    BOOLEAN DEFAULT 0,
             pca_k                   INTEGER DEFAULT 1,
+            ci_low                  REAL,
+            ci_high                 REAL,
             UNIQUE(run_id, layer)
         )
     """)
+    # Migrate existing databases: add ci_low/ci_high if missing
+    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(results)").fetchall()}
+    for col in ("ci_low", "ci_high"):
+        if col not in existing_cols:
+            conn.execute(f"ALTER TABLE results ADD COLUMN {col} REAL")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS run_configs (
             run_id      TEXT PRIMARY KEY,
@@ -348,12 +355,20 @@ def _init_db(db_path) -> sqlite3.Connection:
             created_at  TEXT DEFAULT (datetime('now'))
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS layer_selection_scores (
+            run_id  TEXT NOT NULL,
+            layer   TEXT NOT NULL,
+            score   REAL NOT NULL,
+            UNIQUE(run_id, layer)
+        )
+    """)
     conn.commit()
     return conn
 
 
 def save_results(df, cfg, timeout=60):
-    """Save evaluation results to SQLite database at logs/results.db.
+    """Save evaluation results to SQLite database at results.db.
 
     Creates two tables: `results` (one row per run+layer) and `run_configs`
     (full config JSON per run_id). Re-running the same eval replaces old rows.
@@ -369,13 +384,15 @@ def save_results(df, cfg, timeout=60):
 
     for _, row in df.iterrows():
         compare_rsm = row.get("compare_rsm_correlation") if "compare_rsm_correlation" in row.index else cfg.get("compare_rsm_correlation")
+        ci_low = float(row["ci_low"]) if "ci_low" in row.index and pd.notna(row.get("ci_low")) else None
+        ci_high = float(row["ci_high"]) if "ci_high" in row.index and pd.notna(row.get("ci_high")) else None
         conn.execute(
             """INSERT OR REPLACE INTO results
                (run_id, layer, score, analysis, seed, epoch, region, subject_idx,
                 neural_dataset, cfg_id, pca_labels, pca_n_classes, pca_labels_folder,
                 model_name, checkpoint_dir, compare_rsm_correlation,
-                reconstruct_from_pcs, pca_k)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                reconstruct_from_pcs, pca_k, ci_low, ci_high)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 run_id,
                 row["layer"],
@@ -395,8 +412,22 @@ def save_results(df, cfg, timeout=60):
                 compare_rsm,
                 bool(cfg.get("reconstruct_from_pcs", False)),
                 cfg.get("pca_k", 1),
+                ci_low,
+                ci_high,
             ),
         )
+
+    # Save per-layer selection scores (from split-half RSA) if present
+    if "layer_selection_scores" in df.columns:
+        for _, row in df.iterrows():
+            lss = row.get("layer_selection_scores")
+            if lss is not None:
+                for entry in lss:
+                    conn.execute(
+                        """INSERT OR REPLACE INTO layer_selection_scores
+                           (run_id, layer, score) VALUES (?, ?, ?)""",
+                        (run_id, entry["layer"], float(entry["score"])),
+                    )
 
     conn.commit()
     conn.close()
