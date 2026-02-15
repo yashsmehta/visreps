@@ -2,7 +2,6 @@
   "checkpoint_dir": ["/data/ymehta3/imagenet1k"],
   "cfg_id": [1000],
   "seed": [1],
-  "results_csv": ["semantic_align.csv"],
   "notes": [""],
   "compare_rsm_correlation": ["Spearman"],
   "reconstruct_from_pcs": [false],

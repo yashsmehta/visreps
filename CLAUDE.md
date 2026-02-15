@@ -78,7 +78,7 @@ python scripts/runners/eval_runner.py --grid configs/grids/eval_default.json  # 
 
 ## Results Database
 
-Eval results are stored in `logs/results.db` (SQLite).
+Eval results are stored in `results.db` (SQLite).
 
 **Tables:**
 - `results` — one row per (run, layer). Core columns: `run_id`, `layer`, `score`, `analysis`, `seed`, `epoch`, `region`, `subject_idx`, `neural_dataset`, `cfg_id`, `pca_labels`, `pca_n_classes`, `pca_labels_folder`, `model_name`, `checkpoint_dir`, `compare_rsm_correlation`, `reconstruct_from_pcs`, `pca_k`. Deduped via `UNIQUE(run_id, layer)`.
@@ -88,10 +88,8 @@ Eval results are stored in `logs/results.db` (SQLite).
 
 **Quick query:**
 ```python
-pd.read_sql("SELECT * FROM results WHERE region='ventral visual stream' AND analysis='rsa'", sqlite3.connect("logs/results.db"))
+pd.read_sql("SELECT * FROM results WHERE region='ventral visual stream' AND analysis='rsa'", sqlite3.connect("results.db"))
 ```
-
-**Note:** `results_csv` in config files is no longer used by `save_results()` but remains for backward compat.
 
 ## PCA Labels Generation
 

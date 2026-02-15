@@ -1,4 +1,5 @@
 datasets/
+results.db
 experiments/coarse_grain_benefits/results/*
 .DS_Store
 .ipynb_checkpoints

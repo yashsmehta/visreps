@@ -2,7 +2,6 @@
   "checkpoint_dir": ["model_checkpoints/scat5_pca"],
   "cfg_id": [8, 16, 32, 64],
   "seed": [1],
-  "results_csv": ["scat_full-vs-pcs.csv"],
   "notes": [""],
   "compare_rsm_correlation": ["Spearman"],
   "reconstruct_from_pcs": [false],

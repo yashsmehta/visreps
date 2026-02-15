@@ -1,18 +1,18 @@
 {
   "make_rsm_correlation": "Pearson",
-  "compare_rsm_correlation": "Spearman",
+  "compare_rsm_correlation": "Kendall",
   "neural_dataset": "nsd",
   "nsd_type": "streams_shared",
-  "results_csv": "base.csv",
-  "cfg_id": 32,
-  "seed": 1,
   "return_nodes": ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2"],
+  "extract_pre_and_post": true,
   "reconstruct_from_pcs": false,
   "pca_k": 1,
   "load_model_from": "checkpoint",
+  "seed": 1,
+  "cfg_id": 64,
   "checkpoint":
   {
-    "checkpoint_dir": "model_checkpoints/alexnet_raw_imagenet",
+    "checkpoint_dir": "/data/ymehta3/alexnet_pca",
     "checkpoint_model": "checkpoint_epoch_20.pth"
   },
   "torchvision":
@@ -20,13 +20,13 @@
     "model_name": "AlexNet",
     "pretrained_dataset": "imagenet1k"
   },
-  "apply_srp": true,
+  "apply_srp": false,
   "mode": "eval",
   "region": "early visual stream",
   "subject_idx": 0,
   "analysis": "rsa",
   "batchsize": 256,
   "num_workers": 32,
-  "log_expdata": false,
+  "log_expdata": true,
   "notes": ""
 }

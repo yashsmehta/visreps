@@ -2,7 +2,6 @@
   "checkpoint_dir": ["model_checkpoints/imagenet_1k_legacy"],
   "cfg_id": [1000],
   "seed": [1],
-  "results_csv": ["trial.csv"],
   "batchsize": 64,
   "notes": [""],
   "compare_rsm_correlation": ["Spearman"],
