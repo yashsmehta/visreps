@@ -8,7 +8,7 @@ import sys
 import warnings
 
 # Get project root (visreps/) and add to path
-PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, PROJECT_ROOT)
 
 # Ensure .env is loaded from project root
@@ -35,17 +35,15 @@ from experiments.wordnet.make_semantic_labels import SUPER_CATEGORIES
 # =============================================================================
 # Configuration
 # =============================================================================
-# Models to compare (2x4 grid = 8 models)
-model = "clip"
+# Models to compare (2x3 grid = 6 models)
+model = "vit"
 MODELS = [
-    {"name": "2-way", "dir": f"/data/ymehta3/{model}_pca/cfg2a"},
     {"name": "4-way", "dir": f"/data/ymehta3/{model}_pca/cfg4a"},
     {"name": "8-way", "dir": f"/data/ymehta3/{model}_pca/cfg8a"},
     {"name": "16-way", "dir": f"/data/ymehta3/{model}_pca/cfg16a"},
     {"name": "32-way", "dir": f"/data/ymehta3/{model}_pca/cfg32a"},
     {"name": "64-way", "dir": f"/data/ymehta3/{model}_pca/cfg64a"},
-    {"name": "128-way", "dir": f"/data/ymehta3/{model}_pca/cfg128a"},
-    {"name": "1000-way", "dir": f"/data/ymehta3/imagenet1k/cfg1000a"},
+    {"name": "1000-way", "dir": f"/data/ymehta3/default/cfg1000a"},
 ]
 
 CHECKPOINT_FILE = "checkpoint_epoch_20.pth"
@@ -148,8 +146,8 @@ def apply_umap(features, n_neighbors=KNN_NEIGHBORS):
 
 
 def plot_grid(all_coords, labels, model_names, output_path):
-    """Plot 2x4 grid of UMAP visualizations with shared legend."""
-    fig, axes = plt.subplots(2, 4, figsize=(20, 10))
+    """Plot 2x3 grid of UMAP visualizations with shared legend."""
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
     axes = axes.flatten()
     
     unique_labels = np.unique(labels[labels >= 0])
@@ -249,14 +247,14 @@ def main():
         model_names.append(name)
         
         print(f"\n=== Processing {name} model ===")
-        model = load_model(model_dir, device)
-        
-        if model is None:
+        net = load_model(model_dir, device)
+
+        if net is None:
             all_features.append(None)
             continue
-        
-        features = extract_features(model, loader, device)
-        del model
+
+        features = extract_features(net, loader, device)
+        del net
         torch.cuda.empty_cache()
         
         # Filter to valid samples and preprocess

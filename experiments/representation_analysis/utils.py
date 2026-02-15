@@ -28,18 +28,25 @@ import torchvision.models as models
 # =============================================================================
 DATASET = "imagenet-mini-50"
 LAYER = "fc2"
-CHECKPOINT_4WAY = "/data/ymehta3/alexnet_pca/cfg4a/checkpoint_epoch_20.pth"
+CHECKPOINT_32WAY = "/data/ymehta3/alexnet_pca/cfg32a/checkpoint_epoch_20.pth"
 
 # Resolve relative paths from project root
-PCA_LABELS_PATH = os.path.join(PROJECT_ROOT, "pca_labels/pca_labels_alexnet/n_classes_4.csv")
+PCA_LABELS_PATH = os.path.join(PROJECT_ROOT, "pca_labels/pca_labels_alexnet/n_classes_32.csv")
 SEMANTIC_LABELS_PATH = os.path.join(PROJECT_ROOT, "experiments/wordnet/semantic_categories.csv")
 OUTPUT_DIR = os.path.join(PROJECT_ROOT, "experiments/representation_analysis")
 
 # All layers for multi-layer analysis (conv1-5, fc1-2)
 ALL_LAYERS = ['conv1', 'conv2', 'conv3', 'conv4', 'conv5', 'fc1', 'fc2']
 
-MODEL_NAMES = ['Pretrained (1000-way)', '4-way Trained']
-COLORS_4CLASS = ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3']
+MODEL_NAMES = ['Pretrained (1000-way)', '32-way Trained']
+COLORS_32CLASS = ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3',
+                  '#ff7f00', '#ffff33', '#a65628', '#f781bf',
+                  '#999999', '#66c2a5', '#fc8d62', '#8da0cb',
+                  '#e78ac3', '#a6d854', '#ffd92f', '#e5c494',
+                  '#b3b3b3', '#8dd3c7', '#ffffb3', '#bebada',
+                  '#fb8072', '#80b1d3', '#fdb462', '#b3de69',
+                  '#fccde5', '#d9d9d9', '#bc80bd', '#ccebc5',
+                  '#ffed6f', '#1f78b4', '#33a02c', '#fb9a99']
 SEED = 42
 
 
@@ -122,15 +129,15 @@ def extract_all_layers(model, loader, device, layers=None, conv_pool_size=3):
 
 
 def load_labels(loader):
-    """Load both 4-class PCA labels and semantic labels.
+    """Load both 32-class PCA labels and semantic labels.
 
     Returns:
-        pca_labels: Array of 4-class PCA labels
+        pca_labels: Array of 32-class PCA labels
         sem_labels: Array of semantic category labels
         synsets: Array of synset IDs (e.g., 'n03729826')
         img_paths: Array of full image paths
     """
-    # 4-class PCA labels
+    # 32-class PCA labels
     df_pca = pd.read_csv(PCA_LABELS_PATH)
     pca_map = dict(zip(df_pca['image'], df_pca['pca_label']))
 
@@ -174,7 +181,7 @@ def load_data_and_models(device=None):
 
     Returns:
         feats_list: List of [pretrained_features, 4way_features]
-        pca_labels: Array of 4-class labels (filtered)
+        pca_labels: Array of 32-class labels (filtered)
         sem_labels: Array of semantic labels (filtered)
         synsets: Array of synset IDs (filtered)
         img_paths: Array of image paths (filtered)
@@ -200,12 +207,12 @@ def load_data_and_models(device=None):
     # Load models
     print("\n=== Loading models ===")
     model_pretrained = load_pretrained_alexnet(device)
-    model_4way = load_checkpoint_model(CHECKPOINT_4WAY, device)
+    model_32way = load_checkpoint_model(CHECKPOINT_32WAY, device)
 
     # Extract features
     print("\n=== Extracting FC2 features ===")
     feats_pretrained = extract_fc2(model_pretrained, loader, device)[valid]
-    feats_4way = extract_fc2(model_4way, loader, device)[valid]
+    feats_32way = extract_fc2(model_32way, loader, device)[valid]
 
     # Filter labels
     pca_labels = pca_labels[valid]
@@ -213,7 +220,7 @@ def load_data_and_models(device=None):
     synsets = synsets[valid]
     img_paths = img_paths[valid]
 
-    feats_list = [feats_pretrained, feats_4way]
+    feats_list = [feats_pretrained, feats_32way]
 
     return feats_list, pca_labels, sem_labels, synsets, img_paths, loader
 
@@ -232,8 +239,8 @@ def load_data_and_models_all_layers(device=None, layers=None):
 
     Returns:
         feats_dict_pretrained: Dict of layer -> features for pretrained model
-        feats_dict_4way: Dict of layer -> features for 4-way model
-        pca_labels: Array of 4-class labels (filtered)
+        feats_dict_32way: Dict of layer -> features for 32-way model
+        pca_labels: Array of 32-class labels (filtered)
         sem_labels: Array of semantic labels (filtered)
         synsets: Array of synset IDs (filtered)
         img_paths: Array of image paths (filtered)
@@ -261,7 +268,7 @@ def load_data_and_models_all_layers(device=None, layers=None):
     # Load models
     print("\n=== Loading models ===")
     model_pretrained = load_pretrained_alexnet(device)
-    model_4way = load_checkpoint_model(CHECKPOINT_4WAY, device)
+    model_32way = load_checkpoint_model(CHECKPOINT_32WAY, device)
 
     # Extract features from all layers
     print(f"\n=== Extracting features from {len(layers)} layers ===")
@@ -270,12 +277,12 @@ def load_data_and_models_all_layers(device=None, layers=None):
     print("\nPretrained model:")
     feats_dict_pretrained = extract_all_layers(model_pretrained, loader, device, layers)
 
-    print("\n4-way model:")
-    feats_dict_4way = extract_all_layers(model_4way, loader, device, layers)
+    print("\n32-way model:")
+    feats_dict_32way = extract_all_layers(model_32way, loader, device, layers)
 
     # Filter by valid indices
     feats_dict_pretrained = {layer: feats[valid] for layer, feats in feats_dict_pretrained.items()}
-    feats_dict_4way = {layer: feats[valid] for layer, feats in feats_dict_4way.items()}
+    feats_dict_32way = {layer: feats[valid] for layer, feats in feats_dict_32way.items()}
 
     # Filter labels
     pca_labels = pca_labels[valid]
@@ -283,5 +290,5 @@ def load_data_and_models_all_layers(device=None, layers=None):
     synsets = synsets[valid]
     img_paths = img_paths[valid]
 
-    return (feats_dict_pretrained, feats_dict_4way,
+    return (feats_dict_pretrained, feats_dict_32way,
             pca_labels, sem_labels, synsets, img_paths, loader)
