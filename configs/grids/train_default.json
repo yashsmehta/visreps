@@ -1,12 +1,12 @@
 {
   "seed": [1],
   "pca_labels": [true],
-  "num_epochs": [20],
-  "checkpoint_interval": [20],
+  "num_epochs": [21],
+  "checkpoint_interval": [10],
   "log_interval": [20],
   "pca_n_classes": [32],
-  "pca_labels_folder": ["pca_labels_alexnet_raw"],
-  "checkpoint_dir": ["alexnet_raw_imagenet"],
+  "pca_labels_folder": ["pca_labels_vit"],
+  "checkpoint_dir": ["alexnet_global_vit"],
   "dataset": ["imagenet"],
   "log_checkpoints": [true]
 }

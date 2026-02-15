@@ -1,7 +1,6 @@
 {
-  "checkpoint_dir": [
-      "/data/ymehta3/default"],
-  "cfg_id": [1000],
+  "checkpoint_dir": ["/data/ymehta3/alexnet_pca", "/data/ymehta3/vit_pca"],
+  "cfg_id": [2, 4, 8, 16, 32, 64],
   "seed": [1, 2, 3],
   "notes": [""],
   "nsd_type": ["streams"],
