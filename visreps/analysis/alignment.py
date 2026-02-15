@@ -6,8 +6,7 @@ from collections import defaultdict
 from omegaconf import DictConfig
 import pandas as pd
 
-from visreps.analysis.rsa import compute_rsa_alignment
-# from visreps.analysis.encoding_score_ray import compute_encoding_alignment
+from visreps.analysis.rsa import compute_rsa_split_half_bootstrap
 from visreps.analysis.encoding_score import compute_encoding_alignment
 
 logger = logging.getLogger(__name__)
@@ -46,7 +45,16 @@ def compute_neural_alignment(
     analysis_type = cfg.get("analysis", "rsa").lower()
     
     if analysis_type == "rsa":
-        return compute_rsa_alignment(cfg, acts_aligned, neural_aligned)
+        n_bootstrap = cfg.get("n_bootstrap", 1000)
+        # Vary split per subject so cross-subject averages aren't locked to one split.
+        # Falls back to 42 when subject_idx isn't numeric (e.g. THINGS uses "N/A").
+        subj = cfg.get("subject_idx", 0)
+        base_seed = 42 + (int(subj) if isinstance(subj, (int, float)) else 0)
+        bootstrap_seed = cfg.get("bootstrap_seed", base_seed)
+        return compute_rsa_split_half_bootstrap(
+            cfg, acts_aligned, neural_aligned,
+            n_bootstrap=n_bootstrap, seed=bootstrap_seed,
+        )
     elif analysis_type == "encoding_score":
         return compute_encoding_alignment(cfg, acts_aligned, neural_aligned)
     else:

@@ -1,6 +1,7 @@
 # visreps/ Package Documentation
 
 This document provides an overview of the core `visreps/` package structure, which contains all the main code for training CNNs, extracting representations, and computing neural alignment scores.
+You are NOT allowed to run any sudo commands on the system. And ask before deleting files or folders.
 
 ## Directory Structure
 
