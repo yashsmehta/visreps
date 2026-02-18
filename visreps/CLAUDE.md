@@ -149,11 +149,20 @@ Compute neural alignment scores between CNN representations and brain/behavioral
 **Purpose**: Representational Similarity Analysis implementation.
 
 **Key Functions**:
-- `compute_rsm(representations, correlation="Pearson")`: Builds RSM (n_samples × n_samples) using Pearson/Spearman correlation
-- `compute_rsa_alignment(cfg, acts, neural_data, ids)`: Computes RSA between model and neural RSMs
-- `_compare_rsms(rsm1, rsm2, corr_type)`: Correlates two RSMs (upper triangular parts)
+- `compute_rdm(representations, correlation="Pearson")`: Builds RDM (n_samples × n_samples) using Pearson/Spearman correlation
+- `compute_rdm_correlation(rdm1, rdm2, correlation="Kendall")`: Correlates two RDMs (upper triangular parts)
+- `compute_rsa_alignment(cfg, acts, neural_data)`: Per-layer RSA (no cross-validation). Always uses Pearson for RDMs and computes both Spearman and Kendall comparisons. Returns `score_spearman`/`score_kendall` per layer.
+- `compute_rsa_kfold(cfg, acts, neural_data, n_folds=5, bootstrap=False)`: K-fold cross-validated RSA with unbiased layer selection. Always uses Pearson for RDMs and computes both Spearman and Kendall comparisons with independent layer selection per metric. Returns single-element list with dict containing:
+  - `layer`: Spearman-selected layer (primary)
+  - `score_spearman`, `score_kendall`: K-fold averaged scores per metric
+  - `ci_low_{method}`, `ci_high_{method}`: Bootstrap CIs per metric
+  - `fold_results_{method}`: List of `{"fold", "layer", "eval_score"}` per fold per metric
+  - `layer_selection_scores_{method}`: List of `{"layer", "score"}` per metric
+  - `bootstrap_scores_{method}`: List of floats (only when `bootstrap=True`)
+  - (where `{method}` is `spearman` or `kendall`)
+  - Saved to DB in normalized long format with `compare_method` column (see root CLAUDE.md)
 
-**Correlation Types**: Pearson, Spearman, Kendall
+**RDM Building**: Always Pearson. **RDM Comparison**: Always both Spearman and Kendall (no config needed).
 
 ### `encoding_score.py`
 **Purpose**: GPU-accelerated ridge regression encoding models.

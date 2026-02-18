@@ -12,10 +12,14 @@ def main():
     parser.add_argument("--mode", choices=["train", "eval"], default="eval")
     parser.add_argument("--config", default=None)
     parser.add_argument("--override", nargs="*", default=[])
+    parser.add_argument("--verbose", "-v", action="store_true")
 
     args = parser.parse_args()
+    overrides = list(args.override)
+    if args.verbose:
+        overrides.append("verbose=true")
     cfg = utils.load_config(
-        args.config or f"configs/{args.mode}/base.json", args.override
+        args.config or f"configs/{args.mode}/base.json", overrides
     )
     cfg = utils.validate_config(cfg)
 

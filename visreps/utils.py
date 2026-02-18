@@ -55,7 +55,7 @@ def is_interactive_environment():
 
 
 def setup_logging():
-    """Initialize Rich with custom theme and return themed print function"""
+    """Initialize Rich with custom theme and return (console, print) tuple."""
     custom_theme = Theme(
         {
             "info": "bold white",
@@ -67,10 +67,10 @@ def setup_logging():
         }
     )
     console = Console(theme=custom_theme)
-    return console.print
+    return console, console.print
 
 
-rprint = setup_logging()
+console, rprint = setup_logging()
 
 
 def calculate_cls_accuracy(data_loader, model, device):
@@ -300,7 +300,7 @@ _RESULTS_DB_PATH = Path("results.db")
 _IDENTITY_FIELDS = (
     "seed", "epoch", "region", "subject_idx", "neural_dataset", "cfg_id",
     "pca_labels", "pca_n_classes", "pca_labels_folder", "checkpoint_dir",
-    "analysis", "compare_rsm_correlation", "reconstruct_from_pcs", "pca_k",
+    "analysis", "reconstruct_from_pcs", "pca_k",
 )
 
 
@@ -320,34 +320,29 @@ def _init_db(db_path) -> sqlite3.Connection:
     conn.execute("PRAGMA busy_timeout=10000")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS results (
-            run_id                  TEXT NOT NULL,
-            layer                   TEXT NOT NULL,
-            score                   REAL NOT NULL,
-            analysis                TEXT NOT NULL,
-            seed                    INTEGER NOT NULL,
-            epoch                   INTEGER NOT NULL,
-            region                  TEXT,
-            subject_idx             TEXT,
-            neural_dataset          TEXT NOT NULL,
-            cfg_id                  INTEGER,
-            pca_labels              BOOLEAN NOT NULL,
-            pca_n_classes           INTEGER,
-            pca_labels_folder       TEXT,
-            model_name              TEXT NOT NULL,
-            checkpoint_dir          TEXT,
-            compare_rsm_correlation TEXT,
-            reconstruct_from_pcs    BOOLEAN DEFAULT 0,
-            pca_k                   INTEGER DEFAULT 1,
-            ci_low                  REAL,
-            ci_high                 REAL,
-            UNIQUE(run_id, layer)
+            run_id              TEXT NOT NULL,
+            compare_method      TEXT NOT NULL,
+            layer               TEXT NOT NULL,
+            score               REAL,
+            ci_low              REAL,
+            ci_high             REAL,
+            analysis            TEXT NOT NULL,
+            seed                INTEGER NOT NULL,
+            epoch               INTEGER NOT NULL,
+            region              TEXT,
+            subject_idx         TEXT,
+            neural_dataset      TEXT NOT NULL,
+            cfg_id              INTEGER,
+            pca_labels          BOOLEAN NOT NULL,
+            pca_n_classes       INTEGER,
+            pca_labels_folder   TEXT,
+            model_name          TEXT NOT NULL,
+            checkpoint_dir      TEXT,
+            reconstruct_from_pcs BOOLEAN DEFAULT 0,
+            pca_k               INTEGER DEFAULT 1,
+            UNIQUE(run_id, compare_method, layer)
         )
     """)
-    # Migrate existing databases: add ci_low/ci_high if missing
-    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(results)").fetchall()}
-    for col in ("ci_low", "ci_high"):
-        if col not in existing_cols:
-            conn.execute(f"ALTER TABLE results ADD COLUMN {col} REAL")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS run_configs (
             run_id      TEXT PRIMARY KEY,
@@ -357,22 +352,52 @@ def _init_db(db_path) -> sqlite3.Connection:
     """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS layer_selection_scores (
-            run_id  TEXT NOT NULL,
-            layer   TEXT NOT NULL,
-            score   REAL NOT NULL,
-            UNIQUE(run_id, layer)
+            run_id          TEXT NOT NULL,
+            compare_method  TEXT NOT NULL,
+            layer           TEXT NOT NULL,
+            score           REAL,
+            UNIQUE(run_id, compare_method, layer)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS fold_results (
+            run_id          TEXT NOT NULL,
+            compare_method  TEXT NOT NULL,
+            fold            INTEGER NOT NULL,
+            layer           TEXT,
+            eval_score      REAL,
+            UNIQUE(run_id, compare_method, fold)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS bootstrap_distributions (
+            run_id          TEXT NOT NULL,
+            compare_method  TEXT NOT NULL,
+            scores          TEXT,
+            UNIQUE(run_id, compare_method)
         )
     """)
     conn.commit()
     return conn
 
 
+def _get_float(row, col):
+    """Safely extract a float from a DataFrame row, returning None if missing/NaN."""
+    if col in row.index and pd.notna(row.get(col)):
+        return float(row[col])
+    return None
+
+
 def save_results(df, cfg, timeout=60):
     """Save evaluation results to SQLite database at results.db.
 
-    Creates two tables: `results` (one row per run+layer) and `run_configs`
-    (full config JSON per run_id). Re-running the same eval replaces old rows.
+    Uses a normalized "long" format: each comparison metric (Spearman, Kendall)
+    gets its own row, distinguished by the `compare_method` column. This applies
+    to all tables: `results`, `fold_results`, `layer_selection_scores`, and
+    `bootstrap_distributions`. Re-running the same eval replaces old rows.
     """
+    _METHODS = ("spearman", "kendall")
+
     run_id = _compute_run_id(cfg)
     conn = _init_db(_RESULTS_DB_PATH)
 
@@ -382,52 +407,75 @@ def save_results(df, cfg, timeout=60):
         (run_id, config_json),
     )
 
+    # ── results (one row per metric) ──────────────────────────
     for _, row in df.iterrows():
-        compare_rsm = row.get("compare_rsm_correlation") if "compare_rsm_correlation" in row.index else cfg.get("compare_rsm_correlation")
-        ci_low = float(row["ci_low"]) if "ci_low" in row.index and pd.notna(row.get("ci_low")) else None
-        ci_high = float(row["ci_high"]) if "ci_high" in row.index and pd.notna(row.get("ci_high")) else None
-        conn.execute(
-            """INSERT OR REPLACE INTO results
-               (run_id, layer, score, analysis, seed, epoch, region, subject_idx,
-                neural_dataset, cfg_id, pca_labels, pca_n_classes, pca_labels_folder,
-                model_name, checkpoint_dir, compare_rsm_correlation,
-                reconstruct_from_pcs, pca_k, ci_low, ci_high)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                run_id,
-                row["layer"],
-                float(row["score"]),
-                row.get("analysis", cfg.get("analysis")),
-                int(cfg.get("seed")),
-                int(cfg.get("epoch", 0)),
-                cfg.get("region"),
-                str(cfg.get("subject_idx")),
-                cfg.get("neural_dataset"),
-                cfg.get("cfg_id"),
-                bool(cfg.get("pca_labels")),
-                cfg.get("pca_n_classes"),
-                cfg.get("pca_labels_folder"),
-                cfg.get("model_name"),
-                cfg.get("checkpoint_dir"),
-                compare_rsm,
-                bool(cfg.get("reconstruct_from_pcs", False)),
-                cfg.get("pca_k", 1),
-                ci_low,
-                ci_high,
-            ),
-        )
+        for method in _METHODS:
+            layer = row.get("layer")  # k-fold: single best layer per method
+            score = _get_float(row, f"score_{method}")
+            ci_low = _get_float(row, f"ci_low_{method}")
+            ci_high = _get_float(row, f"ci_high_{method}")
+            if score is None:
+                continue
+            conn.execute(
+                """INSERT OR REPLACE INTO results
+                   (run_id, compare_method, layer, score, ci_low, ci_high,
+                    analysis, seed, epoch, region, subject_idx,
+                    neural_dataset, cfg_id, pca_labels, pca_n_classes, pca_labels_folder,
+                    model_name, checkpoint_dir, reconstruct_from_pcs, pca_k)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    run_id, method, layer, score, ci_low, ci_high,
+                    row.get("analysis", cfg.get("analysis")),
+                    int(cfg.get("seed")),
+                    int(cfg.get("epoch", 0)),
+                    cfg.get("region"),
+                    str(cfg.get("subject_idx")),
+                    cfg.get("neural_dataset"),
+                    cfg.get("cfg_id"),
+                    bool(cfg.get("pca_labels")),
+                    cfg.get("pca_n_classes"),
+                    cfg.get("pca_labels_folder"),
+                    cfg.get("model_name"),
+                    cfg.get("checkpoint_dir"),
+                    bool(cfg.get("reconstruct_from_pcs", False)),
+                    cfg.get("pca_k", 1),
+                ),
+            )
 
-    # Save per-layer selection scores (from split-half RSA) if present
-    if "layer_selection_scores" in df.columns:
-        for _, row in df.iterrows():
-            lss = row.get("layer_selection_scores")
-            if lss is not None:
-                for entry in lss:
-                    conn.execute(
-                        """INSERT OR REPLACE INTO layer_selection_scores
-                           (run_id, layer, score) VALUES (?, ?, ?)""",
-                        (run_id, entry["layer"], float(entry["score"])),
-                    )
+    # ── layer_selection_scores (one row per metric × layer) ───
+    for _, row in df.iterrows():
+        for method in _METHODS:
+            entries = row.get(f"layer_selection_scores_{method}") or []
+            for entry in entries:
+                conn.execute(
+                    """INSERT OR REPLACE INTO layer_selection_scores
+                       (run_id, compare_method, layer, score) VALUES (?, ?, ?, ?)""",
+                    (run_id, method, entry["layer"], float(entry["score"])),
+                )
+
+    # ── fold_results (one row per metric × fold) ──────────────
+    for _, row in df.iterrows():
+        for method in _METHODS:
+            entries = row.get(f"fold_results_{method}") or []
+            for entry in entries:
+                conn.execute(
+                    """INSERT OR REPLACE INTO fold_results
+                       (run_id, compare_method, fold, layer, eval_score)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    (run_id, method, int(entry["fold"]), entry["layer"],
+                     float(entry["eval_score"])),
+                )
+
+    # ── bootstrap_distributions (one row per metric) ──────────
+    for _, row in df.iterrows():
+        for method in _METHODS:
+            bs = row.get(f"bootstrap_scores_{method}")
+            if bs is not None:
+                conn.execute(
+                    """INSERT OR REPLACE INTO bootstrap_distributions
+                       (run_id, compare_method, scores) VALUES (?, ?, ?)""",
+                    (run_id, method, json.dumps(bs)),
+                )
 
     conn.commit()
     conn.close()
@@ -478,8 +526,9 @@ def load_config(config_path, overrides=None):
     if cfg.mode == "eval" and cfg.load_model_from == "torchvision":
         del cfg.cfg_id
 
-    formatted_cfg = OmegaConf.to_yaml(cfg, resolve=True)
-    print(f"Final Configuration:\n{formatted_cfg}\n\n")
+    if cfg.get("verbose", False):
+        formatted_cfg = OmegaConf.to_yaml(cfg, resolve=True)
+        rprint(f"Final Configuration:\n{formatted_cfg}\n")
     return cfg
 
 
@@ -497,7 +546,7 @@ class ConfigVerifier:
     def __init__(self, cfg: OmegaConf):
         """Initialize verifier with configuration."""
         self.cfg = cfg
-        self.rprint = setup_logging()
+        self.rprint = rprint
 
     def verify(self) -> OmegaConf:
         """Main verification method that routes to appropriate validator."""
@@ -549,12 +598,12 @@ class ConfigVerifier:
             self.cfg.batchsize = 64
             self.rprint("ℹ️  Using default batch size: 64", style="info")
 
-        self.rprint("✅ Config validated", style="success")
+        if self.cfg.get("verbose", False):
+            self.rprint("✅ Config validated", style="success")
         return self.cfg
 
     def _verify_eval(self) -> OmegaConf:
         """Verify evaluation configuration."""
-        self.rprint("Validating evaluation configuration...", style="setup")
 
         # Seed validation: ensure seed is one of [1, 2, 3]
         if getattr(self.cfg, "seed", None) not in (1, 2, 3):
@@ -662,9 +711,8 @@ class ConfigVerifier:
                 )
                 raise AssertionError(f"Checkpoint not found: {checkpoint_path}")
 
-        self.rprint(
-            "✅ Evaluation configuration validation successful", style="success"
-        )
+        if self.cfg.get("verbose", False):
+            self.rprint("✅ Evaluation configuration validation successful", style="success")
         return self.cfg
 
     def _verify_model_config(self) -> None:

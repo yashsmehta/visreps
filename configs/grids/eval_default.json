@@ -4,11 +4,11 @@
   "cfg_id": [1000],
   "seed": [1, 2, 3],
   "notes": [""],
-  "nsd_type": ["streams"],
-  "neural_dataset": ["tvsd"],
+  "nsd_type": ["streams_shared"],
+  "neural_dataset": ["nsd"],
   "analysis": ["rsa"],
-  "subject_idx": [0, 1],
-  "region": ["V1", "V4", "IT"],
-  "eval_checkpoint_at_epoch": [20],
+  "subject_idx": [0, 1, 2, 3, 4, 5, 6, 7],
+  "region": ["early visual stream", "ventral visual stream"],
+  "eval_checkpoint_at_epoch": [0],
   "apply_srp": [false]
 }

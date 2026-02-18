@@ -2,10 +2,18 @@
 import os, subprocess
 
 # --- Config ---
-folders = ['alexnet_pca']
+# Each job specifies a folder, which subdirs to copy, and which files to grab.
+# Epoch 0 (untrained network) is the same across all label granularities,
+# so we only need it for the default (1000-way) network.
+jobs = [
+    {
+        "folder": "default",
+        "subdirs": ["cfg1000a", "cfg1000b", "cfg1000c"],
+        "files": ["checkpoint_epoch_0.pth"],
+    },
+]
 remote_base = "/scratch4/mbonner5/ymehta3/visreps/model_checkpoints"
 local_base = "/data/ymehta3"
-files_to_copy = ["checkpoint_epoch_20.pth", "config.json", "training_metrics.csv"]
 
 # --- SSH setup ---
 host = "rockfish"
@@ -30,11 +38,13 @@ subprocess.run([
 ])
 
 # Copy files
-for folder in folders:
+for job in jobs:
+    folder = job["folder"]
     remote_folder = f"{remote_base}/{folder}"
+    ls_targets = " ".join(f"{remote_folder}/{s}" for s in job["subdirs"])
     subdirs = subprocess.check_output(
         ["ssh", "-o", f"ControlPath={control_path}", ssh_target,
-         f"ls -d {remote_folder}/cfg2a {remote_folder}/cfg4a 2>/dev/null"],
+         f"ls -d {ls_targets} 2>/dev/null"],
         text=True
     ).split()
 
@@ -42,7 +52,7 @@ for folder in folders:
         cfg = os.path.basename(subdir)
         local_dir = f"{local_base}/{folder}/{cfg}"
         os.makedirs(local_dir, exist_ok=True)
-        for f in files_to_copy:
+        for f in job["files"]:
             src = f"{ssh_target}:{subdir}/{f}"
             print(f"Copying {src} → {local_dir}")
             subprocess.run([

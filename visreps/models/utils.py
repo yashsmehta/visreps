@@ -9,7 +9,7 @@ import torch.nn as nn
 from typing import Dict, List, Tuple
 import numpy as np
 import joblib
-from tqdm import tqdm
+from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, MofNCompleteColumn
 import psutil                     # Added import
 import resource                   # Added import (optional, for peak process memory)
 
@@ -19,7 +19,7 @@ from visreps.models.custom_model import CustomCNN, TinyCustomCNN
 
 # Backward compat: old checkpoints reference 'visreps.models.custom_cnn'
 sys.modules['visreps.models.custom_cnn'] = custom_model
-from visreps.utils import rprint
+from visreps.utils import console, rprint
 from visreps.utils import get_seed_letter
 from visreps.analysis.sparse_random_projection import get_srp_transformer
 
@@ -257,20 +257,22 @@ class FeatureExtractor(nn.Module):
         for handle in self.handles:
             handle.remove()
 
-def configure_feature_extractor(cfg, model):
+def configure_feature_extractor(cfg, model, verbose=False):
     return_nodes = OmegaConf.to_container(cfg.get("return_nodes", {}), resolve=True)
     if not return_nodes:
         raise ValueError("return_nodes must be specified in config")
     return_nodes = {node: node for node in return_nodes} if isinstance(return_nodes, list) else return_nodes
     extract_pre_and_post = cfg.get("extract_pre_and_post", True)
-    # Use our custom feature extractor
-    model.eval()  # Ensure consistent behavior
-    print(f"Extracting features from layers: {list(return_nodes.keys())}")
-    if extract_pre_and_post:
-        print("Extracting both pre-BN and post-BN/ReLU activations for each layer")
+    model.eval()
     extractor = FeatureExtractor(model, return_nodes,
                                  extract_pre_and_post=extract_pre_and_post)
-    print(f"Total extraction points: {list(extractor.return_nodes.keys())}")
+    n_points = len(extractor.return_nodes)
+    n_layers = len(return_nodes)
+    suffix = f" ({n_layers} layers × pre/post)" if extract_pre_and_post else ""
+    rprint(f"  ✓ {n_points} extraction points{suffix}", style="success")
+    if verbose:
+        rprint(f"    Layers: {list(return_nodes.keys())}", style="info")
+        rprint(f"    Points: {list(extractor.return_nodes.keys())}", style="info")
     return extractor
 
 
@@ -323,8 +325,16 @@ def get_activations(
 
     # ---------- main loop ----------
     FP16_MAX = 65504.0  # float16 max value
-    with torch.no_grad():
-        for imgs, keys in tqdm(dataloader, desc="Extracting model activations"):
+    with torch.no_grad(), Progress(
+        TextColumn("  Extracting activations"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TextColumn("batches"),
+        TimeElapsedColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("extract", total=len(dataloader))
+        for imgs, keys in dataloader:
             ids.extend(keys)
             feats = model(imgs.to(device))
             for name, out in feats.items():
@@ -334,11 +344,12 @@ def get_activations(
                     out = torch.sparse.mm(proj_matrix, flat.t()).t()  # (batch, k)
                 # Clamp to float16 range before half() to avoid overflow → inf
                 activations[name].append(out.clamp(-FP16_MAX, FP16_MAX).cpu().half())
+            progress.advance(task)
 
     return {n: torch.cat(b, 0) for n, b in activations.items()}, ids
 
 
-def load_model(cfg, device, num_classes=None):
+def load_model(cfg, device, num_classes=None, verbose=False):
     """
     Load a model from checkpoint or initialize a new model.
 
@@ -365,9 +376,10 @@ def load_model(cfg, device, num_classes=None):
             rprint("WARNING: num_classes is ignored when loading from checkpoint", style="warning")
         seed_letter = get_seed_letter(cfg.seed)
         checkpoint_path = f"{cfg.checkpoint_dir}/cfg{cfg.cfg_id}{seed_letter}/{cfg.checkpoint_model}"
-        # Explicitly set weights_only=False to allow loading pickled code
         checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
-        print(f"Loaded model from checkpoint: {checkpoint_path}")
+        rprint(f"  ✓ Loaded checkpoint (cfg{cfg.cfg_id}{seed_letter})", style="success")
+        if verbose:
+            rprint(f"    Path: {checkpoint_path}", style="info")
         return checkpoint['model'].to(device)
 
     # Otherwise, determine model class and name

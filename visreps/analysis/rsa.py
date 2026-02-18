@@ -5,8 +5,8 @@ from typing import Dict, List
 import numpy as np
 import scipy.stats
 import torch
-from tqdm import tqdm
-from visreps.utils import rprint
+from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, MofNCompleteColumn
+from visreps.utils import console, rprint
 
 logger = logging.getLogger(__name__)
 
@@ -52,10 +52,13 @@ def _rank(x: torch.Tensor) -> torch.Tensor:
 # Public API
 # -----------------------------------------------------------------------------
 
-def compute_rsm(
+def compute_rdm(
     representations: torch.Tensor, *, correlation: str = "Pearson", correction: float = 1e-12
 ) -> torch.Tensor:
-    """Return an (n_samples x n_samples) RSM built with Pearson or Spearman.
+    """Return an (n_samples x n_samples) RDM (1 - correlation) built with Pearson or Spearman.
+
+    Diagonal entries are 0 (zero self-dissimilarity). Off-diagonal values range
+    from 0 (identical representations) to 2 (perfectly anti-correlated).
 
     Args:
         representations: Row-major activations (n_samples, n_features).
@@ -76,33 +79,34 @@ def compute_rsm(
     # Guard against zero variance rows
     zero_mask = std < correction * 10
     if zero_mask.any():
-        logger.warning("%d/%d rows have ~zero variance for %s RSM", zero_mask.sum(), len(std), correlation)
+        logger.warning("%d/%d rows have ~zero variance for %s RDM", zero_mask.sum(), len(std), correlation)
         std[zero_mask] = 1.0
 
     cov = (x @ x.T) / x.size(1)
-    rsm = cov / (std[:, None] * std[None, :] + correction)
-    rsm.clamp_(-1, 1).fill_diagonal_(1.0)
-    return rsm
+    corr_mat = cov / (std[:, None] * std[None, :] + correction)
+    corr_mat.clamp_(-1, 1).fill_diagonal_(1.0)
+    rdm = 1.0 - corr_mat
+    return rdm
 
 
-def compute_rsm_correlation(
-    rsm1: torch.Tensor, rsm2: torch.Tensor, *, correlation: str = "Kendall"
+def compute_rdm_correlation(
+    rdm1: torch.Tensor, rdm2: torch.Tensor, *, correlation: str = "Kendall"
 ) -> float:
-    """Correlation between two RSMs using Pearson / Spearman / Kendall.
+    """Correlation between two RDMs using Pearson / Spearman / Kendall.
 
     Returns NaN if correlation cannot be computed (e.g., zero variance).
     """
-    if rsm1.shape != rsm2.shape or rsm1.ndim != 2:
-        raise ValueError("RSMs must share the same 2-D shape")
+    if rdm1.shape != rdm2.shape or rdm1.ndim != 2:
+        raise ValueError("RDMs must share the same 2-D shape")
 
-    n = rsm1.size(0)
+    n = rdm1.size(0)
     if n <= 1:
-        logger.warning("RSM dimension <= 1; correlation undefined")
+        logger.warning("RDM dimension <= 1; correlation undefined")
         return float("nan")
 
-    idx = torch.triu_indices(n, n, offset=1, device=rsm1.device)
-    v1 = rsm1[idx[0], idx[1]].cpu().numpy()
-    v2 = rsm2[idx[0], idx[1]].cpu().numpy()
+    idx = torch.triu_indices(n, n, offset=1, device=rdm1.device)
+    v1 = rdm1[idx[0], idx[1]].cpu().numpy()
+    v2 = rdm2[idx[0], idx[1]].cpu().numpy()
     if v1.size == 0:
         return float("nan")
 
@@ -122,58 +126,59 @@ def compute_rsm_correlation(
 
 
 def compute_rsa_alignment(
-    cfg: Dict, activations_dict: Dict[str, torch.Tensor], neural_data: torch.Tensor
+    cfg: Dict, activations_dict: Dict[str, torch.Tensor], neural_data: torch.Tensor,
+    verbose: bool = False,
 ) -> List[Dict]:
     """Compute RSA alignment for each layer in *activations_dict*.
 
+    Always uses Pearson correlation for building RDMs and computes both
+    Spearman and Kendall-tau correlations for comparing RDMs.
+
     Args:
-        cfg: Configuration dictionary. May contain:
-            make_rsm_correlation: method for building RSMs (default "Pearson").
-            compare_rsm_correlation: method for comparing RSMs (default "Kendall").
+        cfg: Configuration dictionary.
         activations_dict: Dictionary mapping layer names to activation tensors.
         neural_data: Neural data tensor (e.g., fMRI responses).
+        verbose: If True, print per-layer details.
 
     Returns:
         List of dictionaries, each containing results for a layer.
     """
-    make_rsm_corr = cfg.get("make_rsm_correlation", "Pearson")
-    cmp_rsm_corr = cfg.get("compare_rsm_correlation", "Kendall")
+    if verbose:
+        rprint("Building RDMs with Pearson correlation", style="info")
+        rprint("Comparing RDMs with Spearman + Kendall correlation", style="info")
 
-    rprint(f"Building RSMs with {make_rsm_corr} correlation", style="info")
-    rprint(f"Comparing RSMs with {cmp_rsm_corr} correlation", style="info")
-
-    neural_rsm = compute_rsm(neural_data, correlation=make_rsm_corr)
+    neural_rdm = compute_rdm(neural_data)
     results = []
-    layer_rsms = {}
+    layer_rdms = {}
 
     for layer, acts in activations_dict.items():
         flat_acts = acts.flatten(start_dim=1) if acts.ndim > 2 else acts
-        layer_rsm = compute_rsm(flat_acts, correlation=make_rsm_corr)
-        layer_rsms[layer] = layer_rsm
-        score = compute_rsm_correlation(layer_rsm, neural_rsm, correlation=cmp_rsm_corr)
+        layer_rdm = compute_rdm(flat_acts)
+        layer_rdms[layer] = layer_rdm
+        score_sp = compute_rdm_correlation(layer_rdm, neural_rdm, correlation="Spearman")
+        score_kt = compute_rdm_correlation(layer_rdm, neural_rdm, correlation="Kendall")
 
-        rprint(
-            f"Layer {layer:<15} RSA ({make_rsm_corr} / {cmp_rsm_corr}): {score:.4f}",
-            style="highlight",
-        )
+        if verbose:
+            rprint(
+                f"Layer {layer:<15} RSA: Spearman={score_sp:.4f}, Kendall={score_kt:.4f}",
+                style="highlight",
+            )
         results.append(
             {
                 "layer": layer,
-                "score": score,
+                "score_spearman": score_sp,
+                "score_kendall": score_kt,
                 "analysis": "rsa",
-                "make_rsm_correlation": make_rsm_corr,
-                "compare_rsm_correlation": cmp_rsm_corr,
             }
         )
 
-    # --- Internal Flag for Saving RSMs --- (Manually change to True to enable saving)
-    save_rsms = False
-    if save_rsms:
+    # --- Internal Flag for Saving RDMs --- (Manually change to True to enable saving)
+    save_rdms = False
+    if save_rdms:
         try:
-            save_dir = os.path.join("model_checkpoints", "RSMs", f"{cfg.neural_dataset}", f"pca4cls")
+            save_dir = os.path.join("model_checkpoints", "RDMs", f"{cfg.neural_dataset}", f"pca4cls")
             os.makedirs(save_dir, exist_ok=True)
 
-            # Construct filename based on whether reconstruct_from_pcs is True
             filename_parts = [
                 f"pca_labels_{cfg.pca_labels}",
                 f"cfgid_{cfg.cfg_id}",
@@ -185,132 +190,251 @@ def compute_rsa_alignment(
 
             save_path = os.path.join(save_dir, "_".join(filename_parts) + ".npz")
 
-            # Prepare data to save (convert to numpy)
-            rsms_to_save_np = {layer: rsm.cpu().numpy() for layer, rsm in layer_rsms.items()}
-            rsms_to_save_np["neural"] = neural_rsm.cpu().numpy()
+            rdms_to_save_np = {layer: rdm.cpu().numpy() for layer, rdm in layer_rdms.items()}
+            rdms_to_save_np["neural"] = neural_rdm.cpu().numpy()
 
-            np.savez(save_path, **rsms_to_save_np)
-            rprint(f"Saved RSMs (NumPy) to: {save_path}", style="success")
+            np.savez(save_path, **rdms_to_save_np)
+            rprint(f"Saved RDMs (NumPy) to: {save_path}", style="success")
         except KeyError as e:
-            logger.error(f"Missing key in cfg for saving RSMs: {e}")
-            rprint(f"Error saving RSMs: Missing required key {e} in cfg", style="error")
+            logger.error(f"Missing key in cfg for saving RDMs: {e}")
+            rprint(f"Error saving RDMs: Missing required key {e} in cfg", style="error")
         except Exception as e:
-            logger.error(f"Failed to save RSMs to {save_path}: {e}")
-            rprint(f"Error saving RSMs: {e}", style="error")
+            logger.error(f"Failed to save RDMs to {save_path}: {e}")
+            rprint(f"Error saving RDMs: {e}", style="error")
 
     return results
 
 
-def compute_rsa_split_half_bootstrap(
+def compute_rsa_kfold(
     cfg: Dict,
     activations_dict: Dict[str, torch.Tensor],
     neural_data: torch.Tensor,
+    n_folds: int = 5,
+    bootstrap: bool = False,
     n_bootstrap: int = 1000,
     seed: int = 42,
+    verbose: bool = False,
 ) -> List[Dict]:
-    """Split-half layer selection + bootstrap evaluation for unbiased model-level RSA.
+    """5-fold cross-validated RSA with unbiased layer selection.
+
+    Always uses Pearson correlation for building RDMs and computes both
+    Spearman and Kendall-tau correlations for comparing RDMs. Layer selection
+    is performed independently for each comparison metric.
 
     Procedure:
-        1. Split stimuli 50/50 (selection half vs evaluation half).
-        2. On the selection half, compute per-layer RSA → pick the best layer.
-        3. Precompute the best-layer model RSM and the neural RSM on the evaluation half.
-        4. Compute the point estimate as the direct RSA on the full evaluation half
-           (no resampling — avoids upward bias from bootstrap duplicates).
-        5. Bootstrap: resample stimulus indices with replacement, reindex the
-           precomputed RSMs (no recomputation), and compare upper triangles.
-           The bootstrap distribution provides CI bounds only.
+        1. Shuffle stimuli into *n_folds* folds (fixed seed, same for all subjects).
+        2. For each fold k:
+           a. Build selection-set RDMs once (Pearson).
+           b. Compute per-layer RSA with both Spearman and Kendall → pick best
+              layer independently per metric.
+           c. Build evaluation-set RDMs once (Pearson). Compute eval RSA with
+              each metric's best layer.
+        3. Point estimate = mean of the *n_folds* evaluation scores (per metric).
+        4. If *bootstrap* is True, run bootstrap resampling on the last fold's
+           evaluation set to obtain 95% CI bounds for both metrics.
 
-    Why reindexing works:
-        RSM[i,j] = corr(row_i, row_j) depends only on those two rows, not on
-        the rest of the dataset.  A bootstrap sample with indices ``boot_idx``
-        produces RSM_boot[p,q] = RSM_orig[boot_idx[p], boot_idx[q]].
-        When boot_idx maps two positions to the same stimulus, the off-diagonal
-        entry is 1.0 (self-correlation) — identical to rebuilding from scratch.
-
-    Why the point estimate is NOT the bootstrap mean:
-        Bootstrap resampling with replacement creates duplicate stimuli, producing
-        trivially concordant (1.0, 1.0) pairs in both RSM upper triangles. This
-        systematically inflates the bootstrap mean. The unbiased point estimate
-        is the direct RSA on the full (unresampled) evaluation half.
+    Args:
+        cfg: Config dict.
+        activations_dict: {layer_name: activations} tensors.
+        neural_data: Neural response tensor (n_stimuli, n_voxels).
+        n_folds: Number of CV folds (default 5).
+        bootstrap: Whether to compute bootstrap CIs on the last fold.
+        n_bootstrap: Number of bootstrap iterations (only used if bootstrap=True).
+        seed: Random seed for shuffling stimuli (fixed across subjects).
+        verbose: If True, print per-fold details. Default False (summary only).
 
     Returns:
-        Single-element list with a dict containing: layer, score, ci_low, ci_high,
-        analysis, make_rsm_correlation, compare_rsm_correlation,
-        layer_selection_scores (List[Dict] of per-layer scores on the selection half).
+        Single-element list with a dict containing: layer, score_spearman,
+        score_kendall, ci_low_spearman, ci_high_spearman, ci_low_kendall,
+        ci_high_kendall, analysis, layer_selection_scores_spearman,
+        layer_selection_scores_kendall, fold_results_spearman,
+        fold_results_kendall, and bootstrap_scores_spearman/kendall
+        (when bootstrap=True).
     """
-    make_rsm_corr = cfg.get("make_rsm_correlation", "Pearson")
-    cmp_rsm_corr = cfg.get("compare_rsm_correlation", "Kendall")
+    from collections import Counter, defaultdict
+
+    _COMPARE_METHODS = ("spearman", "kendall")
 
     n_stimuli = neural_data.size(0)
     rng = np.random.RandomState(seed)
     perm = rng.permutation(n_stimuli)
-    half = n_stimuli // 2
-    sel_idx, eval_idx = perm[:half], perm[half:]
 
-    rprint(f"Split-half: {half} stimuli for selection, {len(eval_idx)} for evaluation", style="info")
+    fold_indices = np.array_split(perm, n_folds)
 
-    # ── Step 1: Layer selection on first half ────────────────────────────
-    neural_rsm_sel = compute_rsm(neural_data[sel_idx], correlation=make_rsm_corr)
-
-    selection_scores = []
-    best_layer, best_score = None, -float("inf")
-    for layer, acts in activations_dict.items():
-        flat = acts[sel_idx].flatten(start_dim=1) if acts.ndim > 2 else acts[sel_idx]
-        layer_rsm = compute_rsm(flat, correlation=make_rsm_corr)
-        score = compute_rsm_correlation(layer_rsm, neural_rsm_sel, correlation=cmp_rsm_corr)
-        selection_scores.append({"layer": layer, "score": score})
-        rprint(f"  [selection] {layer:<10} RSA = {score:.4f}", style="info")
-        if score > best_score:
-            best_score = score
-            best_layer = layer
-
-    rprint(f"  Best layer: {best_layer} (score={best_score:.4f})", style="highlight")
-
-    # ── Step 2: Precompute RSMs on evaluation half (done once) ───────────
-    eval_acts = activations_dict[best_layer][eval_idx]
-    eval_acts = eval_acts.flatten(start_dim=1) if eval_acts.ndim > 2 else eval_acts
-
-    rsm_model_full = compute_rsm(eval_acts, correlation=make_rsm_corr)
-    rsm_brain_full = compute_rsm(neural_data[eval_idx], correlation=make_rsm_corr)
-
-    # ── Step 3: Point estimate on the full (unresampled) evaluation half ─
-    point_estimate = compute_rsm_correlation(
-        rsm_model_full, rsm_brain_full, correlation=cmp_rsm_corr
-    )
-    rprint(f"  Eval-half point estimate: {best_layer} RSA = {point_estimate:.4f}", style="info")
-
-    # ── Step 4: Bootstrap via RSM reindexing (for CI only) ───────────────
-    n_eval = len(eval_idx)
-    bootstrap_scores = np.empty(n_bootstrap, dtype=np.float64)
-
-    for i in tqdm(range(n_bootstrap), desc="  Bootstrap", unit="iter"):
-        boot_idx = torch.from_numpy(
-            rng.choice(n_eval, size=n_eval, replace=True)
-        ).to(rsm_model_full.device)
-
-        rsm_model_boot = rsm_model_full[boot_idx][:, boot_idx]
-        rsm_brain_boot = rsm_brain_full[boot_idx][:, boot_idx]
-
-        bootstrap_scores[i] = compute_rsm_correlation(
-            rsm_model_boot, rsm_brain_boot, correlation=cmp_rsm_corr
+    if verbose:
+        rprint(
+            f"K-fold CV: {n_folds} folds, ~{len(fold_indices[0])} stimuli per fold "
+            f"(total {n_stimuli})",
+            style="info",
         )
+        rprint("Building RDMs with Pearson, comparing with Spearman + Kendall", style="info")
 
-    # 95% CI → tails at 2.5% and 97.5%
-    ci_low, ci_high = np.percentile(bootstrap_scores, [2.5, 97.5])
+    # Per-metric tracking
+    fold_scores = {m: [] for m in _COMPARE_METHODS}
+    fold_best_layers = {m: [] for m in _COMPARE_METHODS}
+    all_selection_scores = {m: [] for m in _COMPARE_METHODS}
+    bootstrap_scores = {}
 
-    rprint(
-        f"  Result: {best_layer} RSA = {point_estimate:.4f} "
-        f"[95% CI: {ci_low:.4f}, {ci_high:.4f}]",
-        style="highlight",
+    progress = Progress(
+        TextColumn("  K-fold RSA            "),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TextColumn("folds"),
+        TimeElapsedColumn(),
+        console=console,
     )
+    progress.start()
+    kfold_task = progress.add_task("kfold", total=n_folds)
 
-    return [{
-        "layer": best_layer,
-        "score": float(point_estimate),
-        "ci_low": float(ci_low),
-        "ci_high": float(ci_high),
+    for k in range(n_folds):
+        sel_idx = fold_indices[k]
+        eval_idx = np.concatenate([fold_indices[j] for j in range(n_folds) if j != k])
+
+        if verbose:
+            rprint(f"\n  Fold {k+1}/{n_folds}: {len(sel_idx)} select, {len(eval_idx)} eval", style="info")
+
+        # ── Build selection RDMs once (Pearson) ──────────────────
+        neural_rdm_sel = compute_rdm(neural_data[sel_idx])
+        layer_rdms_sel = {}
+        for layer, acts in activations_dict.items():
+            flat = acts[sel_idx].flatten(start_dim=1) if acts.ndim > 2 else acts[sel_idx]
+            layer_rdms_sel[layer] = compute_rdm(flat)
+
+        # ── Layer selection independently per metric ─────────────
+        for method in _COMPARE_METHODS:
+            best_layer, best_score = None, -float("inf")
+            for layer, layer_rdm in layer_rdms_sel.items():
+                score = compute_rdm_correlation(
+                    layer_rdm, neural_rdm_sel, correlation=method.capitalize()
+                )
+                all_selection_scores[method].append({"layer": layer, "score": score})
+                if verbose:
+                    rprint(f"    [select/{method}] {layer:<15} RSA = {score:.4f}", style="info")
+                if score > best_score:
+                    best_score = score
+                    best_layer = layer
+            fold_best_layers[method].append(best_layer)
+            if verbose:
+                rprint(f"    Best layer ({method}): {best_layer} (score={best_score:.4f})", style="highlight")
+
+        # ── Evaluate on remaining folds ──────────────────────────
+        rdm_brain_eval = compute_rdm(neural_data[eval_idx])
+        last_fold_rdm_models = {}
+
+        for method in _COMPARE_METHODS:
+            best_layer = fold_best_layers[method][-1]
+            eval_acts = activations_dict[best_layer][eval_idx]
+            eval_acts = eval_acts.flatten(start_dim=1) if eval_acts.ndim > 2 else eval_acts
+            rdm_model_eval = compute_rdm(eval_acts)
+
+            # Cache for bootstrap on last fold
+            if bootstrap and k == n_folds - 1:
+                last_fold_rdm_models[method] = rdm_model_eval
+
+            eval_score = compute_rdm_correlation(
+                rdm_model_eval, rdm_brain_eval, correlation=method.capitalize()
+            )
+            fold_scores[method].append(eval_score)
+            if verbose:
+                rprint(f"    Eval RSA ({method}) = {eval_score:.4f}", style="highlight")
+
+        # ── Bootstrap on last fold's eval set ────────────────────
+        if bootstrap and k == n_folds - 1:
+            if verbose:
+                rprint(f"\n  Running bootstrap ({n_bootstrap} iters) on fold {k+1} eval set...", style="info")
+            n_eval = len(eval_idx)
+            bootstrap_scores = {m: np.empty(n_bootstrap, dtype=np.float64) for m in _COMPARE_METHODS}
+
+            boot_progress = Progress(
+                TextColumn("  Bootstrap             "),
+                BarColumn(),
+                MofNCompleteColumn(),
+                TextColumn("iters"),
+                TimeElapsedColumn(),
+                console=console,
+                disable=not verbose,
+            )
+            boot_progress.start()
+            boot_task = boot_progress.add_task("bootstrap", total=n_bootstrap)
+            for i in range(n_bootstrap):
+                boot_idx = torch.from_numpy(
+                    rng.choice(n_eval, size=n_eval, replace=True)
+                ).to(rdm_brain_eval.device)
+                rdm_brain_boot = rdm_brain_eval[boot_idx][:, boot_idx]
+
+                for method in _COMPARE_METHODS:
+                    rdm_model_boot = last_fold_rdm_models[method][boot_idx][:, boot_idx]
+                    bootstrap_scores[method][i] = compute_rdm_correlation(
+                        rdm_model_boot, rdm_brain_boot, correlation=method.capitalize()
+                    )
+                boot_progress.advance(boot_task)
+            boot_progress.stop()
+
+        progress.advance(kfold_task)
+
+    progress.stop()
+
+    # ── Per-layer mean selection scores ──────────────────────────
+    mean_selection_scores = {}
+    for method in _COMPARE_METHODS:
+        layer_score_accum = defaultdict(list)
+        for entry in all_selection_scores[method]:
+            layer_score_accum[entry["layer"]].append(entry["score"])
+        mean_selection_scores[method] = [
+            {"layer": layer, "score": float(np.mean(scores))}
+            for layer, scores in layer_score_accum.items()
+        ]
+
+    # ── Per-fold diagnostic info ─────────────────────────────────
+    fold_results = {}
+    for method in _COMPARE_METHODS:
+        fold_results[method] = [
+            {"fold": k, "layer": fold_best_layers[method][k], "eval_score": fold_scores[method][k]}
+            for k in range(n_folds)
+        ]
+
+    # ── Aggregate across folds ───────────────────────────────────
+    point_estimates = {m: float(np.mean(fold_scores[m])) for m in _COMPARE_METHODS}
+    reported_layers = {
+        m: Counter(fold_best_layers[m]).most_common(1)[0][0] for m in _COMPARE_METHODS
+    }
+
+    # Spearman-selected layer is the primary reported layer
+    reported_layer = reported_layers["spearman"]
+
+    ci = {m: (None, None) for m in _COMPARE_METHODS}
+    if bootstrap:
+        for method in _COMPARE_METHODS:
+            ci[method] = (
+                float(np.percentile(bootstrap_scores[method], 2.5)),
+                float(np.percentile(bootstrap_scores[method], 97.5)),
+            )
+
+    rprint("")  # blank line before results
+    for method in _COMPARE_METHODS:
+        layer_m = reported_layers[method]
+        count = Counter(fold_best_layers[method])[layer_m]
+        msg = f"  {method.capitalize():<10}| {layer_m} = {point_estimates[method]:.4f}  ({count}/{n_folds} folds)"
+        if bootstrap:
+            msg += f"  [95% CI: {ci[method][0]:.4f}, {ci[method][1]:.4f}]"
+        rprint(msg, style="highlight")
+
+    result = {
+        "layer": reported_layer,
+        "score_spearman": point_estimates["spearman"],
+        "score_kendall": point_estimates["kendall"],
+        "ci_low_spearman": ci["spearman"][0],
+        "ci_high_spearman": ci["spearman"][1],
+        "ci_low_kendall": ci["kendall"][0],
+        "ci_high_kendall": ci["kendall"][1],
         "analysis": "rsa",
-        "make_rsm_correlation": make_rsm_corr,
-        "compare_rsm_correlation": cmp_rsm_corr,
-        "layer_selection_scores": selection_scores,
-    }]
+        "layer_selection_scores_spearman": mean_selection_scores["spearman"],
+        "layer_selection_scores_kendall": mean_selection_scores["kendall"],
+        "fold_results_spearman": fold_results["spearman"],
+        "fold_results_kendall": fold_results["kendall"],
+    }
+    if bootstrap:
+        result["bootstrap_scores_spearman"] = bootstrap_scores["spearman"].tolist()
+        result["bootstrap_scores_kendall"] = bootstrap_scores["kendall"].tolist()
+
+    return [result]
