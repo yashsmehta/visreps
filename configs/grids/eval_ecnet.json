@@ -4,7 +4,6 @@
   "seed": [1],
   "batchsize": 64,
   "notes": [""],
-  "compare_rsm_correlation": ["Spearman"],
   "reconstruct_from_pcs": [false],
   "neural_dataset": ["nsd"],
   "subject_idx": [0],

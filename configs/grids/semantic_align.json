@@ -3,7 +3,6 @@
   "cfg_id": [1000],
   "seed": [1],
   "notes": [""],
-  "compare_rsm_correlation": ["Spearman"],
   "reconstruct_from_pcs": [false],
   "eval_checkpoint_at_epoch": [20]
 }

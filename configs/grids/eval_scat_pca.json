@@ -3,7 +3,6 @@
   "cfg_id": [8, 16, 32, 64],
   "seed": [1],
   "notes": [""],
-  "compare_rsm_correlation": ["Spearman"],
   "reconstruct_from_pcs": [false],
   "neural_dataset": ["nsd"],
   "subject_idx": [1, 2, 3],
