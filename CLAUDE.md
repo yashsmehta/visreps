@@ -2,6 +2,10 @@
 
 Write simple, intuitive, easy-to-understand code. For complex or ambiguous requests, read the relevant files first and confirm intent with the user before implementing.
 
+## Voice Dictation
+
+Instructions are mostly voice-dictated and may contain transcription errors. Infer intent from context, state any assumptions before proceeding, and ask only when genuinely ambiguous.
+
 ## Environment
 
 **CRITICAL: Always activate the venv before running any Python command.** Prefix every Python invocation with `source /home/ymehta3/research/VisionAI/visreps/.venv/bin/activate &&`. The system Python does not have the required packages (torch, etc.).
@@ -71,24 +75,28 @@ python scripts/runners/eval_runner.py --grid configs/grids/eval_default.json  # 
 - `subject_idx`: NSD: 0-7; TVSD: 0 (monkey F), 1 (monkey N); THINGS: ignored
 - `return_nodes`: ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2"]
 - `apply_srp`: true (Sparse Random Projection for speed)
+- `bootstrap`: true/false (compute bootstrap CIs on last fold of k-fold RSA)
 
 **Analysis methods:**
-- **RSA**: Correlates model and neural Representational Similarity Matrices
+- **RSA**: K-fold cross-validated RSA with unbiased layer selection. Always builds RDMs with Pearson correlation and computes both Spearman and Kendall-tau comparisons (independent layer selection per metric). Reported `layer` is the Spearman-selected layer.
 - **Encoding**: Ridge regression (himalaya GPU) predicting neural responses from activations
 
 ## Results Database
 
 Eval results are stored in `results.db` (SQLite).
 
-**Tables:**
-- `results` — one row per (run, layer). Core columns: `run_id`, `layer`, `score`, `analysis`, `seed`, `epoch`, `region`, `subject_idx`, `neural_dataset`, `cfg_id`, `pca_labels`, `pca_n_classes`, `pca_labels_folder`, `model_name`, `checkpoint_dir`, `compare_rsm_correlation`, `reconstruct_from_pcs`, `pca_k`. Deduped via `UNIQUE(run_id, layer)`.
+**Tables** (normalized "long" format — each comparison metric gets its own row via `compare_method`):
+- `results` — one row per (run, compare_method, layer). Columns: `run_id`, `compare_method`, `layer`, `score`, `ci_low`, `ci_high`, `analysis`, `seed`, `epoch`, `region`, `subject_idx`, `neural_dataset`, `cfg_id`, `pca_labels`, `pca_n_classes`, `pca_labels_folder`, `model_name`, `checkpoint_dir`, `reconstruct_from_pcs`, `pca_k`. Deduped via `UNIQUE(run_id, compare_method, layer)`.
 - `run_configs` — full config JSON per `run_id`. Use `JOIN` to recover any training/infra parameter.
+- `fold_results` — per-fold eval score + selected layer (10 rows per run for 5-fold CV × 2 metrics). Columns: `run_id`, `compare_method`, `fold`, `layer`, `eval_score`. Deduped via `UNIQUE(run_id, compare_method, fold)`.
+- `layer_selection_scores` — per-layer mean selection score across folds (~14 rows per metric per run). Columns: `run_id`, `compare_method`, `layer`, `score`. Deduped via `UNIQUE(run_id, compare_method, layer)`.
+- `bootstrap_distributions` — raw bootstrap scores as JSON array (1 row per metric per run, only when `bootstrap=True`). Columns: `run_id`, `compare_method`, `scores`.
 
-`run_id` = SHA256[:12] of experiment identity fields. Re-running the same eval replaces old results (INSERT OR REPLACE).
+`compare_method` is `"spearman"` or `"kendall"`. `run_id` = SHA256[:12] of experiment identity fields. Re-running the same eval replaces old results (INSERT OR REPLACE).
 
 **Quick query:**
 ```python
-pd.read_sql("SELECT * FROM results WHERE region='ventral visual stream' AND analysis='rsa'", sqlite3.connect("results.db"))
+pd.read_sql("SELECT * FROM results WHERE region='ventral visual stream' AND compare_method='spearman'", sqlite3.connect("results.db"))
 ```
 
 ## PCA Labels Generation
