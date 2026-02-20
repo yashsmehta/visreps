@@ -118,11 +118,10 @@ def prepare_concept_alignment(
     neural_data_raw: Dict[str, Any],
     keys: List[str],
 ) -> AlignmentData:
-    """Merge train/test THINGS images and average activations per concept.
+    """Average activations per concept and pair with behavioral embeddings.
 
-    Combines train_image_ids and test_image_ids into a single set per concept,
-    averages model activations across ALL images of each concept, and pairs
-    with the concept-level behavioral embedding.
+    For each concept, averages model activations across all its images, then
+    pairs the result with the concept-level behavioral embedding.
 
     Returns:
         AlignmentData with all ~1854 concepts (one row per concept).
@@ -130,26 +129,20 @@ def prepare_concept_alignment(
         order) for exact re-extraction.
     """
     key_to_idx = {k: i for i, k in enumerate(keys)}
-    embeddings = neural_data_raw["train"]  # same embeddings in train and test
-
-    # Merge image IDs from both splits
-    train_ids = neural_data_raw["train_image_ids"]
-    test_ids = neural_data_raw["test_image_ids"]
-    all_concepts = list(train_ids.keys())
+    embeddings = neural_data_raw["embeddings"]
+    image_ids = neural_data_raw["image_ids"]
 
     concepts = []
     concept_acts = {l: [] for l in acts_raw}
     concept_image_ids = {}
 
-    for concept in all_concepts:
-        merged_img_ids = list(train_ids.get(concept, [])) + list(test_ids.get(concept, []))
-        indices = [key_to_idx[sid] for sid in merged_img_ids if sid in key_to_idx]
+    for concept, img_ids in image_ids.items():
+        indices = [key_to_idx[sid] for sid in img_ids if sid in key_to_idx]
         if not indices:
             continue
 
         concepts.append(concept)
-        # Store which image IDs were actually found for this concept
-        concept_image_ids[concept] = [sid for sid in merged_img_ids if sid in key_to_idx]
+        concept_image_ids[concept] = [sid for sid in img_ids if sid in key_to_idx]
         for l, a in acts_raw.items():
             avg = a[indices].float().mean(0)
             concept_acts[l].append(avg)
@@ -159,7 +152,7 @@ def prepare_concept_alignment(
         np.stack([embeddings[c] for c in concepts], dtype=np.float32)
     )
 
-    logger.info(f"Prepared concept alignment: {len(concepts)} concepts (merged train+test images).")
+    logger.info(f"Prepared concept alignment: {len(concepts)} concepts.")
     return AlignmentData(
         acts, neural,
         stimulus_ids=concepts,
