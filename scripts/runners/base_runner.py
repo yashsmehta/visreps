@@ -4,8 +4,8 @@ from itertools import product
 from typing import Dict, List, Any, Optional
 
 
-def load_param_grid(filepath: str) -> Dict[str, List[Any]]:
-    """Load parameter grid from JSON file."""
+def load_param_grid(filepath: str) -> List[Dict[str, Any]]:
+    """Load parameter grid from JSON file. Expects a JSON array of grid objects."""
     with open(filepath, "r") as f:
         return json.load(f)
 
@@ -16,50 +16,52 @@ class ExperimentRunner:
     def __init__(
         self,
         base_config: str,
-        param_grid: Dict[str, List[Any]],
+        param_grids: List[Dict[str, Any]],
         mode: str,
         extra_overrides: Optional[Dict[str, Any]] = None
     ):
         self.base_config = base_config
-        self.param_grid = param_grid
+        self.param_grids = param_grids
         self.mode = mode
         self.extra_overrides = extra_overrides or {}
 
     def run_all(self):
-        """Run all parameter combinations in the grid."""
-        # Separate grid parameters (lists) from fixed nested configs (dicts/strings)
+        """Run all parameter combinations across all grid groups."""
+        for grid_idx, param_grid in enumerate(self.param_grids):
+            if len(self.param_grids) > 1:
+                print(f"\n{'#'*60}")
+                print(f"Grid group {grid_idx + 1}/{len(self.param_grids)}")
+                print(f"{'#'*60}")
+            self._run_grid(param_grid)
+
+    def _run_grid(self, param_grid: Dict[str, Any]):
+        """Run all parameter combinations for a single grid group."""
         grid_params = {}
         fixed_params = {}
 
-        for key, value in self.param_grid.items():
+        for key, value in param_grid.items():
             if isinstance(value, list):
                 grid_params[key] = value
             else:
-                # Keep dicts and non-list values as fixed params
                 fixed_params[key] = value
 
-        # Generate all combinations from list parameters only
         param_names = list(grid_params.keys())
         param_combos = list(product(*grid_params.values()))
 
         total_runs = len(param_combos)
         print(f"Running {total_runs} {self.mode} configurations")
 
-        # Run each combination
         for idx, combo in enumerate(param_combos, 1):
             print(f"\n{'='*60}")
             print(f"Run {idx}/{total_runs} | {(idx/total_runs)*100:.1f}% complete")
             print(f"{'='*60}")
 
-            # Build parameters for this run
             params = dict(zip(param_names, combo))
-            params.update(fixed_params)  # Add fixed params
+            params.update(fixed_params)
             params.update(self.extra_overrides)
 
-            # Allow subclasses to modify params
             params = self.process_params(params)
 
-            # Build and run command
             self._run_single(params)
 
     def process_params(self, params: Dict[str, Any]) -> Dict[str, Any]:

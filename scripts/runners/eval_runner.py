@@ -3,16 +3,15 @@ from typing import Dict, Any
 from base_runner import ExperimentRunner, load_param_grid
 
 BASE_CONFIG = "configs/eval/base.json"
-DEFAULT_GRID = "configs/grids/eval_default.json"
 
 
 class EvalRunner(ExperimentRunner):
     """Evaluation runner with checkpoint model processing."""
 
-    def __init__(self, base_config, param_grid):
+    def __init__(self, base_config, param_grids):
         super().__init__(
             base_config=base_config,
-            param_grid=param_grid,
+            param_grids=param_grids,
             mode="eval",
             extra_overrides={"log_expdata": True, "load_model_from": "checkpoint"}
         )
@@ -30,7 +29,7 @@ class EvalRunner(ExperimentRunner):
 
 def main():
     parser = argparse.ArgumentParser(description="Run evaluation experiments")
-    parser.add_argument("--grid", default=DEFAULT_GRID, help="Parameter grid JSON file")
+    parser.add_argument("--grid", required=True, help="Parameter grid JSON file")
     args = parser.parse_args()
 
     runner = EvalRunner(BASE_CONFIG, load_param_grid(args.grid))
