@@ -71,26 +71,21 @@ BAR_WIDTH = 0.72
 
 
 # ── Fancy bar helpers ─────────────────────────────────────────────────────
-def draw_fancy_bar(ax, x, height, color, hatch="", width=BAR_WIDTH):
-    """Draw a bar using FancyBboxPatch with subtle top rounding."""
-    rect = mpatches.FancyBboxPatch(
-        (x - width / 2, 0), width, height,
-        boxstyle=mpatches.BoxStyle("Round", pad=0.02, rounding_size=0.1),
-        facecolor=color, edgecolor="black", linewidth=0.8,
-        hatch=hatch, mutation_aspect=0.05, zorder=3,
-    )
-    ax.add_patch(rect)
+def draw_fancy_bar(ax, x, height, color, hatch="", width=BAR_WIDTH, scale=1.0):
+    """Draw a clean bar with optional hatching."""
+    ax.bar(x, height, width=width, color=color, edgecolor="black",
+           linewidth=0.8 * scale, hatch=hatch, zorder=3)
 
 
-def draw_break_marks(ax, x):
+def draw_break_marks(ax, x, scale=1.0):
     """Draw diagonal slashes at the bottom spine to indicate axis break."""
     trans = transforms.blended_transform_factory(ax.transData, ax.transAxes)
     spine_y, dy, dx, gap = -0.022, 0.028, 0.20, 0.13
     ax.plot([x - gap - dx - 0.1, x + gap + dx + 0.1], [spine_y, spine_y],
-            color="white", linewidth=5, transform=trans, clip_on=False, zorder=9)
+            color="white", linewidth=5 * scale, transform=trans, clip_on=False, zorder=9)
     for offset in [-gap, gap]:
         ax.plot([x + offset - dx, x + offset + dx], [spine_y - dy, spine_y + dy],
-                color="black", linewidth=1.8, clip_on=False, zorder=10,
+                color="black", linewidth=1.8 * scale, clip_on=False, zorder=10,
                 transform=trans)
 
 
@@ -102,8 +97,11 @@ def plot_coarseness_bars(args, dcfg):
     n_regions = len(regions)
     display_name = FOLDER_DISPLAY.get(args.folder, args.folder)
 
+    # Scale visual elements so multi-panel figures match single-panel aesthetics
+    scale = 1 + 0.35 * (n_regions - 1)
+    fig_h = 4 * scale
     fig, axes = plt.subplots(1, n_regions,
-                             figsize=(5 * n_regions, 4), sharey=False,
+                             figsize=(5 * n_regions, fig_h), sharey=False,
                              squeeze=False)
 
     for idx, region in enumerate(regions):
@@ -180,7 +178,7 @@ def plot_coarseness_bars(args, dcfg):
         for k in range(len(all_x)):
             if not np.isnan(all_means[k]):
                 draw_fancy_bar(ax, all_x[k], all_means[k],
-                               all_colors[k], all_hatches[k])
+                               all_colors[k], all_hatches[k], scale=scale)
 
         # Error bars (both must be non-negative for matplotlib)
         for k in range(len(all_x)):
@@ -189,36 +187,39 @@ def plot_coarseness_bars(args, dcfg):
                     and (err_lo[k] > 0 or err_hi[k] > 0)):
                 ax.errorbar(all_x[k], all_means[k],
                             yerr=[[err_lo[k]], [err_hi[k]]],
-                            fmt="none", ecolor="black", elinewidth=1.0,
-                            capsize=4, capthick=1.0, zorder=5)
+                            fmt="none", ecolor="black", elinewidth=1.0 * scale,
+                            capsize=4 * scale, capthick=1.0 * scale, zorder=5)
 
-        draw_break_marks(ax, BREAK_X)
+        draw_break_marks(ax, BREAK_X, scale=scale)
 
         # Axis formatting
         ax.set_xticks(all_x)
-        ax.set_xticklabels(all_labels, fontsize=10, ha="center")
-        ax.tick_params(axis="x", direction="out", bottom=False, length=4, width=1.5)
-        ax.tick_params(axis="y", which="major", direction="out", labelsize=12,
-                       length=5, width=1.5)
+        ax.set_xticklabels(all_labels, fontsize=10 * scale, ha="center")
+        ax.tick_params(axis="x", direction="out", bottom=False,
+                       length=4 * scale, width=1.5 * scale)
+        ax.tick_params(axis="y", which="major", direction="out",
+                       labelsize=12 * scale, length=5 * scale, width=1.5 * scale)
         ax.yaxis.set_minor_locator(AutoMinorLocator(2))
-        ax.tick_params(axis="y", which="minor", direction="out", length=3, width=1.0)
+        ax.tick_params(axis="y", which="minor", direction="out",
+                       length=3 * scale, width=1.0 * scale)
         first_x = X_UNTRAINED if has_untrained else all_x[0]
         ax.set_xlim(first_x - 0.6, X_BASELINE + 0.7)
         ax.set_ylim(y_bottom, y_top)
 
-        ax.set_xlabel("Number of Classes", fontsize=13)
-        ax.set_ylabel("Spearman \u03c1", fontsize=13)
+        ax.set_xlabel("Number of Classes", fontsize=13 * scale)
+        ax.set_ylabel("Spearman \u03c1", fontsize=13 * scale)
         region_label = dcfg["region_labels"].get(region, region)
-        ax.set_title(region_label, fontsize=15, fontweight="bold", pad=10)
+        ax.set_title(region_label, fontsize=15 * scale, fontweight="bold",
+                     pad=10 * scale)
 
-        sns.despine(ax=ax, right=True, top=True, offset=5)
-        ax.spines["bottom"].set_linewidth(1.5)
-        ax.spines["left"].set_linewidth(1.5)
+        sns.despine(ax=ax, right=True, top=True, offset=5 * scale)
+        ax.spines["bottom"].set_linewidth(1.5 * scale)
+        ax.spines["left"].set_linewidth(1.5 * scale)
 
     fig.suptitle(
         f"Brain Alignment Across Label Granularity\n"
         f"({display_name}-PCA Labels, {args.dataset.upper()} RSA)",
-        fontsize=16, fontweight="bold", y=1.02,
+        fontsize=16 * scale, fontweight="bold", y=1.02,
     )
     plt.tight_layout(pad=1.0)
     out = f"plotters/figures/{args.dataset}/coarseness_bars_{display_name.lower()}.png"
@@ -239,8 +240,10 @@ def plot_per_subject(args, dcfg):
     n_regions = len(regions)
     display_name = FOLDER_DISPLAY.get(args.folder, args.folder)
 
+    scale = 1 + 0.35 * (n_regions - 1)
+    fig_h = 4 * scale
     fig, axes = plt.subplots(1, n_regions,
-                             figsize=(5 * n_regions, 4), sharey=False,
+                             figsize=(5 * n_regions, fig_h), sharey=False,
                              squeeze=False)
 
     blue_shades = ["#c6dbef", "#9ecae1", "#6baed6", "#4292c6", "#2171b5", "#084594"]
@@ -288,11 +291,11 @@ def plot_per_subject(args, dcfg):
         box_data = [data[l].loc[common].values for l in x_labels]
 
         bp = ax.boxplot(box_data, positions=x_pos, patch_artist=True, widths=0.5,
-                        boxprops=dict(linewidth=1.0),
-                        whiskerprops=dict(linewidth=1.0),
-                        capprops=dict(linewidth=1.0),
-                        medianprops=dict(linewidth=1.5, color="black"),
-                        flierprops=dict(marker="o", markersize=3, alpha=0.5))
+                        boxprops=dict(linewidth=1.0 * scale),
+                        whiskerprops=dict(linewidth=1.0 * scale),
+                        capprops=dict(linewidth=1.0 * scale),
+                        medianprops=dict(linewidth=1.5 * scale, color="black"),
+                        flierprops=dict(marker="o", markersize=3 * scale, alpha=0.5))
         for patch, c in zip(bp["boxes"], colors):
             patch.set_facecolor(c)
             patch.set_alpha(0.7)
@@ -301,38 +304,40 @@ def plot_per_subject(args, dcfg):
         # Connecting lines
         for subj in common:
             y_vals = [data[l].loc[subj] for l in x_labels]
-            ax.plot(x_pos, y_vals, color="gray", alpha=0.25, linewidth=0.8, zorder=1)
+            ax.plot(x_pos, y_vals, color="gray", alpha=0.25,
+                    linewidth=0.8 * scale, zorder=1)
 
         # Subject dots
         rng = np.random.default_rng(42)
         for i, label in enumerate(x_labels):
             y = data[label].loc[common].values
             xj = rng.normal(x_pos[i], 0.06, size=len(y))
-            ax.scatter(xj, y, s=25, c="white", edgecolors="black",
-                       linewidths=0.7, zorder=3, alpha=0.9)
+            ax.scatter(xj, y, s=25 * scale, c="white", edgecolors="black",
+                       linewidths=0.7 * scale, zorder=3, alpha=0.9)
 
         ax.set_xticks(x_pos)
-        ax.set_xticklabels(x_labels, fontweight="bold")
-        ax.set_xlabel("Number of Classes", fontsize=13)
-        ax.set_ylabel("Spearman \u03c1", fontsize=13)
+        ax.set_xticklabels(x_labels, fontweight="bold", fontsize=11 * scale)
+        ax.set_xlabel("Number of Classes", fontsize=13 * scale)
+        ax.set_ylabel("Spearman \u03c1", fontsize=13 * scale)
         region_label = dcfg["region_labels"].get(region, region)
-        ax.set_title(region_label, fontsize=15, fontweight="bold")
+        ax.set_title(region_label, fontsize=15 * scale, fontweight="bold")
+        ax.tick_params(axis="y", labelsize=11 * scale)
 
         all_vals = np.concatenate(box_data)
         yr = all_vals.max() - all_vals.min()
         ax.set_ylim(all_vals.min() - yr * 0.05, all_vals.max() + yr * 0.15)
-        ax.yaxis.grid(True, linestyle="-", alpha=0.3, linewidth=0.5)
+        ax.yaxis.grid(True, linestyle="-", alpha=0.3, linewidth=0.5 * scale)
         ax.set_axisbelow(True)
         ax.set_xlim(-0.5, x_pos[-1] + 0.5)
 
-        sns.despine(ax=ax, right=True, top=True, offset=5)
-        ax.spines["bottom"].set_linewidth(1.5)
-        ax.spines["left"].set_linewidth(1.5)
+        sns.despine(ax=ax, right=True, top=True, offset=5 * scale)
+        ax.spines["bottom"].set_linewidth(1.5 * scale)
+        ax.spines["left"].set_linewidth(1.5 * scale)
 
     fig.suptitle(
         f"Per-Subject Brain Alignment\n"
         f"({display_name}-PCA Labels, {args.dataset.upper()} RSA)",
-        fontsize=16, fontweight="bold", y=1.02,
+        fontsize=16 * scale, fontweight="bold", y=1.02,
     )
     plt.tight_layout(pad=1.0)
     out = f"plotters/figures/{args.dataset}/per_subject_{display_name.lower()}.png"
