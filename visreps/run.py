@@ -18,14 +18,14 @@ def main():
     overrides = list(args.override)
     if args.verbose:
         overrides.append("verbose=true")
+    overrides.append(f"mode={args.mode}")
     cfg = utils.load_config(
         args.config or f"configs/{args.mode}/base.json", overrides
     )
     cfg = utils.validate_config(cfg)
 
     if cfg.mode == "train":
-        trainer = Trainer(cfg)
-        trainer.train()
+        Trainer(cfg).train()
     else:
         evals.eval(cfg)
 

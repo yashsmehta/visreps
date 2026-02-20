@@ -300,7 +300,7 @@ _RESULTS_DB_PATH = Path("results.db")
 _IDENTITY_FIELDS = (
     "seed", "epoch", "region", "subject_idx", "neural_dataset", "cfg_id",
     "pca_labels", "pca_n_classes", "pca_labels_folder", "checkpoint_dir",
-    "analysis", "reconstruct_from_pcs", "pca_k",
+    "analysis", "compare_method", "reconstruct_from_pcs", "pca_k",
 )
 
 
@@ -360,16 +360,6 @@ def _init_db(db_path) -> sqlite3.Connection:
         )
     """)
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS fold_results (
-            run_id          TEXT NOT NULL,
-            compare_method  TEXT NOT NULL,
-            fold            INTEGER NOT NULL,
-            layer           TEXT,
-            eval_score      REAL,
-            UNIQUE(run_id, compare_method, fold)
-        )
-    """)
-    conn.execute("""
         CREATE TABLE IF NOT EXISTS bootstrap_distributions (
             run_id          TEXT NOT NULL,
             compare_method  TEXT NOT NULL,
@@ -393,11 +383,9 @@ def save_results(df, cfg, timeout=60):
 
     Uses a normalized "long" format: each comparison metric (Spearman, Kendall)
     gets its own row, distinguished by the `compare_method` column. This applies
-    to all tables: `results`, `fold_results`, `layer_selection_scores`, and
+    to all tables: `results`, `layer_selection_scores`, and
     `bootstrap_distributions`. Re-running the same eval replaces old rows.
     """
-    _METHODS = ("spearman", "kendall")
-
     run_id = _compute_run_id(cfg)
     conn = _init_db(_RESULTS_DB_PATH)
 
@@ -407,75 +395,62 @@ def save_results(df, cfg, timeout=60):
         (run_id, config_json),
     )
 
-    # ── results (one row per metric) ──────────────────────────
+    # ── results ──────────────────────────────────────────────
     for _, row in df.iterrows():
-        for method in _METHODS:
-            layer = row.get("layer")  # k-fold: single best layer per method
-            score = _get_float(row, f"score_{method}")
-            ci_low = _get_float(row, f"ci_low_{method}")
-            ci_high = _get_float(row, f"ci_high_{method}")
-            if score is None:
-                continue
+        method = row.get("compare_method", cfg.get("compare_method", "spearman"))
+        layer = row.get("layer")
+        score = _get_float(row, "score")
+        ci_low = _get_float(row, "ci_low")
+        ci_high = _get_float(row, "ci_high")
+        if score is None:
+            continue
+        conn.execute(
+            """INSERT OR REPLACE INTO results
+               (run_id, compare_method, layer, score, ci_low, ci_high,
+                analysis, seed, epoch, region, subject_idx,
+                neural_dataset, cfg_id, pca_labels, pca_n_classes, pca_labels_folder,
+                model_name, checkpoint_dir, reconstruct_from_pcs, pca_k)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                run_id, method, layer, score, ci_low, ci_high,
+                row.get("analysis", cfg.get("analysis")),
+                int(cfg.get("seed")),
+                int(cfg.get("epoch", 0)),
+                cfg.get("region"),
+                str(cfg.get("subject_idx")),
+                cfg.get("neural_dataset"),
+                cfg.get("cfg_id"),
+                bool(cfg.get("pca_labels")),
+                cfg.get("pca_n_classes"),
+                cfg.get("pca_labels_folder"),
+                cfg.get("model_name"),
+                cfg.get("checkpoint_dir"),
+                bool(cfg.get("reconstruct_from_pcs", False)),
+                cfg.get("pca_k", 1),
+            ),
+        )
+
+    # ── layer_selection_scores ────────────────────────────────
+    for _, row in df.iterrows():
+        method = row.get("compare_method", cfg.get("compare_method", "spearman"))
+        entries = row.get("layer_selection_scores") or []
+        for entry in entries:
             conn.execute(
-                """INSERT OR REPLACE INTO results
-                   (run_id, compare_method, layer, score, ci_low, ci_high,
-                    analysis, seed, epoch, region, subject_idx,
-                    neural_dataset, cfg_id, pca_labels, pca_n_classes, pca_labels_folder,
-                    model_name, checkpoint_dir, reconstruct_from_pcs, pca_k)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    run_id, method, layer, score, ci_low, ci_high,
-                    row.get("analysis", cfg.get("analysis")),
-                    int(cfg.get("seed")),
-                    int(cfg.get("epoch", 0)),
-                    cfg.get("region"),
-                    str(cfg.get("subject_idx")),
-                    cfg.get("neural_dataset"),
-                    cfg.get("cfg_id"),
-                    bool(cfg.get("pca_labels")),
-                    cfg.get("pca_n_classes"),
-                    cfg.get("pca_labels_folder"),
-                    cfg.get("model_name"),
-                    cfg.get("checkpoint_dir"),
-                    bool(cfg.get("reconstruct_from_pcs", False)),
-                    cfg.get("pca_k", 1),
-                ),
+                """INSERT OR REPLACE INTO layer_selection_scores
+                   (run_id, compare_method, layer, score) VALUES (?, ?, ?, ?)""",
+                (run_id, method, entry["layer"], float(entry["score"])),
             )
 
-    # ── layer_selection_scores (one row per metric × layer) ───
+    # ── bootstrap_distributions ───────────────────────────────
     for _, row in df.iterrows():
-        for method in _METHODS:
-            entries = row.get(f"layer_selection_scores_{method}") or []
-            for entry in entries:
-                conn.execute(
-                    """INSERT OR REPLACE INTO layer_selection_scores
-                       (run_id, compare_method, layer, score) VALUES (?, ?, ?, ?)""",
-                    (run_id, method, entry["layer"], float(entry["score"])),
-                )
-
-    # ── fold_results (one row per metric × fold) ──────────────
-    for _, row in df.iterrows():
-        for method in _METHODS:
-            entries = row.get(f"fold_results_{method}") or []
-            for entry in entries:
-                conn.execute(
-                    """INSERT OR REPLACE INTO fold_results
-                       (run_id, compare_method, fold, layer, eval_score)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (run_id, method, int(entry["fold"]), entry["layer"],
-                     float(entry["eval_score"])),
-                )
-
-    # ── bootstrap_distributions (one row per metric) ──────────
-    for _, row in df.iterrows():
-        for method in _METHODS:
-            bs = row.get(f"bootstrap_scores_{method}")
-            if bs is not None:
-                conn.execute(
-                    """INSERT OR REPLACE INTO bootstrap_distributions
-                       (run_id, compare_method, scores) VALUES (?, ?, ?)""",
-                    (run_id, method, json.dumps(bs)),
-                )
+        method = row.get("compare_method", cfg.get("compare_method", "spearman"))
+        bs = row.get("bootstrap_scores")
+        if bs is not None:
+            conn.execute(
+                """INSERT OR REPLACE INTO bootstrap_distributions
+                   (run_id, compare_method, scores) VALUES (?, ?, ?)""",
+                (run_id, method, json.dumps(bs)),
+            )
 
     conn.commit()
     conn.close()
@@ -540,7 +515,8 @@ class ConfigVerifier:
     VALID_MODEL_CLASSES = {"custom_model", "standard_model"}
     VALID_MODEL_SOURCES = {"checkpoint", "torchvision"}
     VALID_ANALYSES = {"rsa", "encoding_score"}
-    VALID_NEURAL_DATASETS = {"nsd", "things", "nsd_synthetic", "cusack", "tvsd"}
+    VALID_COMPARE_METHODS = {"spearman", "kendall"}
+    VALID_NEURAL_DATASETS = {"nsd", "things-behavior", "tvsd"}
     VALID_NSD_TYPES = {"finegrained", "streams", "streams_shared"}
 
     def __init__(self, cfg: OmegaConf):
@@ -551,7 +527,10 @@ class ConfigVerifier:
     def verify(self) -> OmegaConf:
         """Main verification method that routes to appropriate validator."""
         self._verify_mode()
-        return self._verify_train() if self.cfg.mode == "train" else self._verify_eval()
+        if self.cfg.mode == "train":
+            return self._verify_train()
+        else:
+            return self._verify_eval()
 
     def _verify_mode(self) -> None:
         """Verify the configuration mode."""
@@ -603,7 +582,12 @@ class ConfigVerifier:
         return self.cfg
 
     def _verify_eval(self) -> OmegaConf:
-        """Verify evaluation configuration."""
+        """Verify evaluation configuration.
+
+        Accepts list-valued subject_idx and region for NSD/TVSD (multi-subject
+        evaluation in a single process). Normalizes scalars to lists.
+        """
+        from omegaconf import ListConfig
 
         # Seed validation: ensure seed is one of [1, 2, 3]
         if getattr(self.cfg, "seed", None) not in (1, 2, 3):
@@ -614,19 +598,21 @@ class ConfigVerifier:
             raise AssertionError(f"Invalid seed: {self.cfg.seed}")
 
         # Neural parameters validation
-        if self.cfg.neural_dataset.lower() == "things":
-            # For 'things' dataset, region and subject_idx are not applicable.
-            # Issue warning and set to "N/A" if they are provided incorrectly.
-            if hasattr(self.cfg, 'region') and isinstance(self.cfg.region, str) and self.cfg.region.upper() != "N/A":
+        if self.cfg.neural_dataset.lower() == "things-behavior":
+            # For 'things-behavior' dataset, region and subject_idx are not applicable.
+            # Set to "N/A" if they are not already "N/A".
+            region = self.cfg.get("region")
+            if region is not None and not (isinstance(region, str) and region.upper() == "N/A"):
                 self.rprint(
-                    f"[warning]Region '{self.cfg.region}' provided for 'things' dataset. Setting to 'N/A'.[/warning]",
+                    f"[warning]Region '{region}' provided for 'things-behavior' dataset. Setting to 'N/A'.[/warning]",
                     style="warning",
                 )
                 self.cfg.region = "N/A"
 
-            if hasattr(self.cfg, 'subject_idx') and not (isinstance(self.cfg.subject_idx, str) and self.cfg.subject_idx.upper() == "N/A"):
+            subj = self.cfg.get("subject_idx")
+            if subj is not None and not (isinstance(subj, str) and subj.upper() == "N/A"):
                 self.rprint(
-                    f"[warning]Subject index '{self.cfg.subject_idx}' provided for 'things' dataset. Setting to 'N/A'.[/warning]",
+                    f"[warning]Subject index '{subj}' provided for 'things-behavior' dataset. Setting to 'N/A'.[/warning]",
                     style="warning",
                 )
                 self.cfg.subject_idx = "N/A"
@@ -636,14 +622,35 @@ class ConfigVerifier:
             del self.cfg.nsd_type
 
         if self.cfg.neural_dataset.lower() == "nsd":
+            # Normalize subject_idx to list
+            subj = self.cfg.subject_idx
+            if isinstance(subj, int):
+                subj = [subj]
+                self.cfg.subject_idx = subj
+            elif isinstance(subj, (list, ListConfig)):
+                subj = list(subj)
+                self.cfg.subject_idx = subj
+            # Validate each element
+            for s in subj:
+                if not isinstance(s, int) or not 0 <= s < 8:
+                    raise AssertionError(
+                        f"Invalid subject index for NSD: {s}. Must be an integer in range [0, 7]"
+                    )
 
-            # Ensure subject_idx is an integer for NSD
-            if not isinstance(self.cfg.subject_idx, int) or not 0 <= self.cfg.subject_idx < 8:
-                self.rprint(
-                    f"[red]Invalid subject index for NSD: {self.cfg.subject_idx}. Must be an integer in range [0, 7][/red]",
-                    style="error",
-                )
-                raise AssertionError(f"Invalid subject index for NSD: {self.cfg.subject_idx}")
+            # Normalize region to list
+            region = self.cfg.region
+            if isinstance(region, str):
+                region = [region]
+                self.cfg.region = region
+            elif isinstance(region, (list, ListConfig)):
+                region = list(region)
+                self.cfg.region = region
+            valid_nsd_regions = {"early visual stream", "ventral visual stream"}
+            for r in region:
+                if r not in valid_nsd_regions:
+                    raise AssertionError(
+                        f"Invalid region for NSD: {r}. Must be one of {valid_nsd_regions}"
+                    )
 
             # Validate nsd_type
             nsd_type = getattr(self.cfg, "nsd_type", "finegrained")
@@ -655,15 +662,42 @@ class ConfigVerifier:
                 raise AssertionError(f"Invalid nsd_type: {nsd_type}")
 
         if self.cfg.neural_dataset.lower() == "tvsd":
-            if not isinstance(self.cfg.subject_idx, int) or self.cfg.subject_idx not in (0, 1):
-                raise AssertionError(
-                    f"Invalid subject_idx for TVSD: {self.cfg.subject_idx}. Must be 0 (monkey F) or 1 (monkey N)"
-                )
+            # Normalize subject_idx to list
+            subj = self.cfg.subject_idx
+            if isinstance(subj, int):
+                subj = [subj]
+                self.cfg.subject_idx = subj
+            elif isinstance(subj, (list, ListConfig)):
+                subj = list(subj)
+                self.cfg.subject_idx = subj
+            for s in subj:
+                if not isinstance(s, int) or s not in (0, 1):
+                    raise AssertionError(
+                        f"Invalid subject_idx for TVSD: {s}. Must be 0 (monkey F) or 1 (monkey N)"
+                    )
+
+            # Normalize region to list
+            region = self.cfg.region
+            if isinstance(region, str):
+                region = [region]
+                self.cfg.region = region
+            elif isinstance(region, (list, ListConfig)):
+                region = list(region)
+                self.cfg.region = region
             valid_regions = {"V1", "V4", "IT"}
-            if self.cfg.region not in valid_regions:
-                raise AssertionError(
-                    f"Invalid region for TVSD: {self.cfg.region}. Must be one of {valid_regions}"
-                )
+            for r in region:
+                if r not in valid_regions:
+                    raise AssertionError(
+                        f"Invalid region for TVSD: {r}. Must be one of {valid_regions}"
+                    )
+
+        compare_method = self.cfg.get("compare_method", "spearman").lower()
+        if compare_method not in self.VALID_COMPARE_METHODS:
+            self.rprint(
+                f"[red]Invalid compare_method: {compare_method}. Must be in {self.VALID_COMPARE_METHODS}[/red]",
+                style="error",
+            )
+            raise AssertionError(f"Invalid compare_method: {compare_method}")
 
         if self.cfg.analysis.lower() not in self.VALID_ANALYSES:
             self.rprint(
@@ -671,6 +705,18 @@ class ConfigVerifier:
                 style="error",
             )
             raise AssertionError(f"Invalid analysis: {self.cfg.analysis}")
+
+        # Encoding score constraints
+        if self.cfg.analysis.lower() == "encoding_score":
+            if self.cfg.neural_dataset.lower() == "things-behavior":
+                raise AssertionError(
+                    "analysis=encoding_score is not supported for things-behavior "
+                    "(behavioral embeddings have no voxels to predict). Use analysis=rsa instead."
+                )
+            # Encoding metric is always Pearson r — override whatever the user set
+            # (compare_method is an RSA concept). This also ensures run_id hashing
+            # uses "pearson" consistently.
+            self.cfg.compare_method = "pearson"
 
         # Model layers validation
         if not hasattr(self.cfg.return_nodes, "__iter__"):
