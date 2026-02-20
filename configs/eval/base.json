@@ -23,7 +23,7 @@
   "analysis": "rsa",
   "compare_method": "spearman",
   "bootstrap": false,
-  "batchsize": 512,
+  "batchsize": 256,
   "num_workers": 32,
   "log_expdata": true,
   "verbose": false,
