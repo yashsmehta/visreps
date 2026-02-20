@@ -1,4 +1,6 @@
 from typing import List, Optional
+import json
+import sqlite3
 
 import numpy as np
 import pandas as pd
@@ -8,6 +10,143 @@ import matplotlib.patches as mpatches
 import matplotlib.lines as mlines
 from matplotlib.ticker import AutoMinorLocator, MultipleLocator, FuncFormatter
 from scipy import stats
+
+DB_PATH = "results.db"
+
+
+# --------------------------------------------------
+# SQLite helpers: query scores and bootstrap CIs
+# --------------------------------------------------
+def query_best_scores(neural_dataset, region, pca_labels_folder, cfg_id,
+                      compare_method="spearman", epoch=None, db_path=DB_PATH):
+    """Get best-layer score per (seed, subject) from results.db.
+
+    When multiple runs exist for the same (seed, subject), keeps the one
+    with the highest score (handles duplicate evaluations).
+
+    Returns DataFrame with columns: seed, subject_idx, score, run_id, layer.
+    """
+    conn = sqlite3.connect(db_path)
+    q = """
+    SELECT run_id, seed, subject_idx, layer, score
+    FROM results
+    WHERE neural_dataset = ? AND region = ? AND pca_labels_folder = ?
+      AND cfg_id = ? AND compare_method = ?
+    """
+    params = [neural_dataset, region, pca_labels_folder, cfg_id, compare_method]
+    if epoch is not None:
+        q += " AND epoch = ?"
+        params.append(epoch)
+    df = pd.read_sql(q, conn, params=params)
+    conn.close()
+
+    if df.empty:
+        return df
+
+    # Keep best score per (seed, subject_idx) — handles duplicate runs
+    idx = df.groupby(["seed", "subject_idx"])["score"].idxmax()
+    return df.loc[idx].reset_index(drop=True)
+
+
+def get_bootstrap_ci(run_ids, compare_method="spearman", alpha=0.05, db_path=DB_PATH):
+    """Compute bootstrap CI by averaging distributions element-wise across runs.
+
+    For each bootstrap iteration i, averages score_i across all run_ids.
+    Returns (mean_score, ci_low, ci_high) where mean_score is the mean of
+    the averaged bootstrap distribution.
+
+    Parameters
+    ----------
+    run_ids : list[str]
+        Run IDs to aggregate.
+    compare_method : str
+        "spearman" or "kendall".
+    alpha : float
+        Significance level (0.05 → 95% CI).
+
+    Returns
+    -------
+    tuple[float, float, float]
+        (mean, ci_low, ci_high). Returns (nan, nan, nan) if no bootstrap data.
+    """
+    if not run_ids:
+        return np.nan, np.nan, np.nan
+
+    conn = sqlite3.connect(db_path)
+    placeholders = ",".join("?" for _ in run_ids)
+    q = f"""
+    SELECT scores FROM bootstrap_distributions
+    WHERE run_id IN ({placeholders}) AND compare_method = ?
+    """
+    rows = conn.execute(q, list(run_ids) + [compare_method]).fetchall()
+    conn.close()
+
+    if not rows:
+        return np.nan, np.nan, np.nan
+
+    arrays = [np.array(json.loads(r[0])) for r in rows]
+
+    # Truncate to minimum length (most are 1000, some older runs are 100)
+    min_len = min(len(a) for a in arrays)
+    arrays = [a[:min_len] for a in arrays]
+
+    # Element-wise mean across runs → distribution of the population mean
+    mean_dist = np.mean(arrays, axis=0)
+
+    lo = np.percentile(mean_dist, 100 * alpha / 2)
+    hi = np.percentile(mean_dist, 100 * (1 - alpha / 2))
+    return float(np.mean(mean_dist)), float(lo), float(hi)
+
+
+def get_condition_summary(neural_dataset, region, pca_labels_folder, cfg_id,
+                          compare_method="spearman", epoch=None, db_path=DB_PATH):
+    """Get point estimate + bootstrap 95% CI for one condition.
+
+    Point estimate = mean score across all seeds and subjects (best layer per run).
+    CI = from bootstrap distributions averaged across runs.
+
+    Returns dict with keys: mean, ci_low, ci_high, n_runs, run_ids.
+    """
+    df = query_best_scores(neural_dataset, region, pca_labels_folder, cfg_id,
+                           compare_method, epoch, db_path)
+    if df.empty:
+        return {"mean": np.nan, "ci_low": np.nan, "ci_high": np.nan,
+                "n_runs": 0, "run_ids": []}
+
+    run_ids = df["run_id"].tolist()
+    mean_score = df["score"].mean()
+    _, ci_low, ci_high = get_bootstrap_ci(run_ids, compare_method, db_path=db_path)
+
+    # SEM fallback: bootstrap CIs missing, or partial bootstrap that doesn't
+    # bracket the point estimate (happens when only some runs have bootstrap)
+    needs_fallback = (np.isnan(ci_low)
+                      or ci_low > mean_score
+                      or ci_high < mean_score)
+    if needs_fallback:
+        seed_means = df.groupby("seed")["score"].mean()
+        if len(seed_means) > 1:
+            sem = seed_means.std() / np.sqrt(len(seed_means))
+            ci_low = mean_score - 1.96 * sem
+            ci_high = mean_score + 1.96 * sem
+        else:
+            ci_low, ci_high = np.nan, np.nan
+
+    return {"mean": mean_score, "ci_low": ci_low, "ci_high": ci_high,
+            "n_runs": len(df), "run_ids": run_ids}
+
+
+def get_subject_scores(neural_dataset, region, pca_labels_folder, cfg_id,
+                       compare_method="spearman", epoch=None, db_path=DB_PATH):
+    """Get per-subject scores (averaged across seeds) for box/dot plots.
+
+    Returns Series indexed by subject_idx with mean score per subject.
+    """
+    df = query_best_scores(neural_dataset, region, pca_labels_folder, cfg_id,
+                           compare_method, epoch, db_path)
+    if df.empty:
+        return pd.Series(dtype=float)
+
+    return df.groupby("subject_idx")["score"].mean()
 
 # --------------------------------------------------
 # helpers for skipping / retaining common columns
@@ -208,6 +347,7 @@ def plot_brain_score_barplot(scores_by_arch_class, pca_classes, architectures,
     """
     color_map = {
         'alexnet': '#1f77b4',
+        'vit': '#ee854a',
         'dino': '#ff7f0e',
         'clip': '#2d7f2d',
         'dreamsim': '#9467bd',
@@ -302,6 +442,7 @@ def plot_brain_score_barplot(scores_by_arch_class, pca_classes, architectures,
     legend_handles = []
     arch_name_map = {
         'alexnet': 'AlexNet',
+        'vit': 'ViT',
         'dino': 'DINO',
         'clip': 'CLIP',
         'dreamsim': 'DreamSim',
