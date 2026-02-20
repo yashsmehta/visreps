@@ -185,8 +185,6 @@ def eval(cfg):
     transform = get_transform(ds_stats="imgnet")
     dl = _make_loader(stimuli, transform, cfg.batchsize, cfg.num_workers)
     acts, ids = mutils.get_activations(model, dl, dev)
-    if cfg.get("reconstruct_from_pcs"):
-        acts = reconstruct_from_pcs(acts, cfg.pca_k)
     rprint(f"  Activations extracted once for all subjects/regions", style="success")
     del dl
 
@@ -295,10 +293,14 @@ def _eval_rsa(cfg, model, acts, ids, all_data, subjects, regions, dev, verbose):
         all_unique_layers.update(region_layers.values())
 
     # Re-extract each unique layer without SRP -> build model RDMs
+    pca_k = cfg.get("pca_k", 1)
     model_rdms = {}
     for layer in sorted(all_unique_layers):
         rprint(f"  Re-extracting {layer} without SRP...", style="info")
         exact_acts, _ = mutils.extract_single_layer(model, dl_test, dev, layer, shared_test_ids)
+        if cfg.get("reconstruct_from_pcs"):
+            exact_acts = reconstruct_from_pcs({layer: exact_acts}, pca_k)[layer]
+            rprint(f"    Reconstructed from {pca_k} PCs", style="info")
         flat = exact_acts.flatten(start_dim=1) if exact_acts.ndim > 2 else exact_acts
         model_rdms[layer] = compute_rdm(flat)
         del exact_acts
@@ -389,6 +391,8 @@ def _eval_encoding(cfg, model, acts, ids, all_data, subjects, regions, verbose):
 
     Unlike RSA, encoding score uses SRP throughout (no re-extraction needed).
     """
+    if cfg.get("reconstruct_from_pcs"):
+        acts = reconstruct_from_pcs(acts, cfg.get("pca_k", 1))
     neural = all_data["neural"]
 
     all_results = []
