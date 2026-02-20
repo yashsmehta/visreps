@@ -85,7 +85,7 @@ python scripts/runners/eval_runner.py --grid configs/grids/eval_default.json  # 
 
 **Unified eval behavior:**
 - **NSD/TVSD**: Loads all neural data for requested subjects/regions via `load_all_nsd_data`/`load_all_tvsd_data`. Extracts model activations once, then iterates over all (subject, region) pairs to compute and save per-subject per-region results.
-- **THINGS-behavior**: Uses k-fold cross-validation (no subjects or regions). Merges train/test images, averages activations per concept, and runs `compute_rsa_kfold`.
+- **THINGS-behavior**: Uses 80/20 concept-level train/test split (no subjects or regions). Merges train/test images, averages activations per concept, splits 20% for layer selection and 80% for evaluation + bootstrap.
 
 **Grid config patterns:**
 - NSD grid configs typically omit `subject_idx` and `region` (defaults come from `configs/eval/base.json`).
@@ -95,11 +95,11 @@ python scripts/runners/eval_runner.py --grid configs/grids/eval_default.json  # 
 
 **Sparse Random Projection (SRP):** All layer activations are projected to k=4096 dims (`SparseRandomProjection`, cached in `model_checkpoints/srp_cache/`) to keep memory bounded. RSA re-extracts the best layer *without* SRP for exact test RDMs; encoding score uses SRP throughout.
 
-**Datasets:** NSD (~9k train / ~1k test, 8 subjects, early/ventral visual stream), TVSD (~22k train / 100 test, 2 monkeys, V1/V4/IT), THINGS (~1,854 concepts, no train/test split, k-fold CV).
+**Datasets:** NSD (~9k train / ~1k test, 8 subjects, early/ventral visual stream), TVSD (~22k train / 100 test, 2 monkeys, V1/V4/IT), THINGS (~1,854 concepts, 80/20 concept-level train/test split).
 
 **RSA — NSD/TVSD:** Per subject: select best layer on train (subsample 1,000 stimuli, build Pearson RDMs, compare via Spearman/Kendall) → re-extract best layer without SRP → score on test RDMs → 1,000-iteration bootstrap (90% subsample) for 95% CIs.
 
-**RSA — THINGS:** 5-fold CV over concepts (1 fold for layer selection, 4 for eval). Best layer = mode across folds. Re-extract without SRP, recompute fold scores. Bootstrap 1,000 iterations on all concepts for 95% CIs.
+**RSA — THINGS:** Fixed 80/20 concept-level split (seed=42). 20% (~370 concepts) for layer selection, 80% (~1,480 concepts) for evaluation. Re-extract best layer without SRP, concept-average for eval set. Bootstrap 1,000 iterations (90% subsample) on eval set for 95% CIs.
 
 **Encoding — NSD/TVSD only** (Pearson r, not applicable to THINGS): Per subject: select best layer via 80/20 fit/val split with `RidgeCV(cv=5)` → refit on full train → predict test → mean Pearson r across voxels → 1,000-iteration bootstrap on cached predictions for 95% CIs. Uses SRP throughout, z-normalization with fit-only stats during selection.
 
@@ -172,8 +172,8 @@ When asked for a single plot or specific layout, implement exactly that — do n
 1. **Run from project root** — relative paths in dataloaders break otherwise
 2. PCA labels must exist in `pca_labels/{folder}/n_classes_{n}.csv` before training
 3. `cfg_id` in eval must match `pca_n_classes` from training
-4. `things-behavior` ignores `region` and `subject_idx` (set to "N/A"); uses k-fold cross-validation, not train/test RSA
-5. TVSD and `things-behavior` require pre-cached pickles (generate with `python scripts/cache_tvsd_data.py` and `python scripts/cache_things_split.py`); both use THINGS stimulus images via `BONNER_DATASETS_HOME`
+4. `things-behavior` ignores `region` and `subject_idx` (set to "N/A"); uses 80/20 concept-level train/test split with fixed seed=42
+5. TVSD and `things-behavior` require pre-cached pickles (generate with `python scripts/preprocess_data/preprocess_tvsd.py` and `python scripts/preprocess_data/preprocess_things.py`); both use THINGS stimulus images via `BONNER_DATASETS_HOME`
 6. Layer names: CNNs use `conv1-5`, `fc1-2`; ViT uses `block1-12`, `head`
 7. Checkpoints at `/data/ymehta3/default/` (1000-way) and `/data/ymehta3/alexnet_pca/` (coarse)
 8. **SRP (k=4096) is always applied during `get_activations()`**. For RSA, the best layer is re-extracted without SRP via `extract_single_layer` for exact test RDMs. Encoding score uses SRP throughout. See "Sparse Random Projection" section above for details.

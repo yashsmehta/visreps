@@ -257,36 +257,27 @@ def load_cusack_data(cfg: Dict) -> Tuple[Dict[str, np.ndarray], Dict[str, str]]:
 # ──────────────────────── THINGS ────────────────────────
 def load_things_data() -> tuple[dict, dict[str, str]]:
     """
-    Load THINGS behavioral dataset with within-concept train/test image split.
+    Load THINGS behavioral dataset (concept embeddings + image IDs per concept).
 
     Expects cached pickle at datasets/neural/things/things_split.pkl
-    (generate with: python scripts/cache_things_split.py).
+    (generate with: python scripts/preprocess_data/preprocess_things.py).
 
     Returns:
         targets: {
-            "train": {concept: embedding},
-            "test":  {concept: embedding},
-            "train_image_ids": {concept: [stimulus_ids]},
-            "test_image_ids":  {concept: [stimulus_ids]},
+            "embeddings": {concept: np.ndarray(66,)},
+            "image_ids":  {concept: [stimulus_id, ...]},
         }
-        img_paths: {stimulus_id: path} for all images (both splits).
+        img_paths: {stimulus_id: path} for all images.
     """
     pkl_path = os.path.join("datasets", "neural", "things", "things_split.pkl")
     data = utils.load_pickle(pkl_path)
 
-    embeddings = data["embeddings"]
-    train_image_ids = data["train_image_ids"]
-    test_image_ids = data["test_image_ids"]
-    img_paths = data["image_paths"]
-
     targets = {
-        "train": {c: embeddings[c] for c in train_image_ids},
-        "test": {c: embeddings[c] for c in test_image_ids},
-        "train_image_ids": train_image_ids,
-        "test_image_ids": test_image_ids,
+        "embeddings": data["embeddings"],
+        "image_ids": data["image_ids"],
     }
 
-    return targets, img_paths
+    return targets, data["image_paths"]
 
 
 # ──────────────────────── TVSD ────────────────────────
@@ -306,7 +297,7 @@ def load_tvsd_data(cfg: Dict) -> tuple[dict, dict[str, str]]:
 
     Expects pickle with structure:
         data[region][subject_idx] = {"train": xr.DataArray, "test": xr.DataArray}
-    Generate with: python scripts/cache_tvsd_data.py
+    Generate with: python scripts/preprocess_data/preprocess_tvsd.py
 
     Returns:
         targets: {"train": {sid: response}, "test": {sid: response}}
