@@ -62,6 +62,9 @@ allow-direct-references = true
 packages = ["visreps"]
 
 [tool.pytest.ini_options]
+markers = [
+    "slow: marks tests as slow (end-to-end with real data, deselect with '-m \"not slow\"')",
+]
 filterwarnings = [
     "ignore:Solving ridge is slower than solving kernel ridge:UserWarning",
 ]
