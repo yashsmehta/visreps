@@ -517,8 +517,6 @@ class ConfigVerifier:
     VALID_ANALYSES = {"rsa", "encoding_score"}
     VALID_COMPARE_METHODS = {"spearman", "kendall"}
     VALID_NEURAL_DATASETS = {"nsd", "things-behavior", "tvsd"}
-    VALID_NSD_TYPES = {"finegrained", "streams", "streams_shared"}
-
     def __init__(self, cfg: OmegaConf):
         """Initialize verifier with configuration."""
         self.cfg = cfg
@@ -617,10 +615,6 @@ class ConfigVerifier:
                 )
                 self.cfg.subject_idx = "N/A"
 
-        # Remove nsd_type for non-NSD datasets (only meaningful for NSD)
-        if self.cfg.neural_dataset.lower() != "nsd" and hasattr(self.cfg, 'nsd_type'):
-            del self.cfg.nsd_type
-
         if self.cfg.neural_dataset.lower() == "nsd":
             # Normalize subject_idx to list
             subj = self.cfg.subject_idx
@@ -651,15 +645,6 @@ class ConfigVerifier:
                     raise AssertionError(
                         f"Invalid region for NSD: {r}. Must be one of {valid_nsd_regions}"
                     )
-
-            # Validate nsd_type
-            nsd_type = getattr(self.cfg, "nsd_type", "finegrained")
-            if nsd_type not in self.VALID_NSD_TYPES:
-                self.rprint(
-                    f"[red]Invalid nsd_type: {nsd_type}. Must be in {self.VALID_NSD_TYPES}[/red]",
-                    style="error",
-                )
-                raise AssertionError(f"Invalid nsd_type: {nsd_type}")
 
         if self.cfg.neural_dataset.lower() == "tvsd":
             # Normalize subject_idx to list
