@@ -280,12 +280,11 @@ def get_activations(
     model: nn.Module,
     dataloader: torch.utils.data.DataLoader,
     device: torch.device,
-    apply_srp: bool = False,
 ) -> Tuple[Dict[str, torch.Tensor], List]:
     """
     Collect layer activations for every sample in `dataloader`.
-    If `apply_srp`, each batch is projected (Sparse Random Projection) to
-    k = 4096 per layer, capped by its native dimensionality.
+    Always applies Sparse Random Projection (k=4096 per layer, capped by
+    native dimensionality) to keep memory bounded.
     """
     model.eval()
     activations: Dict[str, List[torch.Tensor]] = defaultdict(list)
@@ -293,38 +292,36 @@ def get_activations(
     srp = {}
 
     # ---------- SRP initialisation ----------
-    if apply_srp:
-        try:
-            probe_imgs, _ = next(iter(dataloader))                # single probe batch
-        except StopIteration:
-            return {}, []
+    try:
+        probe_imgs, _ = next(iter(dataloader))
+    except StopIteration:
+        return {}, []
 
-        with torch.no_grad():
-            probe_out = model(probe_imgs.to(device))
+    with torch.no_grad():
+        probe_out = model(probe_imgs.to(device))
 
-        k_fixed, density, seed, cache_dir = 4096, None, None, "model_checkpoints/srp_cache"
-        num_layers = len(probe_out)
-        for name, out in probe_out.items():
-            D = out.view(out.size(0), -1).size(1)
-            transformer = get_srp_transformer(
-                D=D,
-                k=min(k_fixed, D),
-                density=density,
-                seed=seed,
-                cache_dir=cache_dir,
-            )
-            # Convert sklearn sparse matrix to PyTorch sparse tensor on GPU
-            sparse_matrix = transformer.components_  # shape (k, D)
-            coo = sparse_matrix.tocoo()
-            indices = torch.from_numpy(np.vstack([coo.row, coo.col])).long()
-            values = torch.from_numpy(coo.data).float()
-            proj_matrix = torch.sparse_coo_tensor(indices, values, coo.shape).to(device)
-            srp[name] = proj_matrix
+    k_fixed, density, seed, cache_dir = 4096, None, None, "model_checkpoints/srp_cache"
+    num_layers = len(probe_out)
+    for name, out in probe_out.items():
+        D = out.view(out.size(0), -1).size(1)
+        transformer = get_srp_transformer(
+            D=D,
+            k=min(k_fixed, D),
+            density=density,
+            seed=seed,
+            cache_dir=cache_dir,
+        )
+        # Convert sklearn sparse matrix to PyTorch sparse tensor on GPU
+        sparse_matrix = transformer.components_  # shape (k, D)
+        coo = sparse_matrix.tocoo()
+        indices = torch.from_numpy(np.vstack([coo.row, coo.col])).long()
+        values = torch.from_numpy(coo.data).float()
+        proj_matrix = torch.sparse_coo_tensor(indices, values, coo.shape).to(device)
+        srp[name] = proj_matrix
 
-        rprint(f"✓ Loaded SRP transformers for {num_layers} layers", style="success")
+    rprint(f"  ✓ SRP transformers for {num_layers} layers (k={k_fixed})", style="success")
 
     # ---------- main loop ----------
-    FP16_MAX = 65504.0  # float16 max value
     with torch.no_grad(), Progress(
         TextColumn("  Extracting activations"),
         BarColumn(),
@@ -339,14 +336,70 @@ def get_activations(
             feats = model(imgs.to(device))
             for name, out in feats.items():
                 proj_matrix = srp.get(name)
-                if apply_srp and proj_matrix is not None:
+                if proj_matrix is not None:
                     flat = out.view(out.size(0), -1).float()  # (batch, D) on GPU
                     out = torch.sparse.mm(proj_matrix, flat.t()).t()  # (batch, k)
-                # Clamp to float16 range before half() to avoid overflow → inf
-                activations[name].append(out.clamp(-FP16_MAX, FP16_MAX).cpu().half())
+                activations[name].append(out.cpu().float())
             progress.advance(task)
 
     return {n: torch.cat(b, 0) for n, b in activations.items()}, ids
+
+
+def extract_single_layer(
+    model: nn.Module,
+    dataloader: torch.utils.data.DataLoader,
+    device: torch.device,
+    layer_name: str,
+    stimulus_ids: List[str] = None,
+) -> Tuple[torch.Tensor, List]:
+    """Re-extract one layer's full-resolution activations without SRP.
+
+    Used after layer selection to get exact (un-projected) activations for
+    the best layer only, keeping memory bounded since we store just one layer.
+
+    Args:
+        model: FeatureExtractor (same as used for SRP extraction).
+        dataloader: Same dataloader (covers all stimuli, shuffle=False).
+        device: GPU device.
+        layer_name: Layer to extract, e.g. "conv5_post".
+        stimulus_ids: If provided, only keep activations for these IDs.
+
+    Returns:
+        (acts_tensor, ordered_ids): float32 on CPU. If stimulus_ids is
+        provided, rows are ordered to match stimulus_ids.
+    """
+    model.eval()
+    all_acts = []
+    all_ids = []
+
+    with torch.no_grad(), Progress(
+        TextColumn(f"  Re-extracting {layer_name}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TextColumn("batches"),
+        TimeElapsedColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("re-extract", total=len(dataloader))
+        for imgs, keys in dataloader:
+            all_ids.extend(keys)
+            feats = model(imgs.to(device))
+            out = feats[layer_name]
+            flat = out.view(out.size(0), -1)
+            all_acts.append(flat.cpu().float())
+            progress.advance(task)
+
+    acts = torch.cat(all_acts, 0)
+
+    if stimulus_ids is not None:
+        # Reorder to match requested stimulus_ids
+        id_to_idx = {str(k): i for i, k in enumerate(all_ids)}
+        keep_idx = [id_to_idx[str(sid)] for sid in stimulus_ids if str(sid) in id_to_idx]
+        acts = acts[keep_idx]
+        all_ids = [all_ids[i] for i in keep_idx]
+
+    rprint(f"  ✓ Re-extracted {layer_name}: {acts.shape} (exact, no SRP)", style="success")
+    return acts, all_ids
 
 
 def load_model(cfg, device, num_classes=None, verbose=False):

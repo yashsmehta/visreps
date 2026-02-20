@@ -8,13 +8,17 @@ Instructions are mostly voice-dictated and may contain transcription errors. Inf
 
 ## Environment
 
+**Hardware:** 1× NVIDIA RTX 4090 (24 GB VRAM), 32 CPU cores, 125 GB RAM. Encoding score (himalaya ridge SVD) needs ~8 GB free VRAM for NSD-sized data.
+
 **CRITICAL: Always activate the venv before running any Python command.** Prefix every Python invocation with `source /home/ymehta3/research/VisionAI/visreps/.venv/bin/activate &&`. The system Python does not have the required packages (torch, etc.).
+
+**Always load `.env` before importing packages** that depend on environment variables (e.g., `BONNER_DATASETS_HOME`). Use `source .env` or `python-dotenv`. Without this, datasets re-download to `~/.cache` instead of the configured data directory.
 
 **All scripts must be run from the project root** (`/home/ymehta3/research/VisionAI/visreps/`), not from subdirectories. The dataloaders use relative paths (e.g. `datasets/obj_cls/imagenet/folder_labels.json`) that resolve from root.
 
 ## Project Overview
 
-Investigates whether **fine-grained category supervision is necessary for brain-model alignment**. Trains CNNs on ImageNet with varying label granularity (2-1000 classes via PCA-based coarse labels), then evaluates alignment with human visual cortex (NSD fMRI), behavioral data (THINGS), macaque electrophysiology (TVSD), or infant fMRI (Cusack).
+Investigates whether **fine-grained category supervision is necessary for brain-model alignment**. Trains CNNs on ImageNet with varying label granularity (2-1000 classes via PCA-based coarse labels), then evaluates alignment with human visual cortex (NSD fMRI), behavioral data (THINGS), or macaque electrophysiology (TVSD).
 
 ## Repository Structure
 
@@ -26,7 +30,7 @@ visreps/                   # Main package
 ├── utils.py               # Config validation, logging, optimization
 ├── analysis/              # RSA, encoding_score, SRP
 ├── models/                # CustomCNN, standard torchvision wrappers
-└── dataloaders/           # obj_cls.py (ImageNet), neural.py (NSD/THINGS/TVSD/Cusack)
+└── dataloaders/           # obj_cls.py (ImageNet), neural.py (NSD/THINGS/TVSD)
 
 configs/                   # JSON configs (train/, eval/, grids/)
 scripts/
@@ -59,6 +63,8 @@ python scripts/runners/train_runner.py --grid configs/grids/train_default.json  
 
 ## Evaluation (`--mode eval`)
 
+There is a single unified `eval` mode (no separate aggregate mode). For NSD/TVSD, one forward pass per seed handles all subjects and regions internally. Per-subject per-region results are saved individually.
+
 ```bash
 python -m visreps.run --mode eval --override cfg_id=32 seed=1 analysis=rsa neural_dataset=nsd
 python scripts/runners/eval_runner.py --grid configs/grids/eval_default.json  # Grid sweep (local)
@@ -69,30 +75,45 @@ python scripts/runners/eval_runner.py --grid configs/grids/eval_default.json  # 
 **Key config options:**
 - `load_model_from`: "checkpoint" or "torchvision"
 - `cfg_id`: must match `pca_n_classes` from training (or 1000 for standard)
-- `neural_dataset`: "nsd", "things", "nsd_synthetic", "cusack", "tvsd"
+- `neural_dataset`: "nsd", "things-behavior", "tvsd"
 - `analysis`: "rsa" or "encoding_score"
-- `region`: NSD: "early visual stream", "ventral visual stream"; TVSD: "V1", "V4", "IT"; Cusack: region string
-- `subject_idx`: NSD: 0-7; TVSD: 0 (monkey F), 1 (monkey N); THINGS: ignored
+- `region`: list or string. NSD: `["early visual stream", "ventral visual stream"]`; TVSD: `["V1", "V4", "IT"]`. Scalars are normalized to lists by `ConfigVerifier`.
+- `subject_idx`: list or int. NSD: `[0,1,2,3,4,5,6,7]`; TVSD: `[0, 1]`. Scalars are normalized to lists. THINGS: ignored (set to "N/A").
 - `return_nodes`: ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2"]
-- `apply_srp`: true (Sparse Random Projection for speed)
-- `bootstrap`: true/false (compute bootstrap CIs on last fold of k-fold RSA)
+- `compare_method`: "spearman" (default) or "kendall" — which RDM comparison metric to use
+- `bootstrap`: true/false (compute bootstrap CIs)
 
-**Analysis methods:**
-- **RSA**: K-fold cross-validated RSA with unbiased layer selection. Always builds RDMs with Pearson correlation and computes both Spearman and Kendall-tau comparisons (independent layer selection per metric). Reported `layer` is the Spearman-selected layer.
-- **Encoding**: Ridge regression (himalaya GPU) predicting neural responses from activations
+**Unified eval behavior:**
+- **NSD/TVSD**: Loads all neural data for requested subjects/regions via `load_all_nsd_data`/`load_all_tvsd_data`. Extracts model activations once, then iterates over all (subject, region) pairs to compute and save per-subject per-region results.
+- **THINGS-behavior**: Uses k-fold cross-validation (no subjects or regions). Merges train/test images, averages activations per concept, and runs `compute_rsa_kfold`.
+
+**Grid config patterns:**
+- NSD grid configs typically omit `subject_idx` and `region` (defaults come from `configs/eval/base.json`).
+- TVSD grid configs use a nested list pattern for `subject_idx` (e.g., `"subject_idx": [[0, 1]]`) so that the Cartesian product yields one list per seed rather than expanding to individual subjects.
+
+### SRP, Datasets, and Analysis Pipelines
+
+**Sparse Random Projection (SRP):** All layer activations are projected to k=4096 dims (`SparseRandomProjection`, cached in `model_checkpoints/srp_cache/`) to keep memory bounded. RSA re-extracts the best layer *without* SRP for exact test RDMs; encoding score uses SRP throughout.
+
+**Datasets:** NSD (~9k train / ~1k test, 8 subjects, early/ventral visual stream), TVSD (~22k train / 100 test, 2 monkeys, V1/V4/IT), THINGS (~1,854 concepts, no train/test split, k-fold CV).
+
+**RSA — NSD/TVSD:** Per subject: select best layer on train (subsample 1,000 stimuli, build Pearson RDMs, compare via Spearman/Kendall) → re-extract best layer without SRP → score on test RDMs → 1,000-iteration bootstrap (90% subsample) for 95% CIs.
+
+**RSA — THINGS:** 5-fold CV over concepts (1 fold for layer selection, 4 for eval). Best layer = mode across folds. Re-extract without SRP, recompute fold scores. Bootstrap 1,000 iterations on all concepts for 95% CIs.
+
+**Encoding — NSD/TVSD only** (Pearson r, not applicable to THINGS): Per subject: select best layer via 80/20 fit/val split with `RidgeCV(cv=5)` → refit on full train → predict test → mean Pearson r across voxels → 1,000-iteration bootstrap on cached predictions for 95% CIs. Uses SRP throughout, z-normalization with fit-only stats during selection.
 
 ## Results Database
 
 Eval results are stored in `results.db` (SQLite).
 
-**Tables** (normalized "long" format — each comparison metric gets its own row via `compare_method`):
+**Tables** (one row per run per metric — `compare_method` is part of the `run_id` hash):
 - `results` — one row per (run, compare_method, layer). Columns: `run_id`, `compare_method`, `layer`, `score`, `ci_low`, `ci_high`, `analysis`, `seed`, `epoch`, `region`, `subject_idx`, `neural_dataset`, `cfg_id`, `pca_labels`, `pca_n_classes`, `pca_labels_folder`, `model_name`, `checkpoint_dir`, `reconstruct_from_pcs`, `pca_k`. Deduped via `UNIQUE(run_id, compare_method, layer)`.
 - `run_configs` — full config JSON per `run_id`. Use `JOIN` to recover any training/infra parameter.
-- `fold_results` — per-fold eval score + selected layer (10 rows per run for 5-fold CV × 2 metrics). Columns: `run_id`, `compare_method`, `fold`, `layer`, `eval_score`. Deduped via `UNIQUE(run_id, compare_method, fold)`.
-- `layer_selection_scores` — per-layer mean selection score across folds (~14 rows per metric per run). Columns: `run_id`, `compare_method`, `layer`, `score`. Deduped via `UNIQUE(run_id, compare_method, layer)`.
-- `bootstrap_distributions` — raw bootstrap scores as JSON array (1 row per metric per run, only when `bootstrap=True`). Columns: `run_id`, `compare_method`, `scores`.
+- `layer_selection_scores` — per-layer selection score (~7 rows per run). Columns: `run_id`, `compare_method`, `layer`, `score`. Deduped via `UNIQUE(run_id, compare_method, layer)`.
+- `bootstrap_distributions` — raw bootstrap scores as JSON array (1 row per run, only when `bootstrap=True`). Columns: `run_id`, `compare_method`, `scores`.
 
-`compare_method` is `"spearman"` or `"kendall"`. `run_id` = SHA256[:12] of experiment identity fields. Re-running the same eval replaces old results (INSERT OR REPLACE).
+`compare_method` is `"spearman"` or `"kendall"` (set via `cfg.compare_method`). `run_id` = SHA256[:12] of experiment identity fields (includes `compare_method`). Re-running the same eval replaces old results (INSERT OR REPLACE).
 
 **Quick query:**
 ```python
@@ -113,7 +134,7 @@ Creates labels by projecting features onto PCs and applying median splits → 2^
 
 - Base config → nested config merged (`custom_model`/`standard_model` or `checkpoint`/`torchvision`) → CLI `--override`
 - Grid configs in `configs/grids/` define parameter arrays for sweeps
-- `ConfigVerifier` validates: mode, dataset, neural_dataset, analysis, seed (1-3)
+- `ConfigVerifier` validates: mode, dataset, neural_dataset, analysis, compare_method, seed (1-3)
 
 ## Environment Variables (`.env`)
 
@@ -130,12 +151,29 @@ BONNER_DATASETS_HOME=~/.cache/bonner-datasets  # TVSD uses THINGS images from he
 - **CustomCNN / TinyCustomCNN**: AlexNet-style, configurable layer freezing via `conv_trainable`/`fc_trainable` binary strings
 - **Standard models**: AlexNet, VGG16, ResNet18, ResNet50, ViTBase (torchvision wrappers)
 
+## Evaluation Pipeline
+
+Use `scripts/runners/eval_runner.py` with JSON grid configs (`configs/grids/`) for running evaluations — **not** `scripts/slurm/eval_scheduler.py` (which is Slurm-only with hardcoded param grids). Always check the JSON configs in `configs/grids/` before running experiments.
+
+## Model Checkpoints
+
+Always verify checkpoint paths exist with `ls` before referencing them in code. Common locations:
+- `/data/ymehta3/default/` — 1000-way (standard ImageNet)
+- `/data/ymehta3/alexnet_pca/` — coarse-grained (PCA labels)
+
+Do **not** guess checkpoint paths.
+
+## Plotting & Visualization
+
+When asked for a single plot or specific layout, implement exactly that — do not add extra subplots or change the layout without asking. Prefer minimal, publication-quality single-panel figures unless told otherwise.
+
 ## Key Gotchas
 
 1. **Run from project root** — relative paths in dataloaders break otherwise
 2. PCA labels must exist in `pca_labels/{folder}/n_classes_{n}.csv` before training
 3. `cfg_id` in eval must match `pca_n_classes` from training
-4. THINGS dataset ignores `region` and `subject_idx`
-5. TVSD requires pre-cached pickle at `datasets/neural/tvsd/fmri_responses.pkl` (generate with `python scripts/cache_tvsd_data.py`); uses THINGS stimulus images via `BONNER_DATASETS_HOME`
+4. `things-behavior` ignores `region` and `subject_idx` (set to "N/A"); uses k-fold cross-validation, not train/test RSA
+5. TVSD and `things-behavior` require pre-cached pickles (generate with `python scripts/cache_tvsd_data.py` and `python scripts/cache_things_split.py`); both use THINGS stimulus images via `BONNER_DATASETS_HOME`
 6. Layer names: CNNs use `conv1-5`, `fc1-2`; ViT uses `block1-12`, `head`
 7. Checkpoints at `/data/ymehta3/default/` (1000-way) and `/data/ymehta3/alexnet_pca/` (coarse)
+8. **SRP (k=4096) is always applied during `get_activations()`**. For RSA, the best layer is re-extracted without SRP via `extract_single_layer` for exact test RDMs. Encoding score uses SRP throughout. See "Sparse Random Projection" section above for details.

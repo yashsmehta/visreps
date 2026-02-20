@@ -9,50 +9,181 @@ import h5py
 
 import visreps.utils as utils
 from visreps.dataloaders.obj_cls import get_transform
-from bonner.datasets.hebart2023_things_data.behavior import (
-    load_embeddings as _load_things_embed,
-)
-from bonner.datasets.hebart2019_things._stimuli import StimulusSet as _ThingsStimSet
 logger = logging.getLogger(__name__)
 
 
 # ───────────────────────── NSD ──────────────────────────
-def load_nsd_data(cfg: Dict) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
+_NSD_REGION_MAP = {
+    "early visual stream": "early",
+    "ventral visual stream": "ventral",
+    "early": "early",
+    "ventral": "ventral",
+}
+
+
+def load_nsd_data(cfg: Dict) -> Tuple[Dict[str, Dict[str, np.ndarray]], Dict[str, np.ndarray]]:
     """
-    Load fMRI responses and stimulus images for a given NSD subject and brain region.
+    Load NSD fMRI responses with shared/unique train-test split.
+
+    Loads consolidated nsd_data.pkl (all 8 subjects, streams ROIs) and splits
+    stimuli into train (unique ~9,000) and test (shared 1,000) based on the
+    shared1000 annotation.
 
     Args:
         cfg (Dict): Contains "region" and "subject_idx".
 
     Returns:
-        (targets, stimuli): Dicts mapping stimulus IDs to response arrays and image arrays.
+        (targets, stimuli):
+            - targets: {"train": {stim_id: response}, "test": {stim_id: response}}
+            - stimuli: {stim_id: np.ndarray} flat dict of all stimulus images
     """
-    region, subj = cfg["region"], cfg["subject_idx"]
-    nsd_type = cfg.get("nsd_type", "finegrained")
+    region_key = _NSD_REGION_MAP.get(cfg["region"], cfg["region"])
+    subj = cfg["subject_idx"]
+
     root = utils.get_env_var("NSD_DATA_DIR")
-    fmri_path = os.path.join(root, nsd_type, "fmri_responses.pkl")
-    fmri_xr = utils.load_pickle(fmri_path)[region][subj]
-    
+    nsd = utils.load_pickle(os.path.join(root, "nsd_data.pkl"))
+
+    shared_ids = nsd["shared_ids"]
+    fmri_xr = nsd["data"][region_key][subj]
+
     stimulus_ids = [int(i) for i in fmri_xr.coords["stimulus"].values]
-    
-    # Load images directly from HDF5 file
+
+    # Split into train (unique) and test (shared)
+    train_ids = [str(i) for i in stimulus_ids if i not in shared_ids]
+    test_ids = [str(i) for i in stimulus_ids if i in shared_ids]
+
+    targets = {
+        "train": {i: fmri_xr.sel(stimulus=int(i)).values for i in train_ids},
+        "test": {i: fmri_xr.sel(stimulus=int(i)).values for i in test_ids},
+    }
+
+    # Load images from HDF5 (flat dict covering all stimuli)
     hdf5_path = "/data/shared/datasets/allen2021.natural_scenes/nsddata_stimuli/stimuli/nsd/nsd_stimuli.hdf5"
     images = {}
-    
     with h5py.File(hdf5_path, "r") as f:
         imgBrick = f["imgBrick"]
         sorted_indices = np.sort(stimulus_ids)
         loaded_images = imgBrick[sorted_indices]
-        
         for i, stim_id in enumerate(sorted_indices):
             images[str(stim_id)] = loaded_images[i]
-    
-    ids = {str(i) for i in stimulus_ids}
-    
-    return (
-        {i: fmri_xr.sel(stimulus=int(i)).values for i in ids},
-        {i: images[i] for i in ids},
+
+    return targets, images
+
+
+# ─────────────────── Lazy HDF5 Dict ────────────────────
+class _LazyHdf5Dict:
+    """Dict-like wrapper around an HDF5 dataset that reads images on demand.
+
+    Avoids loading all images into RAM. Compatible with _StimuliDataset
+    which accesses items via __getitem__.
+    """
+
+    def __init__(self, hdf5_path: str, dataset_name: str, indices):
+        self._hdf5_path = hdf5_path
+        self._dataset_name = dataset_name
+        self._index_map = {str(idx): int(idx) for idx in indices}
+        self._keys_sorted = sorted(self._index_map.keys(), key=lambda x: int(x))
+        self._file = None
+
+    def _open(self):
+        if self._file is None:
+            self._file = h5py.File(self._hdf5_path, "r")
+        return self._file
+
+    def __contains__(self, key):
+        return str(key) in self._index_map
+
+    def __len__(self):
+        return len(self._index_map)
+
+    def keys(self):
+        return self._keys_sorted
+
+    def __getitem__(self, key):
+        key_str = str(key)
+        if key_str not in self._index_map:
+            raise KeyError(key)
+        return self._open()[self._dataset_name][self._index_map[key_str]]
+
+    def __del__(self):
+        if self._file is not None:
+            self._file.close()
+
+
+# ─────────────────── NSD All Subjects ────────────────────
+_NSD_REGIONS = ["early", "ventral"]
+_NSD_REGION_FULL_NAMES = ["early visual stream", "ventral visual stream"]
+_NSD_SUBJECTS = list(range(8))
+
+
+def load_all_nsd_data(cfg: Dict, subjects=None, regions=None) -> Dict:
+    """
+    Load NSD fMRI responses for requested subjects and regions.
+
+    Args:
+        cfg: Config dict.
+        subjects: List of subject indices to load (default: all 8).
+        regions: List of full region names to load (default: both streams).
+
+    Returns:
+        dict with keys:
+            - "regions": list of full region names loaded
+            - "subjects": list of subject indices loaded
+            - "neural": {region: {subj: {"train": {sid: resp}, "test": {sid: resp}}}}
+            - "stimuli": {str(stim_id): np.ndarray} union of all stimulus images
+            - "shared_test_ids": sorted list of stimulus IDs shared across ALL subjects' test sets
+    """
+    subjects = subjects if subjects is not None else _NSD_SUBJECTS
+    region_pairs = [(k, f) for k, f in zip(_NSD_REGIONS, _NSD_REGION_FULL_NAMES)
+                    if regions is None or f in regions]
+
+    root = utils.get_env_var("NSD_DATA_DIR")
+    nsd = utils.load_pickle(os.path.join(root, "nsd_data.pkl"))
+    shared_ids = nsd["shared_ids"]
+
+    neural = {}
+    all_stimulus_ids = set()
+    per_subject_test_ids = []
+
+    for region_key, region_full in region_pairs:
+        neural[region_full] = {}
+        for subj in subjects:
+            fmri_xr = nsd["data"][region_key][subj]
+            stimulus_ids = [int(i) for i in fmri_xr.coords["stimulus"].values]
+            all_stimulus_ids.update(stimulus_ids)
+
+            train_ids = [str(i) for i in stimulus_ids if i not in shared_ids]
+            test_ids = [str(i) for i in stimulus_ids if i in shared_ids]
+
+            neural[region_full][subj] = {
+                "train": {i: fmri_xr.sel(stimulus=int(i)).values for i in train_ids},
+                "test": {i: fmri_xr.sel(stimulus=int(i)).values for i in test_ids},
+            }
+
+            # Collect test IDs per subject (first region only — same stimuli)
+            if region_key == region_pairs[0][0]:
+                per_subject_test_ids.append(set(test_ids))
+
+    # shared_test_ids = intersection of all subjects' test sets
+    shared_test_ids = sorted(set.intersection(*per_subject_test_ids), key=int)
+
+    # Lazy HDF5 wrapper — reads images on demand, avoids loading 70k images (~36 GB) into RAM
+    hdf5_path = "/data/shared/datasets/allen2021.natural_scenes/nsddata_stimuli/stimuli/nsd/nsd_stimuli.hdf5"
+    stimuli = _LazyHdf5Dict(hdf5_path, "imgBrick", all_stimulus_ids)
+
+    region_names = [f for _, f in region_pairs]
+    logger.info(
+        f"Loaded NSD: {len(subjects)} subjects × {len(region_names)} regions, "
+        f"{len(stimuli)} stimuli (lazy HDF5), {len(shared_test_ids)} shared test IDs"
     )
+
+    return {
+        "regions": region_names,
+        "subjects": list(subjects),
+        "neural": neural,
+        "stimuli": stimuli,
+        "shared_test_ids": shared_test_ids,
+    }
 
 
 # ─────────────────── NSD Synthetic ────────────────────
@@ -124,72 +255,163 @@ def load_cusack_data(cfg: Dict) -> Tuple[Dict[str, np.ndarray], Dict[str, str]]:
 
 
 # ──────────────────────── THINGS ────────────────────────
-def load_things_data() -> tuple[dict[str, np.ndarray], dict[str, str]]:
+def load_things_data() -> tuple[dict, dict[str, str]]:
     """
-    Load THINGS behavioral embeddings and corresponding image file paths.
+    Load THINGS behavioral dataset with within-concept train/test image split.
+
+    Expects cached pickle at datasets/neural/things/things_split.pkl
+    (generate with: python scripts/cache_things_split.py).
 
     Returns:
-        embeds (dict[str, np.ndarray]): Mapping from object ID to embedding vector (float32).
-        img_paths (dict[str, str]): Mapping from object ID to absolute image file path.
-            Only includes images with valid, existing paths as resolved via _ThingsStimSet logic.
+        targets: {
+            "train": {concept: embedding},
+            "test":  {concept: embedding},
+            "train_image_ids": {concept: [stimulus_ids]},
+            "test_image_ids":  {concept: [stimulus_ids]},
+        }
+        img_paths: {stimulus_id: path} for all images (both splits).
     """
-    beh_xr = _load_things_embed()
-    embeds = {
-        str(i): beh_xr.sel(object=i).values.astype(np.float32)
-        for i in beh_xr["object"].values
+    pkl_path = os.path.join("datasets", "neural", "things", "things_split.pkl")
+    data = utils.load_pickle(pkl_path)
+
+    embeddings = data["embeddings"]
+    train_image_ids = data["train_image_ids"]
+    test_image_ids = data["test_image_ids"]
+    img_paths = data["image_paths"]
+
+    targets = {
+        "train": {c: embeddings[c] for c in train_image_ids},
+        "test": {c: embeddings[c] for c in test_image_ids},
+        "train_image_ids": train_image_ids,
+        "test_image_ids": test_image_ids,
     }
 
-    img_paths = {}
-    stimset = _ThingsStimSet()
-    for idx in range(len(stimset.metadata)):
-        row = stimset.metadata.iloc[idx]
-        stimulus_id = row["stimulus"]
-        concept = row["concept"]
-        correct_path = os.path.join(
-            stimset.root, "images", "object_images", concept, f"{stimulus_id}.jpg"
-        )
-        if os.path.exists(correct_path):
-            img_paths[stimulus_id] = correct_path
-        else:
-            logger.warning(f"Image path {correct_path} does not exist. Skipping.")
-
-    return embeds, img_paths
+    return targets, img_paths
 
 
 # ──────────────────────── TVSD ────────────────────────
-def load_tvsd_data(cfg: Dict) -> tuple[dict[str, np.ndarray], dict[str, str]]:
+def _tvsd_things_image_path(sid: str, things_root: str) -> str | None:
+    """Resolve a THINGS stimulus ID to its image path, or None if missing."""
+    concept = "_".join(sid.split("_")[:-1])
+    path = os.path.join(things_root, "images", "object_images", concept, f"{sid}.jpg")
+    if os.path.exists(path):
+        return path
+    logger.warning(f"TVSD image not found: {path}")
+    return None
+
+
+def load_tvsd_data(cfg: Dict) -> tuple[dict, dict[str, str]]:
     """
-    Load TVSD macaque MUA responses (pre-cached, averaged across 30 reps)
-    and corresponding THINGS image paths.
+    Load TVSD macaque MUA responses and corresponding THINGS image paths.
 
-    Config keys used: region (V1/V4/IT), subject_idx (0=monkey F, 1=monkey N).
-
-    Expects cached pickle at datasets/neural/tvsd/fmri_responses.pkl
-    with structure: data[region][subject_idx] → xr.DataArray (stimulus, neuroid).
+    Expects pickle with structure:
+        data[region][subject_idx] = {"train": xr.DataArray, "test": xr.DataArray}
     Generate with: python scripts/cache_tvsd_data.py
+
+    Returns:
+        targets: {"train": {sid: response}, "test": {sid: response}}
+        img_paths: {sid: path} covering all stimuli (train + test).
+
+    Config keys: region (V1/V4/IT), subject_idx (0=monkey F, 1=monkey N).
     """
     region, subj = cfg["region"], cfg["subject_idx"]
     fmri_path = os.path.join("datasets", "neural", "tvsd", "fmri_responses.pkl")
-    data_xr = utils.load_pickle(fmri_path)[region][subj]
+    splits = utils.load_pickle(fmri_path)[region][subj]
 
-    stim_ids = [str(s) for s in data_xr.coords["stimulus"].values]
-    targets = {sid: data_xr.sel(stimulus=sid).values for sid in stim_ids}
-
-    # Build THINGS image paths: stim_id format is "{concept}_{instance}", e.g. "alligator_14n"
     things_root = os.path.join(
         os.environ.get("BONNER_DATASETS_HOME", os.path.expanduser("~/.cache/bonner-datasets")),
         "hebart2019.things",
     )
+
+    targets = {}
     img_paths = {}
-    for sid in stim_ids:
-        concept = "_".join(sid.split("_")[:-1])
-        path = os.path.join(things_root, "images", "object_images", concept, f"{sid}.jpg")
-        if os.path.exists(path):
-            img_paths[sid] = path
-        else:
-            logger.warning(f"TVSD image not found: {path}")
+    for split_name, data_xr in splits.items():
+        stim_ids = [str(s) for s in data_xr.coords["stimulus"].values]
+        targets[split_name] = {
+            sid: data_xr.sel(stimulus=sid).values for sid in stim_ids
+        }
+        for sid in stim_ids:
+            if sid not in img_paths:
+                p = _tvsd_things_image_path(sid, things_root)
+                if p:
+                    img_paths[sid] = p
 
     return targets, img_paths
+
+
+# ─────────────────── TVSD All Subjects ────────────────────
+_TVSD_REGIONS = ["V1", "V4", "IT"]
+_TVSD_SUBJECTS = [0, 1]
+
+
+def load_all_tvsd_data(cfg: Dict, subjects=None, regions=None) -> Dict:
+    """
+    Load TVSD macaque MUA responses for requested subjects and regions.
+
+    Args:
+        cfg: Config dict.
+        subjects: List of subject indices to load (default: [0, 1]).
+        regions: List of region names to load (default: ["V1", "V4", "IT"]).
+
+    Returns:
+        dict with keys:
+            - "regions": list of region names loaded
+            - "subjects": list of subject indices loaded
+            - "neural": {region: {subj: {"train": {sid: resp}, "test": {sid: resp}}}}
+            - "stimuli": {sid: image_path} union of all stimuli
+            - "shared_test_ids": sorted list of test stimulus IDs shared across ALL subjects
+    """
+    subjects = subjects if subjects is not None else _TVSD_SUBJECTS
+    regions_to_load = regions if regions is not None else _TVSD_REGIONS
+
+    fmri_path = os.path.join("datasets", "neural", "tvsd", "fmri_responses.pkl")
+    data = utils.load_pickle(fmri_path)
+
+    things_root = os.path.join(
+        os.environ.get("BONNER_DATASETS_HOME", os.path.expanduser("~/.cache/bonner-datasets")),
+        "hebart2019.things",
+    )
+
+    neural = {}
+    all_img_paths = {}
+    per_subject_test_ids = []
+
+    for region in regions_to_load:
+        neural[region] = {}
+        for subj in subjects:
+            splits = data[region][subj]
+            targets = {}
+            for split_name, data_xr in splits.items():
+                stim_ids = [str(s) for s in data_xr.coords["stimulus"].values]
+                targets[split_name] = {
+                    sid: data_xr.sel(stimulus=sid).values for sid in stim_ids
+                }
+                for sid in stim_ids:
+                    if sid not in all_img_paths:
+                        p = _tvsd_things_image_path(sid, things_root)
+                        if p:
+                            all_img_paths[sid] = p
+
+            neural[region][subj] = targets
+
+            # Collect test IDs per subject (first region only — same stimuli)
+            if region == regions_to_load[0]:
+                per_subject_test_ids.append(set(targets["test"].keys()))
+
+    shared_test_ids = sorted(set.intersection(*per_subject_test_ids))
+
+    logger.info(
+        f"Loaded TVSD: {len(subjects)} subjects × {len(regions_to_load)} regions, "
+        f"{len(all_img_paths)} stimuli, {len(shared_test_ids)} shared test IDs"
+    )
+
+    return {
+        "regions": list(regions_to_load),
+        "subjects": list(subjects),
+        "neural": neural,
+        "stimuli": all_img_paths,
+        "shared_test_ids": shared_test_ids,
+    }
 
 
 # ─────────────────────── Dataset/Loader ───────────────────────
@@ -202,9 +424,10 @@ class _StimuliDataset(Dataset):
         transform (callable): Transform to apply to each image.
     """
 
-    def __init__(self, stimuli: Dict[str, Any], transform):
+    def __init__(self, stimuli, transform):
         self.keys = sorted(stimuli.keys())
-        self.stimuli = {k: stimuli[k] for k in self.keys}
+        # Store a reference — don't copy if stimuli is a lazy dict (e.g. _LazyHdf5Dict)
+        self.stimuli = stimuli
         self.tr = transform or transforms.ToTensor()
 
     def __len__(self):
@@ -257,12 +480,12 @@ def _make_loader(stimuli, transform, batch, workers):
 def get_neural_loader(cfg: Dict) -> Tuple[Dict[str, Any], DataLoader]:
     """
     Returns (targets, dataloader) for the specified neural dataset.
-    Supported datasets: 'nsd', 'things', 'nsd_synthetic', 'cusack'.
+    Supported datasets: 'nsd', 'things-behavior', 'nsd_synthetic', 'cusack', 'tvsd'.
     """
     dataset_type = cfg.get("neural_dataset")
     if dataset_type == "nsd":
         targets, stimuli = load_nsd_data(cfg)
-    elif dataset_type == "things":
+    elif dataset_type == "things-behavior":
         targets, stimuli = load_things_data()
     elif dataset_type == "nsd_synthetic":
         targets, stimuli = load_nsd_synthetic_data(cfg)
@@ -271,7 +494,7 @@ def get_neural_loader(cfg: Dict) -> Tuple[Dict[str, Any], DataLoader]:
     elif dataset_type == "tvsd":
         targets, stimuli = load_tvsd_data(cfg)
     else:
-        raise ValueError("neural_dataset must be 'nsd', 'things', 'nsd_synthetic', 'cusack', or 'tvsd'")
+        raise ValueError("neural_dataset must be 'nsd', 'things-behavior', 'nsd_synthetic', 'cusack', or 'tvsd'")
 
     transform = get_transform(ds_stats="imgnet")
     dataloader = _make_loader(
