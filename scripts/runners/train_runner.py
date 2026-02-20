@@ -12,7 +12,7 @@ def main():
 
     runner = ExperimentRunner(
         base_config=BASE_CONFIG,
-        param_grid=load_param_grid(args.grid),
+        param_grids=load_param_grid(args.grid),
         mode="train"
     )
     runner.run_all()

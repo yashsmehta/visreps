@@ -11,10 +11,10 @@ GEMINI_FEATURES_PATH = "datasets/neural/nsd/gemini_representations.npz"
 class SemanticRunner(ExperimentRunner):
     """Semantic alignment runner using Gemini embeddings."""
 
-    def __init__(self, base_config, param_grid):
+    def __init__(self, base_config, param_grids):
         super().__init__(
             base_config=base_config,
-            param_grid=param_grid,
+            param_grids=param_grids,
             mode="semantic",
             extra_overrides={
                 "log_expdata": True,
