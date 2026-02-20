@@ -639,7 +639,10 @@ class ConfigVerifier:
             elif isinstance(region, (list, ListConfig)):
                 region = list(region)
                 self.cfg.region = region
-            valid_nsd_regions = {"early visual stream", "ventral visual stream"}
+            valid_nsd_regions = {
+                "early visual stream", "ventral visual stream",
+                "V1", "V2", "V3", "hV4", "FFA", "PPA",
+            }
             for r in region:
                 if r not in valid_nsd_regions:
                     raise AssertionError(

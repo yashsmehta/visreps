@@ -16,8 +16,12 @@ logger = logging.getLogger(__name__)
 _NSD_REGION_MAP = {
     "early visual stream": "early",
     "ventral visual stream": "ventral",
-    "early": "early",
-    "ventral": "ventral",
+    "V1": "V1",
+    "V2": "V2",
+    "V3": "V3",
+    "hV4": "hV4",
+    "FFA": "FFA",
+    "PPA": "PPA",
 }
 
 
@@ -111,8 +115,6 @@ class _LazyHdf5Dict:
 
 
 # ─────────────────── NSD All Subjects ────────────────────
-_NSD_REGIONS = ["early", "ventral"]
-_NSD_REGION_FULL_NAMES = ["early visual stream", "ventral visual stream"]
 _NSD_SUBJECTS = list(range(8))
 
 
@@ -134,8 +136,8 @@ def load_all_nsd_data(cfg: Dict, subjects=None, regions=None) -> Dict:
             - "shared_test_ids": sorted list of stimulus IDs shared across ALL subjects' test sets
     """
     subjects = subjects if subjects is not None else _NSD_SUBJECTS
-    region_pairs = [(k, f) for k, f in zip(_NSD_REGIONS, _NSD_REGION_FULL_NAMES)
-                    if regions is None or f in regions]
+    region_pairs = [(pkl_key, name) for name, pkl_key in _NSD_REGION_MAP.items()
+                    if regions is None or name in regions]
 
     root = utils.get_env_var("NSD_DATA_DIR")
     nsd = utils.load_pickle(os.path.join(root, "nsd_data.pkl"))
