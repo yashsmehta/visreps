@@ -22,14 +22,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from visreps.dataloaders.neural import load_nsd_data, _make_loader
 from visreps.dataloaders.obj_cls import get_transform
 from visreps.models.utils import FeatureExtractor
-from visreps.analysis.rsa import compute_rsm, _kendall_tau_a
+from visreps.analysis.rsa import compute_rdm, _kendall_tau_a
 
 
-def _compare_rsms(rsm1: torch.Tensor, rsm2: torch.Tensor, correlation: str) -> float:
-    """Compare upper triangular parts of two RSMs."""
-    n = rsm1.size(0)
+def _compare_rdms(rdm1: torch.Tensor, rdm2: torch.Tensor, correlation: str) -> float:
+    """Compare upper triangular parts of two RDMs."""
+    n = rdm1.size(0)
     idx = torch.triu_indices(n, n, offset=1)
-    v1, v2 = rsm1[idx[0], idx[1]].cpu().numpy(), rsm2[idx[0], idx[1]].cpu().numpy()
+    v1, v2 = rdm1[idx[0], idx[1]].cpu().numpy(), rdm2[idx[0], idx[1]].cpu().numpy()
 
     if correlation.lower() == "kendall":
         return _kendall_tau_a(v1, v2)[0]
@@ -46,13 +46,12 @@ OUTPUT_PATH = "experiments/binary_pc_rsa/binary_pc_rsa.csv"
 # ====================================================
 
 EIGENVECTORS_PATH = "datasets/obj_cls/imagenet/eigenvectors_alexnet.npz"
-NSD_TYPE = "streams_shared"
 REGIONS = ["early visual stream", "ventral visual stream"]
 
 
-def compute_hamming_rsm(binary_codes: np.ndarray, weighted: bool = True) -> torch.Tensor:
-    """Compute Hamming similarity RSM for binary codes.
-    
+def compute_hamming_rdm(binary_codes: np.ndarray, weighted: bool = True) -> torch.Tensor:
+    """Compute Hamming dissimilarity RDM for binary codes.
+
     Args:
         binary_codes: (n_images, n_bits) binary array
         weighted: If True, weight by inverse rank (PC1 > PC2 > ... > PCn)
@@ -60,15 +59,15 @@ def compute_hamming_rsm(binary_codes: np.ndarray, weighted: bool = True) -> torc
     codes = torch.from_numpy(binary_codes).float()
     n_images, n_bits = codes.shape
     xor = (codes.unsqueeze(1) != codes.unsqueeze(0)).float()  # (n_images, n_images, n_bits)
-    
+
     if weighted:
         # Inverse rank: PC1 gets weight n_bits, PC_n gets weight 1
         weights = torch.arange(n_bits, 0, -1, dtype=torch.float32)
         weighted_dist = (xor * weights).sum(dim=2)
-        return 1 - weighted_dist / weights.sum()
+        return weighted_dist / weights.sum()
     else:
         hamming_dist = xor.sum(dim=2)
-        return 1 - hamming_dist / n_bits
+        return hamming_dist / n_bits
 
 
 def project_and_binarize(activations: np.ndarray, eigenvectors: np.ndarray,
@@ -120,7 +119,7 @@ def run_analysis():
     results = []
 
     for subject_idx in SUBJECT_IDX_LIST:
-        cfg = {"neural_dataset": "nsd", "nsd_type": NSD_TYPE, "region": REGIONS[0], 
+        cfg = {"neural_dataset": "nsd", "region": REGIONS[0],
                "subject_idx": subject_idx, "batchsize": 64, "num_workers": 8}
         _, stimuli = load_nsd_data(cfg)
         dataloader = _make_loader(stimuli, get_transform(ds_stats="imgnet"), batch=64, workers=8)
@@ -136,14 +135,14 @@ def run_analysis():
             for region in REGIONS:
                 aligned_acts, aligned_neural = aligned_data[region]
                 binary_codes = project_and_binarize(aligned_acts, eigenvectors, mean, n_pcs)
-                neural_rsm = compute_rsm(torch.from_numpy(aligned_neural), correlation="Pearson")
+                neural_rdm = compute_rdm(torch.from_numpy(aligned_neural), correlation="Pearson")
 
                 weighted_list = WEIGHTED if isinstance(WEIGHTED, list) else [WEIGHTED]
                 corr_list = RSM_CORRELATION if isinstance(RSM_CORRELATION, list) else [RSM_CORRELATION]
                 for weighted in weighted_list:
-                    binary_rsm = compute_hamming_rsm(binary_codes, weighted=weighted)
+                    binary_rdm = compute_hamming_rdm(binary_codes, weighted=weighted)
                     for corr in corr_list:
-                        score = _compare_rsms(binary_rsm, neural_rsm, correlation=corr)
+                        score = _compare_rdms(binary_rdm, neural_rdm, correlation=corr)
                         results.append({
                             "subject_idx": subject_idx,
                             "n_pcs": n_pcs,

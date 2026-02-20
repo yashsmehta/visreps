@@ -55,8 +55,6 @@ MODELS = {
 # NSD config
 SUBJECT_IDS = [0, 1, 2, 3, 4, 5, 6, 7]
 REGIONS = ["early visual stream", "ventral visual stream"]
-NSD_TYPE = "streams_shared"
-
 BATCH_SIZE = 64
 NUM_WORKERS = 4
 
@@ -170,7 +168,7 @@ def main():
             for subject_idx in SUBJECT_IDS:
                 rprint(f"\n  Subject {subject_idx} | Region: {region}", style="info")
 
-                cfg_nsd = {"region": region, "subject_idx": subject_idx, "nsd_type": NSD_TYPE}
+                cfg_nsd = {"region": region, "subject_idx": subject_idx}
                 targets, stimuli = load_nsd_data(cfg_nsd)
 
                 dataloader = _make_loader(stimuli, preprocess, BATCH_SIZE, NUM_WORKERS)

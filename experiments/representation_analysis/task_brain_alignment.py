@@ -61,7 +61,6 @@ PCA_LABELS_PATH = os.path.join(PROJECT_ROOT, "pca_labels/pca_labels_alexnet_glob
 NEURAL_CFG = {
     "region": "EVC",  # Early Visual Cortex - where you see the effect
     "subject_idx": 0,
-    "nsd_type": "finegrained",
 }
 
 # Analysis settings

@@ -47,8 +47,6 @@ CHECKPOINT_MODEL = "checkpoint_epoch_20.pth"
 # NSD config
 SUBJECT_IDS = [0, 1, 2, 3, 4, 5, 6, 7]  # NSD subjects (0-7)
 REGIONS = ["early visual stream", "ventral visual stream"]
-NSD_TYPE = "streams_shared"
-
 BATCH_SIZE = 64
 NUM_WORKERS = 4
 
@@ -244,7 +242,7 @@ def main():
             rprint(f"{'='*50}", style="info")
 
             # Load NSD fMRI data and stimuli
-            cfg_nsd = {"region": region, "subject_idx": subject_idx, "nsd_type": NSD_TYPE}
+            cfg_nsd = {"region": region, "subject_idx": subject_idx}
             targets, stimuli = load_nsd_data(cfg_nsd)
             print(f"Loaded {len(stimuli)} NSD stimuli")
 
