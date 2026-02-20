@@ -23,6 +23,13 @@ from visreps.utils import console, rprint
 from visreps.utils import get_seed_letter
 from visreps.analysis.sparse_random_projection import get_srp_transformer
 
+# Default extraction points for pretrained torchvision models
+TORCHVISION_RETURN_NODES = {
+    "AlexNet":  ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2"],
+    "ResNet18": ["conv1", "block1", "block2", "block3", "block4",
+                 "block5", "block6", "block7", "block8", "fc1"],
+}
+
 class FeatureExtractor(nn.Module):
     def __init__(self, model: nn.Module, return_nodes: Dict[str, str] = None,
                  post_relu: bool = True, extract_pre_and_post: bool = True):
@@ -78,18 +85,15 @@ class FeatureExtractor(nn.Module):
                 conv_count += 1
                 seen_modules.add(id(self.model.conv1))
             
-            # Then handle layer blocks in order
+            # Map at BasicBlock level (post-residual, post-ReLU outputs)
+            block_count = 1
             for block_name in ['layer1', 'layer2', 'layer3', 'layer4']:
                 if hasattr(self.model, block_name):
                     block = getattr(self.model, block_name)
                     for sub_block_idx, sub_block in enumerate(block):
-                        # Get all convs in this sub_block except downsampling
-                        for name, module in sub_block.named_modules():
-                            if is_main_conv(name, module) and id(module) not in seen_modules:
-                                full_name = f'{block_name}.{sub_block_idx}.{name}'
-                                mapping[f'conv{conv_count}'] = full_name
-                                conv_count += 1
-                                seen_modules.add(id(module))
+                        mapping[f'block{block_count}'] = f'{block_name}.{sub_block_idx}'
+                        block_count += 1
+                        seen_modules.add(id(sub_block))
             
             # Handle final fc layer
             if hasattr(self.model, 'fc'):
@@ -183,8 +187,6 @@ class FeatureExtractor(nn.Module):
                         if isinstance(container[i], (nn.Conv2d, nn.Conv1d, nn.Conv3d, nn.Linear)):
                             break
                     if not found:
-                        print(f"Warning: No activation fn found after {semantic_name} "
-                              f"({module_path}), keeping pre-activation")
                         relu_mapping[semantic_name] = module_path
                 else:
                     relu_mapping[semantic_name] = module_path

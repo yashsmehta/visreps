@@ -80,6 +80,10 @@ def eval(cfg):
     # ── CONFIG & DEVICE ─────────────────────────────────
     if cfg.load_model_from == "checkpoint":
         cfg = _load_cfg(cfg)
+    elif cfg.load_model_from == "torchvision":
+        cfg.epoch = -1
+        cfg.cfg_id = "pretrained" if cfg.pretrained_dataset == "imagenet1k" else "untrained"
+        cfg.return_nodes = mutils.TORCHVISION_RETURN_NODES[cfg.model_name]
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     dataset = cfg.neural_dataset.lower()

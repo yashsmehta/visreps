@@ -300,7 +300,7 @@ _RESULTS_DB_PATH = Path("results.db")
 _IDENTITY_FIELDS = (
     "seed", "epoch", "region", "subject_idx", "neural_dataset", "cfg_id",
     "pca_labels", "pca_n_classes", "pca_labels_folder", "checkpoint_dir",
-    "analysis", "compare_method", "reconstruct_from_pcs", "pca_k",
+    "analysis", "compare_method", "reconstruct_from_pcs", "pca_k", "model_name",
 )
 
 
