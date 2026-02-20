@@ -1,16 +1,15 @@
 {
-  "neural_dataset": "nsd",
-  "nsd_type": "streams_shared",
+  "neural_dataset": "things-behavior",
   "return_nodes": ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2"],
   "extract_pre_and_post": true,
   "reconstruct_from_pcs": false,
   "pca_k": 1,
   "load_model_from": "checkpoint",
   "seed": 1,
-  "cfg_id": 1000,
+  "cfg_id": 2,
   "checkpoint":
   {
-    "checkpoint_dir": "/data/ymehta3/default",
+    "checkpoint_dir": "/data/ymehta3/clip_pca",
     "checkpoint_model": "checkpoint_epoch_20.pth"
   },
   "torchvision":
@@ -20,13 +19,13 @@
   },
   "mode": "eval",
   "region": ["early visual stream", "ventral visual stream"],
-  "subject_idx": [0, 1, 2, 3, 4, 5, 6, 7],
+  "subject_idx": [0, 1, 2, 3],
   "analysis": "rsa",
   "compare_method": "spearman",
   "bootstrap": false,
-  "batchsize": 256,
+  "batchsize": 512,
   "num_workers": 32,
-  "log_expdata": false,
+  "log_expdata": true,
   "verbose": false,
   "notes": ""
 }

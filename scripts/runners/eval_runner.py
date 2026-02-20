@@ -27,12 +27,19 @@ class EvalRunner(ExperimentRunner):
         return params
 
 
+GRID_DIR = "configs/grids"
+VALID_DATASETS = ["nsd", "tvsd", "things"]
+
+
 def main():
     parser = argparse.ArgumentParser(description="Run evaluation experiments")
-    parser.add_argument("--grid", required=True, help="Parameter grid JSON file")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--dataset", choices=VALID_DATASETS, help="Dataset name (resolves to configs/grids/<dataset>.json)")
+    group.add_argument("--grid", help="Parameter grid JSON file (explicit path)")
     args = parser.parse_args()
 
-    runner = EvalRunner(BASE_CONFIG, load_param_grid(args.grid))
+    grid_path = f"{GRID_DIR}/{args.dataset}.json" if args.dataset else args.grid
+    runner = EvalRunner(BASE_CONFIG, load_param_grid(grid_path))
     runner.run_all()
 
 

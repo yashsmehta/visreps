@@ -4,17 +4,27 @@
     "cfg_id": [1000],
     "seed": [1, 2, 3],
     "neural_dataset": ["tvsd"],
-    "analysis": ["rsa", "encoding_score"],
+    "analysis": ["rsa"],
     "subject_idx": [[0, 1]],
     "region": [["V1", "V4", "IT"]],
-    "eval_checkpoint_at_epoch": [0]
+    "eval_checkpoint_at_epoch": [0, 20]
   },
   {
     "checkpoint_dir": ["/data/ymehta3/alexnet_pca"],
     "cfg_id": [2, 4, 8, 16, 32, 64],
     "seed": [1, 2, 3],
     "neural_dataset": ["tvsd"],
-    "analysis": ["rsa", "encoding_score"],
+    "analysis": ["rsa"],
+    "subject_idx": [[0, 1]],
+    "region": [["V1", "V4", "IT"]],
+    "eval_checkpoint_at_epoch": [20]
+  },
+  {
+    "checkpoint_dir": ["/data/ymehta3/clip_pca"],
+    "cfg_id": [2, 4, 8, 16, 32, 64],
+    "seed": [1, 2, 3],
+    "neural_dataset": ["tvsd"],
+    "analysis": ["rsa"],
     "subject_idx": [[0, 1]],
     "region": [["V1", "V4", "IT"]],
     "eval_checkpoint_at_epoch": [20]
