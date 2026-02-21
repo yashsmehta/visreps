@@ -516,7 +516,7 @@ class ConfigVerifier:
     VALID_MODEL_SOURCES = {"checkpoint", "torchvision"}
     VALID_ANALYSES = {"rsa", "encoding_score"}
     VALID_COMPARE_METHODS = {"spearman", "kendall"}
-    VALID_NEURAL_DATASETS = {"nsd", "things-behavior", "tvsd"}
+    VALID_NEURAL_DATASETS = {"nsd", "things-behavior", "tvsd", "nsd_synthetic"}
     def __init__(self, cfg: OmegaConf):
         """Initialize verifier with configuration."""
         self.cfg = cfg
@@ -615,7 +615,7 @@ class ConfigVerifier:
                 )
                 self.cfg.subject_idx = "N/A"
 
-        if self.cfg.neural_dataset.lower() == "nsd":
+        if self.cfg.neural_dataset.lower() in ("nsd", "nsd_synthetic"):
             # Normalize subject_idx to list
             subj = self.cfg.subject_idx
             if isinstance(subj, int):
@@ -700,6 +700,11 @@ class ConfigVerifier:
                 raise AssertionError(
                     "analysis=encoding_score is not supported for things-behavior "
                     "(behavioral embeddings have no voxels to predict). Use analysis=rsa instead."
+                )
+            if self.cfg.neural_dataset.lower() == "nsd_synthetic":
+                raise AssertionError(
+                    "analysis=encoding_score is not supported for nsd_synthetic. "
+                    "Use analysis=rsa instead."
                 )
             # Encoding metric is always Pearson r — override whatever the user set
             # (compare_method is an RSA concept). This also ensures run_id hashing
