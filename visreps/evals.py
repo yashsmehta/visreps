@@ -1,12 +1,15 @@
+import sqlite3
+
 import torch
 import pandas as pd
 from omegaconf import OmegaConf, ListConfig
-from visreps.utils import rprint, save_results
+from visreps.utils import rprint, save_results, _compute_run_id
 from visreps.utils import get_seed_letter
 import visreps.models.utils as mutils
 from visreps.dataloaders.neural import (
     get_neural_loader,
     load_all_nsd_data,
+    load_nsd_synthetic_test_data,
     load_all_tvsd_data,
     _make_loader,
 )
@@ -150,6 +153,19 @@ def eval(cfg):
         if cfg.get("log_expdata"):
             save_results(results, cfg)
         return results
+
+    # ── NSD SYNTHETIC: dedicated RSA path (reuses NSD layer selection) ──
+    if dataset == "nsd_synthetic":
+        subjects = _listify(cfg.subject_idx)
+        regions = _listify(cfg.region)
+        seed_letter = get_seed_letter(cfg.seed) if isinstance(cfg.seed, int) else "?"
+        rprint(
+            f"\n  RSA eval (NSD Synthetic) | cfg{cfg.get('cfg_id', '?')}{seed_letter} "
+            f"epoch {cfg.get('epoch', '?')} | {len(subjects)} subjects x {len(regions)} regions | "
+            f"seed {cfg.seed}\n",
+            style="info",
+        )
+        return _eval_rsa_nsd_synthetic(cfg, subjects, regions, dev, verbose)
 
     # ── NSD / TVSD: unified multi-subject path ──────────
     subjects = _listify(cfg.subject_idx)
@@ -375,6 +391,154 @@ def _eval_rsa(cfg, model, acts, ids, all_data, subjects, regions, dev, verbose):
 
             results_df = pd.DataFrame([result])
 
+            if cfg.get("log_expdata"):
+                save_cfg = OmegaConf.merge(cfg, {"subject_idx": subj, "region": region})
+                save_results(results_df, save_cfg)
+
+            all_results.append(result)
+
+    return pd.DataFrame(all_results)
+
+
+# ───────────── NSD Synthetic RSA helper ──────────────────
+def _lookup_nsd_best_layers(cfg, subjects, regions):
+    """Look up best RSA layers from regular NSD evaluation results.
+
+    Computes the run_id that the corresponding NSD eval would have produced,
+    then queries the results DB for the layer that was selected.
+    """
+    method = cfg.get("compare_method", "spearman").lower()
+    conn = sqlite3.connect("results.db")
+
+    layers = {}
+    for region in regions:
+        layers[region] = {}
+        for subj in subjects:
+            nsd_cfg = OmegaConf.merge(cfg, {
+                "neural_dataset": "nsd",
+                "analysis": "rsa",
+                "subject_idx": subj,
+                "region": region,
+                "compare_method": method,
+            })
+            run_id = _compute_run_id(nsd_cfg)
+
+            row = pd.read_sql_query(
+                "SELECT layer FROM results WHERE run_id=? AND compare_method=?",
+                conn, params=(run_id, method),
+            )
+            if row.empty:
+                raise ValueError(
+                    f"No NSD RSA result found (run_id={run_id}) for "
+                    f"seed={cfg.seed}, region={region}, subj={subj}, "
+                    f"cfg_id={cfg.cfg_id}. Run NSD eval first."
+                )
+            layers[region][subj] = row.iloc[0]["layer"]
+
+    conn.close()
+    return layers
+
+
+def _eval_rsa_nsd_synthetic(cfg, subjects, regions, dev, verbose):
+    """RSA on NSD Synthetic: reuse best layers from NSD, score on synthetic stimuli.
+
+    Skips layer selection entirely — looks up the best layer per (subject, region)
+    from the regular NSD evaluation in results.db. Then extracts those layers
+    without SRP on the 220 synthetic test stimuli and computes RDM correlations.
+    """
+    method = cfg.get("compare_method", "spearman").lower()
+    bootstrap = cfg.get("bootstrap", False)
+    n_bootstrap = cfg.get("n_bootstrap", 1000)
+
+    # Reuse best layers from regular NSD evaluation
+    best_layers = _lookup_nsd_best_layers(cfg, subjects, regions)
+    if verbose:
+        for region in regions:
+            for subj in subjects:
+                rprint(f"    {region} subj {subj}: reusing layer {best_layers[region][subj]} from NSD", style="info")
+
+    # Load synthetic test data only (220 stimuli)
+    test_data = load_nsd_synthetic_test_data(cfg, subjects=subjects, regions=regions)
+    test_ids = test_data["test_ids"]
+    stimuli = test_data["stimuli"]
+    neural = test_data["neural"]
+    rprint(f"  Loaded {len(test_ids)} synthetic test stimuli", style="success")
+
+    # Load model, extract unique best layers without SRP
+    model = mutils.load_model(cfg, dev, verbose=verbose)
+    model = mutils.configure_feature_extractor(cfg, model, verbose=verbose)
+
+    transform = get_transform(ds_stats="imgnet")
+    dl_test = _make_loader(stimuli, transform, cfg.batchsize, cfg.num_workers)
+
+    unique_layers = {l for rl in best_layers.values() for l in rl.values()}
+    pca_k = cfg.get("pca_k", 1)
+    model_rdms = {}
+    for layer in sorted(unique_layers):
+        rprint(f"  Extracting {layer} without SRP...", style="info")
+        exact_acts, _ = mutils.extract_single_layer(model, dl_test, dev, layer, test_ids)
+        if cfg.get("reconstruct_from_pcs"):
+            exact_acts = reconstruct_from_pcs({layer: exact_acts}, pca_k)[layer]
+        flat = exact_acts.flatten(start_dim=1) if exact_acts.ndim > 2 else exact_acts
+        model_rdms[layer] = compute_rdm(flat)
+        del exact_acts
+
+    del model, dl_test
+    torch.cuda.empty_cache()
+
+    # Score per (region, subject)
+    all_results = []
+    for region in regions:
+        rprint(f"\n  -- Region: {region} --", style="info")
+        for subj in subjects:
+            best_layer = best_layers[region][subj]
+            test_neural = neural[region][subj]
+            responses = [test_neural[sid] for sid in test_ids]
+            neural_tensor = torch.as_tensor(np.stack(responses).squeeze(), dtype=torch.float32)
+            neural_rdm = compute_rdm(neural_tensor)
+
+            point_estimate = compute_rdm_correlation(
+                model_rdms[best_layer], neural_rdm, correlation=method.capitalize()
+            )
+
+            ci_low, ci_high = None, None
+            bootstrap_scores_list = None
+            if bootstrap:
+                rng = np.random.RandomState(42)
+                n_test = neural_rdm.size(0)
+                n_sub = int(n_test * 0.9)
+                bootstrap_scores = np.empty(n_bootstrap, dtype=np.float64)
+                for i in range(n_bootstrap):
+                    idx = torch.from_numpy(
+                        rng.choice(n_test, size=n_sub, replace=False)
+                    ).to(neural_rdm.device)
+                    m = model_rdms[best_layer][idx][:, idx]
+                    n = neural_rdm[idx][:, idx]
+                    bootstrap_scores[i] = compute_rdm_correlation(
+                        m, n, correlation=method.capitalize()
+                    )
+                ci_low = float(np.percentile(bootstrap_scores, 2.5))
+                ci_high = float(np.percentile(bootstrap_scores, 97.5))
+                bootstrap_scores_list = bootstrap_scores.tolist()
+
+            msg = f"    subj {subj} | {method.capitalize():<10}| {best_layer} = {point_estimate:.4f}"
+            if bootstrap:
+                msg += f"  [95% CI: {ci_low:.4f}, {ci_high:.4f}]"
+            rprint(msg, style="highlight")
+
+            result = {
+                "layer": best_layer,
+                "compare_method": method,
+                "score": point_estimate,
+                "ci_low": ci_low,
+                "ci_high": ci_high,
+                "analysis": "rsa",
+                "layer_selection_scores": [],
+            }
+            if bootstrap_scores_list is not None:
+                result["bootstrap_scores"] = bootstrap_scores_list
+
+            results_df = pd.DataFrame([result])
             if cfg.get("log_expdata"):
                 save_cfg = OmegaConf.merge(cfg, {"subject_idx": subj, "region": region})
                 save_results(results_df, save_cfg)

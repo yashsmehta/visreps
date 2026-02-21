@@ -188,6 +188,59 @@ def load_all_nsd_data(cfg: Dict, subjects=None, regions=None) -> Dict:
     }
 
 
+# ─────────────── NSD Synthetic (Test Only) ────────────
+def load_nsd_synthetic_test_data(cfg: Dict, subjects=None, regions=None) -> Dict:
+    """
+    Load NSD Synthetic test data only (220 shared stimuli).
+
+    Layer selection is inherited from regular NSD evaluation, so no
+    NSD train data is needed here.
+
+    Returns:
+        dict with keys:
+            - "regions": list of region names
+            - "subjects": list of subject indices
+            - "neural": {region: {subj: {stim_name: response}}}
+            - "stimuli": {stim_name: png_path}
+            - "test_ids": sorted list of 220 synthetic stimulus names
+    """
+    subjects = subjects if subjects is not None else _NSD_SUBJECTS
+    region_pairs = [(pkl_key, name) for name, pkl_key in _NSD_REGION_MAP.items()
+                    if regions is None or name in regions]
+
+    synth_root = utils.get_env_var("NSD_SYNTHETIC_DATA_DIR")
+    synth = utils.load_pickle(os.path.join(synth_root, "nsd_synthetic_data.pkl"))
+    shared_stimulus_names = synth["shared_stimulus_names"]
+
+    neural = {}
+    for region_key, region_full in region_pairs:
+        neural[region_full] = {}
+        for subj in subjects:
+            synth_xr = synth["data"][region_key][subj]
+            neural[region_full][subj] = {
+                s: synth_xr.sel(stimulus=s).values
+                for s in shared_stimulus_names
+            }
+
+    stimuli_dir = os.path.join(synth_root, "stimuli")
+    stimuli = {name: os.path.join(stimuli_dir, f"{name}.png") for name in shared_stimulus_names}
+    test_ids = shared_stimulus_names  # already sorted in pickle
+    region_names = [f for _, f in region_pairs]
+
+    logger.info(
+        f"Loaded NSD Synthetic: {len(subjects)} subjects × {len(region_names)} regions, "
+        f"{len(test_ids)} test stimuli"
+    )
+
+    return {
+        "regions": region_names,
+        "subjects": list(subjects),
+        "neural": neural,
+        "stimuli": stimuli,
+        "test_ids": test_ids,
+    }
+
+
 # ─────────────────── NSD Synthetic ────────────────────
 def load_nsd_synthetic_data(
     cfg: Dict,
