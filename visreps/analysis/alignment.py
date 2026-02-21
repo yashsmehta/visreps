@@ -103,10 +103,12 @@ def compute_traintest_alignment(
             re_extract_fn=re_extract_fn,
         )
     elif analysis == "encoding_score":
+        pca_k = cfg.get("pca_k", 1) if cfg.get("reconstruct_from_pcs") else None
         return compute_encoding_score(
             train, test,
             bootstrap=bootstrap, n_bootstrap=n_bootstrap,
             verbose=verbose,
+            reconstruct_pca_k=pca_k,
         )
     else:
         raise ValueError(f"Unknown analysis method: {analysis}")

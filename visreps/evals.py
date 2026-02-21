@@ -98,8 +98,6 @@ def eval(cfg):
         rprint(f"  THINGS data loaded", style="success")
 
         acts, ids = mutils.get_activations(model, dl, dev)
-        if cfg.get("reconstruct_from_pcs"):
-            acts = reconstruct_from_pcs(acts, cfg.pca_k)
 
         # Merge train/test images, average activations per concept
         all_concepts = prepare_concept_alignment(cfg, acts, neural_data, ids)
@@ -137,6 +135,9 @@ def eval(cfg):
         # Re-extract: get all images without SRP, concept-average for eval concepts
         def re_extract_fn(layer, sids=None):
             raw_acts, raw_ids = mutils.extract_single_layer(model, dl, dev, layer)
+            if cfg.get("reconstruct_from_pcs"):
+                raw_acts = reconstruct_from_pcs({layer: raw_acts}, cfg.pca_k)[layer]
+                rprint(f"    Reconstructed from {cfg.pca_k} PCs", style="info")
             return _concept_average_exact(raw_acts, raw_ids, evaluation), evaluation.stimulus_ids
 
         alignment_scores = compute_traintest_alignment(
@@ -372,13 +373,11 @@ def _eval_rsa(cfg, model, acts, ids, all_data, subjects, regions, dev, verbose):
             if bootstrap_scores_list is not None:
                 result["bootstrap_scores"] = bootstrap_scores_list
 
-            # Save per-subject per-region result
-            cfg.subject_idx = subj
-            cfg.region = region
             results_df = pd.DataFrame([result])
 
             if cfg.get("log_expdata"):
-                save_results(results_df, cfg)
+                save_cfg = OmegaConf.merge(cfg, {"subject_idx": subj, "region": region})
+                save_results(results_df, save_cfg)
 
             all_results.append(result)
 
@@ -391,8 +390,6 @@ def _eval_encoding(cfg, model, acts, ids, all_data, subjects, regions, verbose):
 
     Unlike RSA, encoding score uses SRP throughout (no re-extraction needed).
     """
-    if cfg.get("reconstruct_from_pcs"):
-        acts = reconstruct_from_pcs(acts, cfg.get("pca_k", 1))
     neural = all_data["neural"]
 
     all_results = []
@@ -414,13 +411,11 @@ def _eval_encoding(cfg, model, acts, ids, all_data, subjects, regions, verbose):
             del train_data, test_data
             torch.cuda.empty_cache()
 
-            # Save per-subject per-region result
-            cfg.subject_idx = subj
-            cfg.region = region
             results_df = pd.DataFrame(alignment_scores)
 
             if cfg.get("log_expdata"):
-                save_results(results_df, cfg)
+                save_cfg = OmegaConf.merge(cfg, {"subject_idx": subj, "region": region})
+                save_results(results_df, save_cfg)
 
             all_results.extend(alignment_scores)
 

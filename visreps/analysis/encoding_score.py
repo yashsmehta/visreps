@@ -69,6 +69,7 @@ def compute_encoding_score(
     n_bootstrap: int = 1000,
     seed: int = 42,
     verbose: bool = False,
+    reconstruct_pca_k: int | None = None,
 ) -> List[Dict]:
     """Train/test encoding score: select best layer on train, evaluate on test.
 
@@ -93,6 +94,8 @@ def compute_encoding_score(
         n_bootstrap: Number of bootstrap iterations.
         seed: Random seed for train split and bootstrap.
         verbose: Print progress details.
+        reconstruct_pca_k: If not None, reconstruct the best layer's activations
+            from this many PCs after layer selection (PCA fit on train only).
 
     Returns:
         Single-element list with result dict: layer, compare_method ("pearson"),
@@ -166,6 +169,26 @@ def compute_encoding_score(
             f"alphas=[{alphas[0]:.0e}, {alphas[-1]:.0e}])",
             style="highlight",
         )
+
+    # ── 1b. Optional: reconstruct best layer from k PCs (train-fitted) ─
+    if reconstruct_pca_k is not None:
+        from sklearn.decomposition import PCA as _PCA
+
+        rprint(
+            f"  Reconstructing {best_layer} from {reconstruct_pca_k} PCs (train-fitted)",
+            style="info",
+        )
+        train_np = train_acts[best_layer].numpy()
+        test_np = test_acts[best_layer].numpy()
+        _pca = _PCA(n_components=min(reconstruct_pca_k, train_np.shape[1]))
+        _pca.fit(train_np)
+        train_acts[best_layer] = torch.from_numpy(
+            _pca.inverse_transform(_pca.transform(train_np)).astype(np.float32)
+        )
+        test_acts[best_layer] = torch.from_numpy(
+            _pca.inverse_transform(_pca.transform(test_np)).astype(np.float32)
+        )
+        del train_np, test_np
 
     # ── 2. Refit best layer on full train, evaluate on test ───
     # Z-normalize X with full-train stats
