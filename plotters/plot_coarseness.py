@@ -36,6 +36,18 @@ DATASET_CONFIG = {
         },
         "has_subjects": True,
     },
+    "nsd-finegrained": {
+        "neural_dataset": "nsd",
+        "regions": ["V1", "V2", "V3", "hV4", "FFA", "PPA"],
+        "region_labels": {
+            "V1": "V1", "V2": "V2", "V3": "V3",
+            "hV4": "hV4", "FFA": "FFA", "PPA": "PPA",
+        },
+        "has_subjects": True,
+        "layout": (2, 4, [(0, 0), (0, 1), (0, 2), (0, 3), (1, 1), (1, 2)]),
+        "output_dir": "nsd",
+        "output_suffix": "_finegrained",
+    },
     "tvsd": {
         "neural_dataset": "tvsd",
         "regions": ["V1", "V4", "IT"],
@@ -70,6 +82,30 @@ BASELINE_COLOR = "#FFA500"
 BAR_WIDTH = 0.72
 
 
+# ── Layout helper ────────────────────────────────────────────────────────
+def _make_figure(dcfg):
+    """Create figure + ordered axes list, respecting optional 'layout' key."""
+    n_regions = len(dcfg["regions"])
+    layout = dcfg.get("layout")
+    if layout:
+        nrows, ncols, positions = layout
+        scale = 1 + 0.25 * (ncols - 1)
+        fig, grid = plt.subplots(nrows, ncols, figsize=(5 * ncols, 4.5 * nrows),
+                                 sharey=False, squeeze=False)
+        ax_list = [grid[r, c] for r, c in positions]
+        used = set(positions)
+        for r in range(nrows):
+            for c in range(ncols):
+                if (r, c) not in used:
+                    grid[r, c].set_visible(False)
+    else:
+        scale = 1 + 0.35 * (n_regions - 1)
+        fig, grid = plt.subplots(1, n_regions, figsize=(5 * n_regions, 4 * scale),
+                                 sharey=False, squeeze=False)
+        ax_list = [grid[0, i] for i in range(n_regions)]
+    return fig, ax_list, scale
+
+
 # ── Fancy bar helpers ─────────────────────────────────────────────────────
 def draw_fancy_bar(ax, x, height, color, hatch="", width=BAR_WIDTH, scale=1.0):
     """Draw a clean bar with optional hatching."""
@@ -97,15 +133,10 @@ def plot_coarseness_bars(args, dcfg):
     n_regions = len(regions)
     display_name = FOLDER_DISPLAY.get(args.folder, args.folder)
 
-    # Scale visual elements so multi-panel figures match single-panel aesthetics
-    scale = 1 + 0.35 * (n_regions - 1)
-    fig_h = 4 * scale
-    fig, axes = plt.subplots(1, n_regions,
-                             figsize=(5 * n_regions, fig_h), sharey=False,
-                             squeeze=False)
+    fig, ax_list, scale = _make_figure(dcfg)
 
     for idx, region in enumerate(regions):
-        ax = axes[0, idx]
+        ax = ax_list[idx]
 
         # Check for untrained data (epoch=0)
         un = get_condition_summary(nd, region, "imagenet1k", 1000,
@@ -222,7 +253,9 @@ def plot_coarseness_bars(args, dcfg):
         fontsize=16 * scale, fontweight="bold", y=1.02,
     )
     plt.tight_layout(pad=1.0)
-    out = f"plotters/figures/{args.dataset}/coarseness_bars_{display_name.lower()}.png"
+    out_dir = dcfg.get("output_dir", args.dataset)
+    suffix = dcfg.get("output_suffix", "")
+    out = f"plotters/figures/{out_dir}/coarseness_bars_{display_name.lower()}{suffix}.png"
     fig.savefig(out, dpi=600, bbox_inches="tight", facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()
@@ -240,16 +273,12 @@ def plot_per_subject(args, dcfg):
     n_regions = len(regions)
     display_name = FOLDER_DISPLAY.get(args.folder, args.folder)
 
-    scale = 1 + 0.35 * (n_regions - 1)
-    fig_h = 4 * scale
-    fig, axes = plt.subplots(1, n_regions,
-                             figsize=(5 * n_regions, fig_h), sharey=False,
-                             squeeze=False)
+    fig, ax_list, scale = _make_figure(dcfg)
 
     blue_shades = ["#c6dbef", "#9ecae1", "#6baed6", "#4292c6", "#2171b5", "#084594"]
 
     for idx, region in enumerate(regions):
-        ax = axes[0, idx]
+        ax = ax_list[idx]
         data = {}
         x_labels = []
 
@@ -340,7 +369,9 @@ def plot_per_subject(args, dcfg):
         fontsize=16 * scale, fontweight="bold", y=1.02,
     )
     plt.tight_layout(pad=1.0)
-    out = f"plotters/figures/{args.dataset}/per_subject_{display_name.lower()}.png"
+    out_dir = dcfg.get("output_dir", args.dataset)
+    suffix = dcfg.get("output_suffix", "")
+    out = f"plotters/figures/{out_dir}/per_subject_{display_name.lower()}{suffix}.png"
     fig.savefig(out, dpi=600, bbox_inches="tight", facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()
@@ -351,7 +382,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Coarseness progression: bars + per-subject")
     parser.add_argument("--dataset", required=True,
-                        choices=["nsd", "tvsd", "things"])
+                        choices=["nsd", "nsd-finegrained", "tvsd", "things"])
     parser.add_argument("--folder", required=True,
                         choices=["pca_labels_alexnet", "pca_labels_vit",
                                  "pca_labels_clip", "pca_labels_dino"])
