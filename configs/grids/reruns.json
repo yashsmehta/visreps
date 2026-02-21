@@ -1,0 +1,13 @@
+[
+  {
+    "checkpoint_dir": ["/data/ymehta3/default"],
+    "cfg_id": [1000],
+    "seed": [1],
+    "neural_dataset": ["nsd"],
+    "analysis": ["rsa"],
+    "bootstrap": [true],
+    "subject_idx": [[0, 1, 2, 3, 4, 5, 6, 7]],
+    "region": [["hV4", "FFA", "PPA"]],
+    "eval_checkpoint_at_epoch": [0]
+  }
+]
