@@ -29,6 +29,9 @@ slurm_logs/
 
 bonner-libraries/
 
+# Grid configs change per-experiment; keep local only
+configs/grids/
+
 # Ignore all CSV files except those in pca_labels
 *.csv
 !pca_labels/**/*.csv
