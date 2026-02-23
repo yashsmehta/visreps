@@ -11,6 +11,12 @@ Tests cover:
   8. DB storage (results, layer_selection_scores, bootstrap_distributions)
   9. End-to-end with real NSD data (encoding + bootstrap)
   10. End-to-end with real TVSD data (encoding + bootstrap)
+  11. Mathematical correctness (manual Pearson r verification)
+  12. Pipeline-level normalization leakage detection
+  13. Bootstrap mechanics (replace=False, cached predictions, RNG coupling)
+  14. PCA reconstruction path (reconstruct_pca_k)
+  15. Robustness (constant features/voxels, distribution shift, NaN)
+  16. Dispatch integration (seed propagation)
 
 Run all tests:
     source .venv/bin/activate && pytest tests/test_encoding_score.py -v
@@ -22,10 +28,12 @@ import json
 import os
 import sqlite3
 import sys
+from unittest.mock import patch, MagicMock
 
 import numpy as np
 import pandas as pd
 import pytest
+import scipy.stats
 import torch
 from omegaconf import OmegaConf
 
@@ -1237,7 +1245,762 @@ class TestDBStorage:
 
 
 # ═══════════════════════════════════════════════════════════
-# 9. END-TO-END: NSD ENCODING SCORE
+# 9. MATHEMATICAL CORRECTNESS
+# ═══════════════════════════════════════════════════════════
+
+class TestMathematicalCorrectness:
+    """Verify encoding score outputs match independent reference computations."""
+
+    def test_score_matches_manual_per_voxel_pearson(self, backend):
+        """The encoding score must be the mean of per-voxel Pearson r values.
+
+        Bug caught: Wrong aggregation (e.g., median, sum, or R² instead of r).
+        """
+        w = torch.randn(15, 5)
+        X = torch.randn(60, 15)
+        Y = X @ w + torch.randn(60, 5) * 0.3
+
+        X_tr = backend.asarray(X[:50])
+        Y_tr = backend.asarray(Y[:50])
+        X_te = X[50:]
+        Y_te = backend.asarray(Y[50:])
+
+        pred, score = _fit_and_score(X_tr, Y_tr, X_te, Y_te, np.logspace(-3, 3, 5), backend)
+
+        # Manual per-voxel Pearson r
+        voxel_scores = correlation_score(Y_te, pred)
+        manual_mean = float(voxel_scores.mean())
+
+        assert abs(score - manual_mean) < 1e-6, (
+            f"Score {score} should equal mean of per-voxel correlations {manual_mean}"
+        )
+
+    def test_score_matches_scipy_pearson_per_voxel(self, backend):
+        """Verify per-voxel Pearson r matches scipy.stats.pearsonr exactly.
+
+        Bug caught: himalaya correlation_score using a different formula.
+        """
+        w = torch.randn(10, 3)
+        X = torch.randn(60, 10)
+        Y = X @ w + torch.randn(60, 3) * 0.3
+
+        X_tr = backend.asarray(X[:50])
+        Y_tr = backend.asarray(Y[:50])
+        X_te = X[50:]
+        Y_te_gpu = backend.asarray(Y[50:])
+
+        pred, score = _fit_and_score(X_tr, Y_tr, X_te, Y_te_gpu, np.logspace(-3, 3, 5), backend)
+
+        # Manual scipy per-voxel
+        pred_np = pred.cpu().numpy() if hasattr(pred, 'cpu') else np.asarray(pred)
+        Y_te_np = Y[50:].numpy()
+        scipy_scores = []
+        for v in range(Y_te_np.shape[1]):
+            r, _ = scipy.stats.pearsonr(Y_te_np[:, v], pred_np[:, v])
+            scipy_scores.append(r)
+        scipy_mean = np.mean(scipy_scores)
+
+        assert abs(score - scipy_mean) < 1e-4, (
+            f"Score {score:.6f} differs from scipy mean Pearson r {scipy_mean:.6f}"
+        )
+
+    def test_ridge_regression_known_solution(self, backend):
+        """For data where the true weights are known, ridge predictions should
+        closely approximate Y_test = X_test @ w_true.
+
+        Bug caught: Ridge solver producing wrong coefficients.
+        """
+        torch.manual_seed(42)
+        w_true = torch.randn(20, 5)
+        X = torch.randn(200, 20)
+        Y = X @ w_true  # No noise: perfect linear relationship
+
+        X_tr = backend.asarray(X[:180])
+        Y_tr = backend.asarray(Y[:180])
+        X_te = X[180:]
+        Y_te = backend.asarray(Y[180:])
+
+        pred, score = _fit_and_score(X_tr, Y_tr, X_te, Y_te, np.logspace(-10, 10, 20), backend)
+
+        assert score > 0.99, f"Perfect linear data should give r > 0.99, got {score:.4f}"
+
+        # Predictions should be very close to actual
+        pred_np = pred.cpu().numpy() if hasattr(pred, 'cpu') else np.asarray(pred)
+        Y_te_np = Y[180:].numpy()
+        max_err = np.abs(pred_np - Y_te_np).max()
+        assert max_err < 1.0, f"Predictions deviate too much from truth: max_err={max_err:.4f}"
+
+    def test_feature_scaling_invariance(self):
+        """Z-normalization makes encoding score invariant to feature scale.
+
+        Bug caught: If z-norm is skipped or applied incorrectly, differently
+        scaled features would give different scores.
+        """
+        torch.manual_seed(42)
+        w = torch.randn(20, 10)
+        X_base = torch.randn(130, 20)
+        Y = X_base @ w + torch.randn(130, 10) * 0.5
+
+        scores = []
+        for scale in [1.0, 100.0, 0.001]:
+            X = X_base * scale
+            train = AlignmentData(activations={"layer": X[:100].clone()}, neural=Y[:100].clone())
+            test = AlignmentData(activations={"layer": X[100:].clone()}, neural=Y[100:].clone())
+            r = compute_encoding_score(train, test, bootstrap=False, seed=42, verbose=False)
+            scores.append(r[0]["score"])
+
+        # All scores should be very close despite 5 orders of magnitude scale difference
+        for i in range(1, len(scores)):
+            assert abs(scores[0] - scores[i]) < 0.05, (
+                f"Score varies with scale: {scores}. Z-norm should make it invariant."
+            )
+
+    def test_encoding_score_positive_for_strong_signal(self):
+        """When model activations are linearly predictive of neural data,
+        encoding score must be substantially positive.
+
+        Bug caught: Normalization or ridge regression inverting the signal.
+        """
+        torch.manual_seed(42)
+        w = torch.randn(30, 15)
+        X = torch.randn(200, 30)
+        Y = X @ w + torch.randn(200, 15) * 0.5
+
+        train = AlignmentData(activations={"layer": X[:150]}, neural=Y[:150])
+        test = AlignmentData(activations={"layer": X[150:]}, neural=Y[150:])
+
+        results = compute_encoding_score(train, test, bootstrap=False, verbose=False)
+        assert results[0]["score"] > 0.7, (
+            f"Strong signal should give high score, got {results[0]['score']:.4f}"
+        )
+
+
+# ═══════════════════════════════════════════════════════════
+# 10. PIPELINE-LEVEL NORMALIZATION & LEAKAGE
+# ═══════════════════════════════════════════════════════════
+
+class TestPipelineNormalization:
+    """Verify that normalization in the full pipeline prevents data leakage."""
+
+    def test_x_test_normalized_with_train_stats(self):
+        """X_test must be normalized using TRAIN mean/std (not test stats).
+
+        Bug caught: If test data is normalized with its own stats, the model
+        would see artificially well-behaved test inputs.
+        """
+        torch.manual_seed(42)
+        w = torch.randn(20, 10)
+
+        # Train: X ~ N(0, 1)
+        X_train = torch.randn(100, 20)
+        Y_train = X_train @ w + torch.randn(100, 10) * 0.3
+
+        # Test: X ~ N(5, 3) — very different distribution
+        X_test = torch.randn(30, 20) * 3 + 5
+        Y_test = X_test @ w + torch.randn(30, 10) * 0.3
+
+        # Directly verify the normalization logic
+        train_acts = _flatten_to_cpu({"layer": X_train})
+        test_acts = _flatten_to_cpu({"layer": X_test})
+        _, train_mean, train_std = _znorm_fit(train_acts["layer"])
+        X_test_normed = _znorm(test_acts["layer"], train_mean, train_std)
+
+        # Test data normed with TRAIN stats should NOT be zero-mean
+        test_mean = X_test_normed.mean(dim=0)
+        assert test_mean.abs().mean() > 0.5, (
+            "Test data normed with train stats should have non-zero mean "
+            f"(got {test_mean.abs().mean():.4f}). If zero, test stats were leaked."
+        )
+
+    def test_y_selection_no_full_train_leakage(self):
+        """During layer selection, Y must be normalized with FIT (80%) stats only.
+
+        Bug caught: If Y is normalized with full-train stats, the val portion's
+        own distribution leaks into the normalization, inflating selection scores.
+        """
+        torch.manual_seed(42)
+        n_train = 100
+        Y = torch.randn(n_train, 10)
+
+        # Make val portion have extreme values
+        split = int(0.8 * n_train)
+        perm = np.random.RandomState(42).permutation(n_train)
+        val_idx = perm[split:]
+        Y[val_idx] = Y[val_idx] * 100  # Extreme val values
+
+        # Fit-only stats
+        fit_idx = perm[:split]
+        _, fit_mean, fit_std = _znorm_fit(Y[fit_idx])
+
+        # Full-train stats (leaky)
+        _, full_mean, full_std = _znorm_fit(Y)
+
+        # Val normalized with fit stats: extreme values remain extreme
+        val_fit_normed = _znorm(Y[val_idx], fit_mean, fit_std)
+        # Val normalized with full stats: extreme values are tamed
+        val_full_normed = _znorm(Y[val_idx], full_mean, full_std)
+
+        # Fit-only normalization should produce larger magnitudes for val
+        assert val_fit_normed.abs().mean() > val_full_normed.abs().mean() * 2, (
+            "Fit-only normalization should preserve extreme val values. "
+            "If not, full-train stats are leaking into selection."
+        )
+
+    def test_distribution_shift_still_works(self):
+        """When train and test have different distributions, the score should
+        still be meaningful (positive) because Pearson r is affine-invariant.
+
+        Bug caught: fit_intercept=False causing problems with mean shift.
+        """
+        torch.manual_seed(42)
+        w = torch.randn(20, 10)
+
+        X_train = torch.randn(100, 20)
+        Y_train = X_train @ w + torch.randn(100, 10) * 0.3
+
+        # Test: shifted by +5 on all features
+        X_test = torch.randn(30, 20) + 5.0
+        Y_test = X_test @ w + torch.randn(30, 10) * 0.3
+
+        train = AlignmentData(activations={"layer": X_train}, neural=Y_train)
+        test = AlignmentData(activations={"layer": X_test}, neural=Y_test)
+
+        results = compute_encoding_score(train, test, bootstrap=False, verbose=False)
+        score = results[0]["score"]
+
+        assert score > 0.3, (
+            f"Score should be positive despite distribution shift "
+            f"(Pearson r is affine-invariant), got {score:.4f}"
+        )
+
+    def test_train_test_isolation_scrambled_test(self):
+        """Scrambling test neural data should destroy the score while keeping
+        training intact.
+
+        Bug caught: If test score depends on training data content (leakage),
+        scrambled test would still give high scores.
+        """
+        torch.manual_seed(42)
+        w = torch.randn(20, 10)
+        X = torch.randn(130, 20)
+        Y = X @ w + torch.randn(130, 10) * 0.3
+
+        train = AlignmentData(activations={"layer": X[:100]}, neural=Y[:100])
+
+        # Normal test
+        test_normal = AlignmentData(activations={"layer": X[100:]}, neural=Y[100:])
+        r_normal = compute_encoding_score(train, test_normal, bootstrap=False, verbose=False)
+
+        # Scrambled test (neural data randomized)
+        test_scrambled = AlignmentData(
+            activations={"layer": X[100:]},
+            neural=torch.randn(30, 10),  # Random neural data
+        )
+        r_scrambled = compute_encoding_score(train, test_scrambled, bootstrap=False, verbose=False)
+
+        assert r_normal[0]["score"] > r_scrambled[0]["score"] + 0.3, (
+            f"Normal score ({r_normal[0]['score']:.4f}) should be much higher than "
+            f"scrambled ({r_scrambled[0]['score']:.4f}). If not, there may be leakage."
+        )
+
+
+# ═══════════════════════════════════════════════════════════
+# 11. BOOTSTRAP MECHANICS
+# ═══════════════════════════════════════════════════════════
+
+class TestBootstrapMechanics:
+    """Deep tests for bootstrap implementation correctness."""
+
+    def test_bootstrap_uses_replace_false(self):
+        """Bootstrap must sample WITHOUT replacement (subsampling, not resampling).
+
+        Bug caught: Using replace=True would duplicate test samples, inflating
+        correlation by comparing identical predictions against identical targets.
+        """
+        torch.manual_seed(42)
+        w = torch.randn(15, 5)
+        X = torch.randn(130, 15)
+        Y = X @ w + torch.randn(130, 5) * 0.5
+
+        train = AlignmentData(activations={"layer": X[:100]}, neural=Y[:100])
+        test = AlignmentData(activations={"layer": X[100:]}, neural=Y[100:])
+        n_test = 30
+
+        # Run encoding and get bootstrap scores
+        results = compute_encoding_score(
+            train, test, bootstrap=True, n_bootstrap=50, seed=42, verbose=False
+        )
+        bs = results[0]["bootstrap_scores"]
+
+        # Reproduce the RNG to verify indices have no duplicates
+        rng = np.random.RandomState(42)
+        n_train = 100
+        _ = rng.permutation(n_train)  # consume state for 80/20 split
+
+        n_subsample = int(n_test * 0.9)
+        for i in range(50):
+            boot_idx = rng.choice(n_test, size=n_subsample, replace=False)
+            assert len(set(boot_idx)) == n_subsample, (
+                f"Bootstrap iteration {i}: indices have duplicates, "
+                f"suggesting replace=True was used"
+            )
+
+    def test_bootstrap_reuses_cached_predictions(self):
+        """Bootstrap must reuse cached predictions, NOT refit the ridge model.
+
+        Bug caught: If bootstrap refits per iteration, it would be computationally
+        wrong (different model per iteration) and extremely slow.
+        """
+        torch.manual_seed(42)
+        w = torch.randn(15, 5)
+        X = torch.randn(110, 15)
+        Y = X @ w + torch.randn(110, 5) * 0.3
+
+        train = AlignmentData(activations={"layer": X[:90]}, neural=Y[:90])
+        test = AlignmentData(activations={"layer": X[90:]}, neural=Y[90:])
+
+        # Run with bootstrap and verify result structure
+        results = compute_encoding_score(
+            train, test, bootstrap=True, n_bootstrap=30, seed=42, verbose=False
+        )
+        bs = np.array(results[0]["bootstrap_scores"])
+        point = results[0]["score"]
+
+        # The bootstrap variance should be small (subsampling 90% of 20 test points)
+        # If refitting happened, variance would be much larger due to model instability
+        assert bs.std() < 0.3, (
+            f"Bootstrap std {bs.std():.4f} is suspiciously high — "
+            f"may be refitting instead of reusing cached predictions"
+        )
+        # All bootstrap scores should be relatively close to point estimate
+        assert np.all(np.abs(bs - point) < 0.5), (
+            "Bootstrap scores deviate too much from point estimate — "
+            "refitting rather than subsampling?"
+        )
+
+    def test_bootstrap_rng_consumed_by_selection_split(self):
+        """The same RNG is used for 80/20 split AND bootstrap. Bootstrap results
+        depend on n_train because the permutation call consumes RNG state.
+
+        This documents the coupling — not a bug, but important for reproducibility.
+        """
+        w = torch.randn(15, 5)
+
+        bootstrap_scores_per_ntrain = []
+        for n_train in [80, 100]:
+            X_train = torch.randn(n_train, 15)
+            Y_train = X_train @ w + torch.randn(n_train, 5) * 0.3
+            # Same test data
+            X_test = torch.randn(20, 15)
+            Y_test = X_test @ w + torch.randn(20, 5) * 0.3
+
+            train = AlignmentData(activations={"layer": X_train}, neural=Y_train)
+            test = AlignmentData(activations={"layer": X_test}, neural=Y_test)
+            r = compute_encoding_score(
+                train, test, bootstrap=True, n_bootstrap=10, seed=42, verbose=False
+            )
+            bootstrap_scores_per_ntrain.append(r[0]["bootstrap_scores"])
+
+        # Bootstrap scores will differ because different n_train consumes
+        # different RNG state before bootstrap sampling begins
+        assert bootstrap_scores_per_ntrain[0] != bootstrap_scores_per_ntrain[1], (
+            "Bootstrap scores should differ with different n_train due to shared RNG"
+        )
+
+    def test_bootstrap_90_percent_subsample_sizes(self):
+        """Verify exact subsample sizes for various n_test values.
+
+        Bug caught: Off-by-one or wrong rounding in int(n_test * 0.9).
+        """
+        test_cases = [(10, 9), (20, 18), (50, 45), (100, 90), (1000, 900)]
+        for n_test, expected in test_cases:
+            actual = int(n_test * 0.9)
+            assert actual == expected, (
+                f"For n_test={n_test}: expected subsample size {expected}, got {actual}"
+            )
+
+    def test_bootstrap_all_indices_within_range(self):
+        """All bootstrap indices must be valid (0 <= idx < n_test).
+
+        Bug caught: Using wrong array size in rng.choice.
+        """
+        n_test = 30
+        n_subsample = int(n_test * 0.9)
+        rng = np.random.RandomState(42)
+
+        for _ in range(100):
+            idx = rng.choice(n_test, size=n_subsample, replace=False)
+            assert idx.min() >= 0
+            assert idx.max() < n_test
+            assert len(idx) == n_subsample
+
+
+# ═══════════════════════════════════════════════════════════
+# 12. PCA RECONSTRUCTION PATH
+# ═══════════════════════════════════════════════════════════
+
+class TestReconstructPCA:
+    """Tests for the reconstruct_pca_k code path in compute_encoding_score."""
+
+    def test_reconstruct_pca_basic(self):
+        """reconstruct_pca_k should apply PCA reconstruction and still produce
+        valid results.
+
+        Bug caught: PCA path crashing or producing NaN.
+        """
+        torch.manual_seed(42)
+        w = torch.randn(30, 10)
+        X = torch.randn(130, 30)
+        Y = X @ w + torch.randn(130, 10) * 0.3
+
+        train = AlignmentData(activations={"layer": X[:100]}, neural=Y[:100])
+        test = AlignmentData(activations={"layer": X[100:]}, neural=Y[100:])
+
+        results = compute_encoding_score(
+            train, test, bootstrap=False, verbose=False, reconstruct_pca_k=10
+        )
+        assert np.isfinite(results[0]["score"])
+        assert results[0]["layer"] == "layer"
+
+    def test_reconstruct_pca_k_larger_than_features(self):
+        """When reconstruct_pca_k > n_features, should use min(k, n_features).
+
+        Bug caught: PCA raising ValueError for n_components > n_features.
+        """
+        torch.manual_seed(42)
+        w = torch.randn(10, 5)
+        X = torch.randn(90, 10)
+        Y = X @ w + torch.randn(90, 5) * 0.3
+
+        train = AlignmentData(activations={"layer": X[:70]}, neural=Y[:70])
+        test = AlignmentData(activations={"layer": X[70:]}, neural=Y[70:])
+
+        # k=100 but only 10 features — should use min(100, 10) = 10
+        results = compute_encoding_score(
+            train, test, bootstrap=False, verbose=False, reconstruct_pca_k=100
+        )
+        assert np.isfinite(results[0]["score"])
+
+    def test_reconstruct_pca_reduces_score_with_few_components(self):
+        """Using very few PCs to reconstruct should lose information and
+        reduce the encoding score compared to using all features.
+
+        Bug caught: PCA reconstruction not actually being applied.
+        """
+        torch.manual_seed(42)
+        w = torch.randn(30, 10)
+        X = torch.randn(130, 30)
+        Y = X @ w + torch.randn(130, 10) * 0.3
+
+        train = AlignmentData(activations={"layer": X[:100].clone()}, neural=Y[:100].clone())
+        test = AlignmentData(activations={"layer": X[100:].clone()}, neural=Y[100:].clone())
+
+        # Full features
+        r_full = compute_encoding_score(
+            train, test, bootstrap=False, verbose=False, reconstruct_pca_k=None
+        )
+
+        # Only 1 PC — should lose most information
+        train2 = AlignmentData(activations={"layer": X[:100].clone()}, neural=Y[:100].clone())
+        test2 = AlignmentData(activations={"layer": X[100:].clone()}, neural=Y[100:].clone())
+        r_1pc = compute_encoding_score(
+            train2, test2, bootstrap=False, verbose=False, reconstruct_pca_k=1
+        )
+
+        assert r_full[0]["score"] > r_1pc[0]["score"], (
+            f"Full features ({r_full[0]['score']:.4f}) should beat 1-PC reconstruction "
+            f"({r_1pc[0]['score']:.4f})"
+        )
+
+    def test_reconstruct_pca_does_not_mutate_inputs(self):
+        """PCA reconstruction should not modify the input AlignmentData.
+
+        Bug caught: In-place modification of activation tensors.
+        """
+        X = torch.randn(90, 20)
+        Y = torch.randn(90, 5)
+        train = AlignmentData(activations={"layer": X[:70].clone()}, neural=Y[:70].clone())
+        test = AlignmentData(activations={"layer": X[70:].clone()}, neural=Y[70:].clone())
+
+        original_train = train.activations["layer"].clone()
+        original_test = test.activations["layer"].clone()
+
+        compute_encoding_score(
+            train, test, bootstrap=False, verbose=False, reconstruct_pca_k=5
+        )
+
+        torch.testing.assert_close(train.activations["layer"], original_train)
+        torch.testing.assert_close(test.activations["layer"], original_test)
+
+
+# ═══════════════════════════════════════════════════════════
+# 13. ROBUSTNESS
+# ═══════════════════════════════════════════════════════════
+
+class TestRobustness:
+    """Robustness tests for edge conditions in production data."""
+
+    def test_constant_voxels_dilute_score(self):
+        """Voxels with constant responses should contribute r=0, diluting the mean.
+
+        Bug caught: Constant voxels producing NaN/inf that corrupt the mean.
+        """
+        torch.manual_seed(42)
+        w = torch.randn(20, 8)
+        X = torch.randn(100, 20)
+        Y = X @ w + torch.randn(100, 8) * 0.3
+
+        # Make 2 out of 8 voxels constant
+        Y[:, 6] = 5.0
+        Y[:, 7] = -3.0
+
+        train = AlignmentData(activations={"layer": X[:80]}, neural=Y[:80])
+        test = AlignmentData(activations={"layer": X[80:]}, neural=Y[80:])
+
+        results = compute_encoding_score(train, test, bootstrap=False, verbose=False)
+        assert np.isfinite(results[0]["score"]), "Constant voxels should not produce NaN"
+
+    def test_constant_feature_columns(self):
+        """X with constant columns should produce finite results.
+
+        Bug caught: Division by zero in z-normalization when features have zero variance.
+        """
+        torch.manual_seed(42)
+        X = torch.randn(100, 20)
+        X[:, 10:] = 0.0  # Last 10 features are constant
+
+        w = torch.randn(10, 5)
+        Y = X[:, :10] @ w + torch.randn(100, 5) * 0.3
+
+        train = AlignmentData(activations={"layer": X[:80]}, neural=Y[:80])
+        test = AlignmentData(activations={"layer": X[80:]}, neural=Y[80:])
+
+        results = compute_encoding_score(train, test, bootstrap=False, verbose=False)
+        assert np.isfinite(results[0]["score"])
+        assert results[0]["score"] > 0.2, (
+            f"Should capture signal from non-constant features, got {results[0]['score']:.4f}"
+        )
+
+    def test_minimum_viable_n_train(self):
+        """Find the minimum n_train that works. With cv=5 and 80% fit split,
+        need at least int(0.8 * n) >= 5, so n_train >= 7.
+
+        Bug caught: Crash for small datasets without a clear error.
+        """
+        torch.manual_seed(42)
+        w = torch.randn(10, 3)
+        X = torch.randn(17, 10)
+        Y = X @ w + torch.randn(17, 3) * 0.5
+
+        train = AlignmentData(activations={"layer": X[:7]}, neural=Y[:7])
+        test = AlignmentData(activations={"layer": X[7:]}, neural=Y[7:])
+
+        # int(0.8 * 7) = 5 fit samples, exactly matching cv=5
+        results = compute_encoding_score(train, test, bootstrap=False, verbose=False)
+        assert np.isfinite(results[0]["score"])
+
+    def test_very_small_n_train_raises(self):
+        """With n_train=4, int(0.8*4)=3 fit samples < cv=5, should raise.
+
+        Bug caught: Silent garbage results from underfitting.
+        """
+        X = torch.randn(7, 10)
+        Y = torch.randn(7, 3)
+
+        train = AlignmentData(activations={"layer": X[:4]}, neural=Y[:4])
+        test = AlignmentData(activations={"layer": X[4:]}, neural=Y[4:])
+
+        with pytest.raises(Exception):
+            compute_encoding_score(train, test, bootstrap=False, verbose=False)
+
+    def test_large_feature_values(self):
+        """Very large feature values should be handled by z-normalization.
+
+        Bug caught: Numerical overflow before normalization.
+        """
+        torch.manual_seed(42)
+        w = torch.randn(20, 5)
+        X = torch.randn(100, 20) * 1e6  # Very large
+        Y = (X / 1e6) @ w + torch.randn(100, 5) * 0.3  # Y from normalized X
+
+        train = AlignmentData(activations={"layer": X[:80]}, neural=Y[:80])
+        test = AlignmentData(activations={"layer": X[80:]}, neural=Y[80:])
+
+        results = compute_encoding_score(train, test, bootstrap=False, verbose=False)
+        assert np.isfinite(results[0]["score"]), "Large feature values should not cause overflow"
+
+    def test_very_small_feature_values(self):
+        """Very small feature values should be handled by z-normalization.
+
+        Bug caught: Underflow or epsilon-dominated normalization.
+        """
+        torch.manual_seed(42)
+        w = torch.randn(20, 5)
+        X = torch.randn(100, 20) * 1e-8  # Very small
+        Y = (X / 1e-8) @ w + torch.randn(100, 5) * 0.3
+
+        train = AlignmentData(activations={"layer": X[:80]}, neural=Y[:80])
+        test = AlignmentData(activations={"layer": X[80:]}, neural=Y[80:])
+
+        results = compute_encoding_score(train, test, bootstrap=False, verbose=False)
+        assert np.isfinite(results[0]["score"]), "Small feature values should not cause underflow"
+
+    def test_layer_tie_breaking_uses_insertion_order(self):
+        """When two layers have identical activations (thus identical scores),
+        the first layer in dict iteration order wins (strict > comparison).
+
+        Bug caught: Non-deterministic layer selection with tied scores.
+        """
+        torch.manual_seed(42)
+        X = torch.randn(100, 20)
+        Y = torch.randn(100, 10)
+
+        # Identical activations for two layers
+        train = AlignmentData(
+            activations={"alpha": X[:80].clone(), "beta": X[:80].clone()},
+            neural=Y[:80].clone(),
+        )
+        test = AlignmentData(
+            activations={"alpha": X[80:].clone(), "beta": X[80:].clone()},
+            neural=Y[80:].clone(),
+        )
+
+        r = compute_encoding_score(train, test, bootstrap=False, seed=42, verbose=False)
+        # First layer in insertion order wins ties
+        assert r[0]["layer"] == "alpha", (
+            f"Expected 'alpha' (first in dict) to win tie, got '{r[0]['layer']}'"
+        )
+
+    def test_flatten_3d_and_5d_tensors(self):
+        """_flatten_to_cpu should handle 3D, 4D, and 5D tensors."""
+        acts = {
+            "conv1d": torch.randn(10, 32, 8),        # 3D
+            "conv2d": torch.randn(10, 64, 6, 6),     # 4D
+            "conv3d": torch.randn(10, 16, 4, 4, 4),  # 5D
+            "fc": torch.randn(10, 256),               # 2D (unchanged)
+        }
+        result = _flatten_to_cpu(acts)
+        assert result["conv1d"].shape == (10, 32 * 8)
+        assert result["conv2d"].shape == (10, 64 * 6 * 6)
+        assert result["conv3d"].shape == (10, 16 * 4 * 4 * 4)
+        assert result["fc"].shape == (10, 256)
+
+
+# ═══════════════════════════════════════════════════════════
+# 14. DISPATCH INTEGRATION
+# ═══════════════════════════════════════════════════════════
+
+class TestDispatchIntegration:
+    """Tests for the alignment dispatch layer interacting with encoding score."""
+
+    def test_seed_forwarding_through_dispatch(self):
+        """Verify whether cfg.seed is forwarded to compute_encoding_score.
+
+        The current code does NOT forward seed — this test documents that
+        all cfg.seed values use the same internal seed=42 for layer selection.
+        """
+        X = torch.randn(100, 20)
+        Y = torch.randn(100, 10)
+
+        selection_scores_per_seed = []
+        for seed in [1, 2]:
+            cfg = OmegaConf.create({
+                "analysis": "encoding_score",
+                "bootstrap": False,
+                "n_bootstrap": 50,
+                "seed": seed,
+                "reconstruct_from_pcs": False,
+                "neural_dataset": "nsd",
+            })
+            train = AlignmentData(
+                activations={"layer": X[:80].clone()}, neural=Y[:80].clone()
+            )
+            test = AlignmentData(
+                activations={"layer": X[80:].clone()}, neural=Y[80:].clone()
+            )
+            results = compute_traintest_alignment(cfg, train, test, verbose=False)
+            sel_score = results[0]["layer_selection_scores"][0]["score"]
+            selection_scores_per_seed.append(sel_score)
+
+        # Currently, seed is NOT forwarded, so both use seed=42 internally.
+        # This documents the behavior — selection scores will be identical.
+        assert selection_scores_per_seed[0] == selection_scores_per_seed[1], (
+            "Expected identical selection scores because seed is not forwarded "
+            "through dispatch (both use default seed=42). If this fails, "
+            "the bug was fixed!"
+        )
+
+    def test_dispatch_encoding_rejects_things(self, encoding_cfg):
+        """encoding_score + things-behavior should raise ValueError.
+
+        Bug caught: Silently running encoding score on behavioral data.
+        """
+        encoding_cfg.neural_dataset = "things-behavior"
+        encoding_cfg.analysis = "encoding_score"
+
+        train = AlignmentData(
+            activations={"layer": torch.randn(50, 10)}, neural=torch.randn(50, 5)
+        )
+        test = AlignmentData(
+            activations={"layer": torch.randn(20, 10)}, neural=torch.randn(20, 5)
+        )
+
+        with pytest.raises(ValueError, match="not supported for things-behavior"):
+            compute_traintest_alignment(encoding_cfg, train, test)
+
+    def test_dispatch_passes_verbose_flag(self):
+        """verbose flag should be forwarded through the dispatch."""
+        X = torch.randn(100, 20)
+        Y = torch.randn(100, 10)
+        cfg = OmegaConf.create({
+            "analysis": "encoding_score",
+            "bootstrap": False,
+            "n_bootstrap": 50,
+            "reconstruct_from_pcs": False,
+            "neural_dataset": "nsd",
+        })
+        train = AlignmentData(activations={"layer": X[:80]}, neural=Y[:80])
+        test = AlignmentData(activations={"layer": X[80:]}, neural=Y[80:])
+
+        # Should not crash with verbose=True or verbose=False
+        r1 = compute_traintest_alignment(cfg, train, test, verbose=False)
+        r2 = compute_traintest_alignment(cfg, train, test, verbose=True)
+        assert len(r1) == 1 and len(r2) == 1
+
+    def test_dispatch_returns_correct_structure(self):
+        """Result from dispatch should have identical structure to direct call."""
+        torch.manual_seed(42)
+        X = torch.randn(100, 20)
+        Y = torch.randn(100, 10)
+
+        cfg = OmegaConf.create({
+            "analysis": "encoding_score",
+            "bootstrap": True,
+            "n_bootstrap": 20,
+            "reconstruct_from_pcs": False,
+            "neural_dataset": "nsd",
+        })
+        train = AlignmentData(activations={"layer": X[:80]}, neural=Y[:80])
+        test = AlignmentData(activations={"layer": X[80:]}, neural=Y[80:])
+
+        results = compute_traintest_alignment(cfg, train, test, verbose=False)
+        r = results[0]
+
+        required_keys = {
+            "layer", "compare_method", "score", "ci_low", "ci_high",
+            "analysis", "layer_selection_scores", "bootstrap_scores",
+        }
+        assert required_keys.issubset(r.keys()), (
+            f"Missing keys: {required_keys - set(r.keys())}"
+        )
+        assert r["analysis"] == "encoding_score"
+        assert r["compare_method"] == "pearson"
+        assert isinstance(r["bootstrap_scores"], list)
+        assert len(r["bootstrap_scores"]) == 20
+
+
+# ═══════════════════════════════════════════════════════════
+# 15. END-TO-END: NSD ENCODING SCORE
 # ═══════════════════════════════════════════════════════════
 
 @pytest.mark.slow

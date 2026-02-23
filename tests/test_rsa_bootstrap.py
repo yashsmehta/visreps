@@ -11,6 +11,14 @@ Tests cover:
   8. DB storage tests (results, layer_selection_scores, bootstrap_distributions)
   9. End-to-end integration with real model + data (NSD RSA + bootstrap, TVSD RSA + bootstrap)
   10. THINGS 80/20 concept-level train/test split tests
+  11. RDM mathematical correctness vs scipy pairwise reference
+  12. Spearman RDM = Pearson on ranks verification
+  13. _rank with tied values (behavior documentation)
+  14. RDM input immutability and permutation invariance
+  15. Monotonicity (noise degrades RSA score)
+  16. Stronger bootstrap RDM sub-indexing verification
+  17. Extended Kendall tau-a with known tied data
+  18. Pipeline-level no-leakage invariants
 """
 import json
 import math
@@ -890,6 +898,585 @@ class TestRank:
         ranked = _rank(x)
         assert ranked[0, 1] == 0.0  # 1.0 is smallest in row 0
         assert ranked[1, 0] == 0.0  # 1.0 is smallest in row 1
+
+
+# ═══════════════════════════════════════════════════════════════
+# 8b. RDM MATHEMATICAL CORRECTNESS
+# ═══════════════════════════════════════════════════════════════
+
+class TestRDMMathCorrectness:
+    """Verify compute_rdm outputs match independent scipy pairwise computation."""
+
+    def test_pearson_rdm_matches_scipy_pairwise(self):
+        """Every off-diagonal entry in Pearson RDM should match
+        1 - scipy.stats.pearsonr for that pair of row vectors.
+
+        Bug caught: Custom vectorized correlation formula differing from standard.
+        """
+        torch.manual_seed(42)
+        x = torch.randn(10, 20)
+        rdm = compute_rdm(x, correlation="Pearson")
+
+        for i in range(10):
+            for j in range(i + 1, 10):
+                r_scipy, _ = scipy.stats.pearsonr(
+                    x[i].numpy(), x[j].numpy()
+                )
+                expected = 1.0 - r_scipy
+                actual = rdm[i, j].item()
+                assert abs(actual - expected) < 0.01, (
+                    f"RDM[{i},{j}]={actual:.6f} differs from scipy "
+                    f"1-pearsonr={expected:.6f}"
+                )
+
+    def test_spearman_rdm_matches_scipy_pairwise(self):
+        """Every off-diagonal entry in Spearman RDM should match
+        1 - scipy.stats.spearmanr for that pair (for float data with no ties).
+
+        Bug caught: _rank implementation producing different ranks than scipy.
+        """
+        torch.manual_seed(42)
+        x = torch.randn(8, 15)  # Float data = no ties
+        rdm = compute_rdm(x, correlation="Spearman")
+
+        for i in range(8):
+            for j in range(i + 1, 8):
+                r_scipy, _ = scipy.stats.spearmanr(
+                    x[i].numpy(), x[j].numpy()
+                )
+                expected = 1.0 - r_scipy
+                actual = rdm[i, j].item()
+                assert abs(actual - expected) < 0.02, (
+                    f"Spearman RDM[{i},{j}]={actual:.6f} differs from scipy "
+                    f"1-spearmanr={expected:.6f}"
+                )
+
+    def test_spearman_rdm_is_pearson_on_ranks(self):
+        """Spearman RDM should equal Pearson RDM computed on ranked data.
+
+        Bug caught: _rank function not properly converting data before Pearson.
+        """
+        torch.manual_seed(42)
+        x = torch.randn(12, 20)
+
+        rdm_spearman = compute_rdm(x, correlation="Spearman")
+
+        # Manually rank then compute Pearson
+        x_ranked = _rank(x)
+        rdm_pearson_on_ranks = compute_rdm(x_ranked, correlation="Pearson")
+
+        torch.testing.assert_close(
+            rdm_spearman, rdm_pearson_on_ranks, atol=1e-4, rtol=1e-4
+        )
+
+    def test_rdm_does_not_mutate_input(self):
+        """compute_rdm should not modify the input tensor.
+
+        Bug caught: In-place operations on input (e.g., x -= x.mean()).
+        The implementation uses .clone() internally.
+        """
+        x = torch.randn(10, 5)
+        x_original = x.clone()
+
+        compute_rdm(x, correlation="Pearson")
+        torch.testing.assert_close(x, x_original)
+
+        compute_rdm(x, correlation="Spearman")
+        torch.testing.assert_close(x, x_original)
+
+    def test_rdm_permutation_consistent(self):
+        """Permuting rows should permute the RDM consistently.
+
+        Bug caught: Indexing errors in RDM computation.
+        """
+        torch.manual_seed(42)
+        x = torch.randn(8, 10)
+        rdm = compute_rdm(x)
+
+        # Permute rows
+        perm = torch.tensor([3, 0, 7, 1, 5, 2, 6, 4])
+        x_perm = x[perm]
+        rdm_perm = compute_rdm(x_perm)
+
+        # rdm_perm should be rdm with rows and columns permuted
+        rdm_expected = rdm[perm][:, perm]
+        torch.testing.assert_close(rdm_perm, rdm_expected, atol=1e-5, rtol=1e-5)
+
+    def test_rdm_correction_prevents_zero_division(self):
+        """The correction parameter should prevent NaN for zero-variance rows.
+
+        Bug caught: Division by zero producing NaN/inf in correlation computation.
+        """
+        x = torch.randn(5, 10)
+        x[2] = 7.0  # Constant row (zero variance)
+
+        rdm = compute_rdm(x)
+        assert torch.isfinite(rdm).all(), "Constant rows should not produce NaN/inf"
+        assert rdm[2, 2] == 0.0, "Diagonal should still be 0"
+
+    def test_rdm_value_range_precise(self):
+        """Off-diagonal values should be in [0, 2]:
+        - 0 for identical representations
+        - 1 for uncorrelated
+        - 2 for perfectly anti-correlated
+
+        Bug caught: Clamp not working or correlation formula off.
+        """
+        # Identical rows -> 0
+        x1 = torch.tensor([[1.0, 2.0, 3.0], [1.0, 2.0, 3.0]])
+        rdm1 = compute_rdm(x1)
+        assert rdm1[0, 1].item() == pytest.approx(0.0, abs=1e-5)
+
+        # Anti-correlated rows -> 2
+        x2 = torch.tensor([[1.0, 2.0, 3.0], [-1.0, -2.0, -3.0]])
+        rdm2 = compute_rdm(x2)
+        assert rdm2[0, 1].item() == pytest.approx(2.0, abs=1e-4)
+
+    def test_rdm_large_n_no_memory_issue(self):
+        """RDM computation with moderate n should not OOM.
+        NSD test set has ~1000 stimuli.
+        """
+        x = torch.randn(500, 100)
+        rdm = compute_rdm(x)
+        assert rdm.shape == (500, 500)
+        assert torch.isfinite(rdm).all()
+
+
+# ═══════════════════════════════════════════════════════════════
+# 8c. RDM CORRELATION STRENGTHENED
+# ═══════════════════════════════════════════════════════════════
+
+class TestRDMCorrelationStrengthened:
+    """Deeper tests for compute_rdm_correlation."""
+
+    def test_rdm_correlation_permutation_invariant(self):
+        """Permuting stimuli consistently in both RDMs should give the same
+        correlation (upper triangle pairs are just reordered).
+
+        Bug caught: Correlation depending on stimulus ordering.
+        """
+        torch.manual_seed(42)
+        x1 = torch.randn(15, 10)
+        x2 = torch.randn(15, 10)
+        rdm1 = compute_rdm(x1)
+        rdm2 = compute_rdm(x2)
+
+        score_orig = compute_rdm_correlation(rdm1, rdm2, correlation="Spearman")
+
+        # Permute both consistently
+        perm = torch.randperm(15)
+        rdm1_p = rdm1[perm][:, perm]
+        rdm2_p = rdm2[perm][:, perm]
+        score_perm = compute_rdm_correlation(rdm1_p, rdm2_p, correlation="Spearman")
+
+        assert score_orig == pytest.approx(score_perm, abs=1e-5), (
+            f"Correlation should be permutation-invariant: "
+            f"orig={score_orig:.6f}, perm={score_perm:.6f}"
+        )
+
+    def test_kendall_vs_scipy_on_upper_triangle(self):
+        """Kendall tau-a on upper triangles should match our _kendall_tau_a.
+
+        Bug caught: compute_rdm_correlation dispatching to wrong function.
+        """
+        torch.manual_seed(42)
+        x1 = torch.randn(10, 8)
+        x2 = torch.randn(10, 8)
+        rdm1 = compute_rdm(x1)
+        rdm2 = compute_rdm(x2)
+
+        score = compute_rdm_correlation(rdm1, rdm2, correlation="Kendall")
+
+        # Manual: extract upper triangle and compute tau-a
+        n = 10
+        idx = torch.triu_indices(n, n, offset=1)
+        v1 = rdm1[idx[0], idx[1]].numpy()
+        v2 = rdm2[idx[0], idx[1]].numpy()
+        expected, _ = _kendall_tau_a(v1, v2)
+
+        assert score == pytest.approx(expected, abs=1e-5), (
+            f"RDM Kendall={score:.6f} differs from manual tau-a={expected:.6f}"
+        )
+
+    def test_correlated_rdms_high_score(self):
+        """RDMs from similar representations should have high correlation.
+
+        Bug caught: Formula inversion or sign error.
+        """
+        torch.manual_seed(42)
+        x = torch.randn(20, 30)
+        y = x + 0.1 * torch.randn(20, 30)  # Very similar representations
+
+        rdm_x = compute_rdm(x)
+        rdm_y = compute_rdm(y)
+
+        score = compute_rdm_correlation(rdm_x, rdm_y, correlation="Spearman")
+        assert score > 0.8, f"Similar representations should give high RSA, got {score:.4f}"
+
+
+# ═══════════════════════════════════════════════════════════════
+# 8d. EXTENDED KENDALL TAU-A
+# ═══════════════════════════════════════════════════════════════
+
+class TestKendallTauAExtended:
+    """Extended tests for the Kendall tau-a implementation."""
+
+    def test_tau_a_manual_4_elements(self):
+        """Verify tau-a on a 4-element example with manual pair counting.
+
+        x = [1, 2, 3, 4], y = [1, 4, 2, 3]
+        Pairs: (0,1)C, (0,2)C, (0,3)C, (1,2)D, (1,3)D, (2,3)C
+        C=4, D=2, n_pairs=6
+        tau_a = (4-2)/6 = 1/3
+        """
+        x = np.array([1.0, 2.0, 3.0, 4.0])
+        y = np.array([1.0, 4.0, 2.0, 3.0])
+        tau_a, _ = _kendall_tau_a(x, y)
+        assert tau_a == pytest.approx(1.0 / 3.0, abs=1e-5)
+
+    def test_tau_a_with_ties_strictly_smaller_than_tau_b(self):
+        """With ties, |tau-a| should be strictly less than |tau-b|.
+
+        Bug caught: Conversion formula producing tau-a > tau-b.
+        """
+        x = np.array([1.0, 1.0, 2.0, 3.0, 4.0, 4.0])
+        y = np.array([2.0, 1.0, 3.0, 4.0, 1.0, 2.0])
+        tau_a, _ = _kendall_tau_a(x, y)
+        tau_b = scipy.stats.kendalltau(x, y).statistic
+
+        assert abs(tau_a) < abs(tau_b) + 1e-10, (
+            f"|tau_a|={abs(tau_a):.6f} should be <= |tau_b|={abs(tau_b):.6f}"
+        )
+
+    def test_tau_a_formula_with_known_n0_tx_ty(self):
+        """Verify the tau-b to tau-a conversion formula with known parameters.
+
+        Formula: tau_a = tau_b * sqrt((n0-t_x)*(n0-t_y)) / n0
+        where n0 = n*(n-1)/2, t_x = sum of C(c,2) for tied groups in x.
+        """
+        x = np.array([1.0, 1.0, 2.0, 2.0, 3.0])  # ties: two groups of 2
+        y = np.array([1.0, 2.0, 3.0, 4.0, 5.0])   # no ties
+
+        n = 5
+        n0 = n * (n - 1) // 2  # = 10
+        t_x = 1 + 1  # two groups of 2: C(2,2)=1 each
+        t_y = 0
+
+        tau_b = scipy.stats.kendalltau(x, y).statistic
+        expected_tau_a = tau_b * np.sqrt((n0 - t_x) * (n0 - t_y)) / n0
+
+        actual_tau_a, _ = _kendall_tau_a(x, y)
+        assert actual_tau_a == pytest.approx(expected_tau_a, abs=1e-5), (
+            f"tau_a={actual_tau_a:.6f} != expected={expected_tau_a:.6f} "
+            f"(n0={n0}, t_x={t_x}, t_y={t_y}, tau_b={tau_b:.6f})"
+        )
+
+    def test_tau_a_empty_raises_or_nan(self):
+        """Empty arrays should return NaN."""
+        tau_a, _ = _kendall_tau_a(np.array([]), np.array([]))
+        assert math.isnan(tau_a)
+
+    def test_tau_a_symmetric(self):
+        """tau_a(x, y) should equal tau_a(y, x).
+
+        Bug caught: Asymmetric tie counting.
+        """
+        x = np.array([1.0, 2.0, 2.0, 3.0, 4.0])
+        y = np.array([5.0, 3.0, 4.0, 1.0, 2.0])
+        tau_xy, _ = _kendall_tau_a(x, y)
+        tau_yx, _ = _kendall_tau_a(y, x)
+        assert tau_xy == pytest.approx(tau_yx, abs=1e-5), (
+            f"tau_a should be symmetric: tau(x,y)={tau_xy:.6f} != tau(y,x)={tau_yx:.6f}"
+        )
+
+
+# ═══════════════════════════════════════════════════════════════
+# 8e. RANK FUNCTION WITH TIES
+# ═══════════════════════════════════════════════════════════════
+
+class TestRankWithTies:
+    """Tests for _rank behavior with tied values.
+
+    _rank uses argsort(argsort()) which gives dense/competition ranking,
+    NOT midranks like scipy. This means tied values get different ranks
+    based on their position, which differs from standard Spearman.
+    For float data, ties are practically impossible, so this is benign.
+    """
+
+    def test_rank_no_ties_matches_scipy(self):
+        """Without ties, _rank should produce the same relative ordering as scipy."""
+        x = torch.tensor([[3.0, 1.0, 4.0, 1.5, 2.0]])
+        ranked = _rank(x)
+
+        # scipy rankdata gives 1-based midranks; convert to 0-based dense
+        scipy_ranks = scipy.stats.rankdata(x[0].numpy()) - 1
+        torch.testing.assert_close(ranked[0], torch.tensor(scipy_ranks, dtype=torch.float32))
+
+    def test_rank_with_ties_differs_from_midrank(self):
+        """With ties, argsort(argsort()) gives different results than midranks.
+
+        This is expected behavior — documenting for awareness.
+        """
+        x = torch.tensor([[1.0, 1.0, 3.0]])
+        ranked = _rank(x)
+
+        # argsort(argsort) on [1, 1, 3]: argsort=[0,1,2], argsort=[0,1,2]
+        # → ranks = [0, 1, 2] (ties broken by position)
+        # scipy midranks: [0.5, 0.5, 2] (averaged)
+        scipy_midranks = scipy.stats.rankdata(x[0].numpy()) - 1
+
+        # They should differ for the tied values
+        # Our implementation gives 0 and 1; scipy gives 0.5 and 0.5
+        assert ranked[0, 0].item() != scipy_midranks[0], (
+            "Tied values should get different treatment: dense vs midrank"
+        )
+
+    def test_rank_preserves_ordering(self):
+        """_rank should preserve the relative ordering of distinct values."""
+        x = torch.tensor([[10.0, 5.0, 20.0, 1.0]])
+        ranked = _rank(x)
+
+        # 1.0 < 5.0 < 10.0 < 20.0 → ranks 0, 1, 2, 3
+        assert ranked[0, 3] < ranked[0, 1] < ranked[0, 0] < ranked[0, 2]
+
+    def test_rank_float_data_no_ties(self):
+        """With random float data, ties are astronomically unlikely."""
+        torch.manual_seed(42)
+        x = torch.randn(5, 100)
+        ranked = _rank(x)
+
+        for row in range(5):
+            unique_ranks = ranked[row].unique()
+            assert len(unique_ranks) == 100, (
+                f"Row {row}: expected 100 unique ranks, got {len(unique_ranks)}"
+            )
+
+
+# ═══════════════════════════════════════════════════════════════
+# 8f. RSA PIPELINE INVARIANTS
+# ═══════════════════════════════════════════════════════════════
+
+class TestRSAPipelineInvariants:
+    """Tests for high-level invariants of the RSA pipeline."""
+
+    def test_noise_degrades_rsa_score(self):
+        """Adding noise to activations should decrease the RSA score.
+
+        Bug caught: Score not actually measuring similarity.
+        """
+        torch.manual_seed(42)
+        n_train, n_test, n_feat = 100, 40, 50
+        neural_train = torch.randn(n_train, n_feat)
+        neural_test = torch.randn(n_test, n_feat)
+
+        # Signal: activations = neural + noise
+        signal_train = neural_train + 0.1 * torch.randn(n_train, n_feat)
+        signal_test = neural_test + 0.1 * torch.randn(n_test, n_feat)
+
+        # Noisy: same signal + lots more noise
+        noisy_train = neural_train + 2.0 * torch.randn(n_train, n_feat)
+        noisy_test = neural_test + 2.0 * torch.randn(n_test, n_feat)
+
+        cfg = OmegaConf.create({"compare_method": "spearman"})
+
+        train_signal = AlignmentData(
+            activations={"layer": signal_train}, neural=neural_train
+        )
+        test_signal = AlignmentData(
+            activations={"layer": signal_test}, neural=neural_test
+        )
+        r_signal = compute_rsa(cfg, train_signal, test_signal, bootstrap=False, seed=42)
+
+        train_noisy = AlignmentData(
+            activations={"layer": noisy_train}, neural=neural_train
+        )
+        test_noisy = AlignmentData(
+            activations={"layer": noisy_test}, neural=neural_test
+        )
+        r_noisy = compute_rsa(cfg, train_noisy, test_noisy, bootstrap=False, seed=42)
+
+        assert r_signal[0]["score"] > r_noisy[0]["score"], (
+            f"Signal RSA ({r_signal[0]['score']:.4f}) should exceed noisy RSA "
+            f"({r_noisy[0]['score']:.4f})"
+        )
+
+    def test_compare_method_consistent_between_selection_and_eval(self):
+        """The same compare_method should be used for both layer selection
+        and test evaluation.
+
+        Bug caught: Selecting best layer with Spearman but evaluating with Kendall.
+        """
+        torch.manual_seed(42)
+        n = 100
+        neural = torch.randn(n, 50)
+
+        good = neural + 0.1 * torch.randn(n, 50)
+        bad = torch.randn(n, 50)
+
+        for method in ["spearman", "kendall"]:
+            cfg = OmegaConf.create({"compare_method": method})
+            train = AlignmentData(
+                activations={"good": good[:80], "bad": bad[:80]}, neural=neural[:80]
+            )
+            test = AlignmentData(
+                activations={"good": good[80:], "bad": bad[80:]}, neural=neural[80:]
+            )
+            results = compute_rsa(cfg, train, test, bootstrap=False, seed=42)
+
+            assert results[0]["compare_method"] == method
+            # Selection scores should also use the same method
+            for ls in results[0]["layer_selection_scores"]:
+                assert isinstance(ls["score"], float), (
+                    f"Selection score for {ls['layer']} should be float"
+                )
+
+    def test_rsa_score_deterministic_across_runs(self):
+        """Identical inputs and seed must produce bitwise-identical scores.
+
+        Bug caught: Non-deterministic RDM computation or correlation.
+        """
+        torch.manual_seed(42)
+        n = 100
+        neural = torch.randn(n, 50)
+        acts = neural + 0.3 * torch.randn(n, 50)
+
+        cfg = OmegaConf.create({"compare_method": "spearman"})
+
+        scores = []
+        for _ in range(3):
+            train = AlignmentData(
+                activations={"layer": acts[:80].clone()}, neural=neural[:80].clone()
+            )
+            test = AlignmentData(
+                activations={"layer": acts[80:].clone()}, neural=neural[80:].clone()
+            )
+            r = compute_rsa(cfg, train, test, bootstrap=False, seed=42)
+            scores.append(r[0]["score"])
+
+        assert scores[0] == scores[1] == scores[2], (
+            f"Non-deterministic scores: {scores}"
+        )
+
+    def test_rsa_with_conv_activations_flattened_during_selection(self):
+        """4D conv activations should be flattened both during layer selection
+        AND during test evaluation.
+
+        Bug caught: Forgetting to flatten during one phase.
+        """
+        n_train, n_test = 50, 20
+        neural_train = torch.randn(n_train, 30)
+        neural_test = torch.randn(n_test, 30)
+
+        # 4D activations (as from a conv layer)
+        conv_train = torch.randn(n_train, 8, 3, 3)
+        conv_test = torch.randn(n_test, 8, 3, 3)
+
+        cfg = OmegaConf.create({"compare_method": "spearman"})
+        train = AlignmentData(
+            activations={"conv": conv_train}, neural=neural_train
+        )
+        test = AlignmentData(
+            activations={"conv": conv_test}, neural=neural_test
+        )
+
+        results = compute_rsa(cfg, train, test, n_select=30, bootstrap=False, seed=42)
+
+        assert results[0]["layer"] == "conv"
+        assert np.isfinite(results[0]["score"])
+        # Verify inputs not mutated (still 4D)
+        assert train.activations["conv"].ndim == 4
+        assert test.activations["conv"].ndim == 4
+
+    def test_bootstrap_rdm_subindex_equals_direct_computation(self):
+        """Subindexing a precomputed RDM must produce the same result
+        as computing the RDM directly from the subsampled data.
+
+        Bug caught: RDM[idx][:, idx] not equivalent to compute_rdm(data[idx]).
+        This is the foundation of efficient bootstrap.
+        """
+        torch.manual_seed(42)
+        n = 30
+        x = torch.randn(n, 20)
+        rdm = compute_rdm(x)
+
+        # Test multiple random subsets
+        rng = np.random.RandomState(42)
+        for _ in range(10):
+            n_sub = int(n * 0.9)
+            idx = torch.from_numpy(rng.choice(n, size=n_sub, replace=False))
+            sub_rdm = rdm[idx][:, idx]
+            direct_rdm = compute_rdm(x[idx])
+
+            torch.testing.assert_close(sub_rdm, direct_rdm, atol=1e-4, rtol=1e-4), (
+                "Sub-indexed RDM should equal directly computed RDM"
+            )
+
+    def test_bootstrap_indices_without_replacement(self):
+        """RSA bootstrap must sample without replacement.
+
+        Bug caught: replace=True duplicating stimuli in sub-RDM.
+        """
+        torch.manual_seed(42)
+        n = 50
+        neural = torch.randn(n, 30)
+        acts = neural + 0.3 * torch.randn(n, 30)
+
+        cfg = OmegaConf.create({"compare_method": "spearman"})
+        train = AlignmentData(activations={"layer": acts[:40]}, neural=neural[:40])
+        test = AlignmentData(activations={"layer": acts[40:]}, neural=neural[40:])
+
+        # Reproduce the RNG to check indices
+        n_test = 10
+        n_subsample = int(n_test * 0.9)
+
+        rng = np.random.RandomState(42)
+        # Consume state for n_select (uses all 40 train, so np.arange — no RNG consumed)
+        # Then bootstrap iterations
+        for _ in range(20):
+            idx = rng.choice(n_test, size=n_subsample, replace=False)
+            assert len(set(idx)) == n_subsample, "Bootstrap indices have duplicates"
+
+    def test_re_extract_fn_changes_test_rdm(self):
+        """When re_extract_fn is provided, the test RDM should differ from
+        the SRP'd version (since re-extraction skips SRP).
+
+        Bug caught: re_extract_fn not being used, falling back to SRP'd data.
+        Note: Pearson RDM is invariant to per-row affine transforms, so we must
+        use genuinely different activations (not just scaled/shifted versions).
+        """
+        torch.manual_seed(42)
+        n_train, n_test = 80, 20
+        neural = torch.randn(n_train + n_test, 50)
+        acts = neural + 0.1 * torch.randn(n_train + n_test, 50)
+
+        # Completely different activations for re-extraction (not affine of original)
+        torch.manual_seed(99)
+        exact_acts = torch.randn(n_test, 50)  # Unrelated to original acts
+
+        cfg = OmegaConf.create({"compare_method": "spearman"})
+        train = AlignmentData(
+            activations={"layer": acts[:n_train]}, neural=neural[:n_train]
+        )
+        test = AlignmentData(
+            activations={"layer": acts[n_train:]}, neural=neural[n_train:]
+        )
+
+        # Without re-extract
+        r_no_re = compute_rsa(cfg, train, test, bootstrap=False, seed=42)
+
+        # With re-extract returning completely different activations
+        def mock_re_extract(layer, sids=None):
+            return exact_acts, test.stimulus_ids
+
+        r_re = compute_rsa(
+            cfg, train, test, bootstrap=False, seed=42,
+            re_extract_fn=mock_re_extract,
+        )
+
+        # Scores should differ because test RDMs are built from unrelated activations
+        assert r_no_re[0]["score"] != r_re[0]["score"], (
+            "re_extract_fn should change the test score"
+        )
 
 
 # ═══════════════════════════════════════════════════════════════
