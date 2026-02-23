@@ -21,8 +21,9 @@ def query_best_scores(neural_dataset, region, pca_labels_folder, cfg_id,
                       compare_method="spearman", epoch=None, db_path=DB_PATH):
     """Get best-layer score per (seed, subject) from results.db.
 
-    When multiple runs exist for the same (seed, subject), keeps the one
-    with the highest score (handles duplicate evaluations).
+    Excludes PC reconstruction runs (reconstruct_from_pcs=1) by default,
+    since those are a separate analysis. When multiple runs still exist for
+    the same (seed, subject), warns and keeps the highest score.
 
     Returns DataFrame with columns: seed, subject_idx, score, run_id, layer.
     """
@@ -32,6 +33,7 @@ def query_best_scores(neural_dataset, region, pca_labels_folder, cfg_id,
     FROM results
     WHERE neural_dataset = ? AND region = ? AND pca_labels_folder = ?
       AND cfg_id = ? AND compare_method = ?
+      AND reconstruct_from_pcs = 0
     """
     params = [neural_dataset, region, pca_labels_folder, cfg_id, compare_method]
     if epoch is not None:
@@ -43,7 +45,17 @@ def query_best_scores(neural_dataset, region, pca_labels_folder, cfg_id,
     if df.empty:
         return df
 
-    # Keep best score per (seed, subject_idx) — handles duplicate runs
+    # Warn about duplicate (seed, subject_idx) pairs — usually means
+    # the same experiment was evaluated more than once.
+    counts = df.groupby(["seed", "subject_idx"]).size()
+    dupes = counts[counts > 1]
+    if not dupes.empty:
+        label = f"({neural_dataset}, {region}, {pca_labels_folder}, cfg_id={cfg_id})"
+        for (seed, subj), n in dupes.items():
+            print(f"WARNING: {n} duplicate rows for seed={seed}, "
+                  f"subject_idx={subj} in {label} — keeping highest score")
+
+    # Keep best score per (seed, subject_idx)
     idx = df.groupby(["seed", "subject_idx"])["score"].idxmax()
     return df.loc[idx].reset_index(drop=True)
 
