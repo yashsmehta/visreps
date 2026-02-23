@@ -17,12 +17,14 @@ from plotter_utils import get_condition_summary, get_subject_scores
 COARSE_CFGS = [2, 4, 8, 16, 32, 64]
 N_COARSE = len(COARSE_CFGS)
 
-FOLDER_DISPLAY = {
-    "pca_labels_alexnet": "AlexNet",
-    "pca_labels_vit": "ViT",
-    "pca_labels_clip": "CLIP",
-    "pca_labels_dino": "DINO",
+PCA_MODELS = {
+    "alexnet": "AlexNet",
+    "vit": "ViT",
+    "clip": "CLIP",
+    "dino": "DINO",
 }
+# Back-compat alias
+FOLDER_DISPLAY = {f"pca_labels_{k}": v for k, v in PCA_MODELS.items()}
 
 # ── Style ────────────────────────────────────────────────────────────────
 sns.set_theme(style="ticks", context="paper", font_scale=1.1)
@@ -78,7 +80,7 @@ def draw_break_marks(ax, x, scale=1.0):
 
 
 # ── Figure 1: Coarseness bars ───────────────────────────────────────────
-def plot_coarseness_bars(dcfg, folder, output_dir, dataset_label=None):
+def plot_coarseness_bars(dcfg, pca_model, output_dir, dataset_label=None):
     """Fancy bar plot: untrained | coarse (2-64) | break | 1000.
 
     Parameters
@@ -86,19 +88,21 @@ def plot_coarseness_bars(dcfg, folder, output_dir, dataset_label=None):
     dcfg : dict
         Dataset config with keys: neural_dataset, regions, region_labels, has_subjects,
         and optionally layout, output_suffix.
-    folder : str
-        PCA labels folder name (e.g. "pca_labels_alexnet").
+    pca_model : str
+        Short PCA model name (e.g. "alexnet", "clip").
     output_dir : str
         Directory to save the figure into (e.g. "plotters/nsd/figures").
     dataset_label : str, optional
         Label for the suptitle (e.g. "NSD"). Defaults to neural_dataset uppercased.
     """
+    folder = f"pca_labels_{pca_model}"
     nd = dcfg["neural_dataset"]
     regions = dcfg["regions"]
+    analysis = dcfg.get("analysis", "rsa")
     compare_method = dcfg.get("compare_method", "spearman")
-    analysis_label = "Encoding Score" if dcfg.get("analysis", "rsa") == "encoding_score" else "RSA"
+    analysis_label = "Encoding Score" if analysis == "encoding_score" else "RSA"
     y_label = "Pearson r" if compare_method == "pearson" else "Spearman \u03c1"
-    display_name = FOLDER_DISPLAY.get(folder, folder)
+    display_name = PCA_MODELS.get(pca_model, pca_model)
     if dataset_label is None:
         dataset_label = nd.upper()
 
@@ -109,7 +113,7 @@ def plot_coarseness_bars(dcfg, folder, output_dir, dataset_label=None):
 
         # Check for untrained data (epoch=0)
         un = get_condition_summary(nd, region, "imagenet1k", 1000,
-                                   compare_method, epoch=0)
+                                   compare_method, epoch=0, analysis=analysis)
         has_untrained = not np.isnan(un["mean"])
 
         # Build X positions
@@ -137,7 +141,7 @@ def plot_coarseness_bars(dcfg, folder, output_dir, dataset_label=None):
 
         for i, cfg in enumerate(COARSE_CFGS):
             s = get_condition_summary(nd, region, folder, cfg,
-                                      compare_method, epoch=20)
+                                      compare_method, epoch=20, analysis=analysis)
             all_means.append(s["mean"])
             all_ci_lo.append(s["ci_low"])
             all_ci_hi.append(s["ci_high"])
@@ -147,7 +151,7 @@ def plot_coarseness_bars(dcfg, folder, output_dir, dataset_label=None):
             all_labels.append(str(cfg))
 
         bl = get_condition_summary(nd, region, "imagenet1k", 1000,
-                                   compare_method, epoch=20)
+                                   compare_method, epoch=20, analysis=analysis)
         all_means.append(bl["mean"])
         all_ci_lo.append(bl["ci_low"])
         all_ci_hi.append(bl["ci_high"])
@@ -230,15 +234,15 @@ def plot_coarseness_bars(dcfg, folder, output_dir, dataset_label=None):
 
 
 # ── Figure 2: Per-subject boxes ─────────────────────────────────────────
-def plot_per_subject(dcfg, folder, output_dir, dataset_label=None):
+def plot_per_subject(dcfg, pca_model, output_dir, dataset_label=None):
     """Box plots with per-subject dots connected across class counts.
 
     Parameters
     ----------
     dcfg : dict
         Dataset config (same as plot_coarseness_bars).
-    folder : str
-        PCA labels folder name.
+    pca_model : str
+        Short PCA model name (e.g. "alexnet", "clip").
     output_dir : str
         Directory to save the figure into.
     dataset_label : str, optional
@@ -248,12 +252,14 @@ def plot_per_subject(dcfg, folder, output_dir, dataset_label=None):
         print(f"Skipping per-subject plot ({dcfg['neural_dataset']} has no subjects)")
         return
 
+    folder = f"pca_labels_{pca_model}"
     nd = dcfg["neural_dataset"]
     regions = dcfg["regions"]
+    analysis = dcfg.get("analysis", "rsa")
     compare_method = dcfg.get("compare_method", "spearman")
-    analysis_label = "Encoding Score" if dcfg.get("analysis", "rsa") == "encoding_score" else "RSA"
+    analysis_label = "Encoding Score" if analysis == "encoding_score" else "RSA"
     y_label = "Pearson r" if compare_method == "pearson" else "Spearman \u03c1"
-    display_name = FOLDER_DISPLAY.get(folder, folder)
+    display_name = PCA_MODELS.get(pca_model, pca_model)
     if dataset_label is None:
         dataset_label = nd.upper()
 
@@ -268,13 +274,13 @@ def plot_per_subject(dcfg, folder, output_dir, dataset_label=None):
 
         for n_classes in COARSE_CFGS:
             sm = get_subject_scores(nd, region, folder, n_classes,
-                                    compare_method, epoch=20)
+                                    compare_method, epoch=20, analysis=analysis)
             if len(sm) > 0:
                 data[str(n_classes)] = sm
                 x_labels.append(str(n_classes))
 
         sm_1k = get_subject_scores(nd, region, "imagenet1k", 1000,
-                                   compare_method, epoch=20)
+                                   compare_method, epoch=20, analysis=analysis)
         if len(sm_1k) > 0:
             data["1K"] = sm_1k
             x_labels.append("1K")
