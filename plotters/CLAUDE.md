@@ -6,12 +6,20 @@ Publication-quality plotting scripts reading from `results.db` (SQLite). Run fro
 
 **Coarseness progression** — per-dataset scripts with shared logic in `plot_helpers.py`:
 ```bash
-python plotters/nsd/plot_coarseness.py --folder pca_labels_alexnet
-python plotters/nsd/plot_coarseness_finegrained.py --folder pca_labels_clip
-python plotters/nsd_synthetic/plot_coarseness.py --folder pca_labels_alexnet
-python plotters/tvsd/plot_coarseness.py --folder pca_labels_alexnet
-python plotters/things/plot_coarseness.py --folder pca_labels_alexnet
+# NSD (default: --regions streams)
+python plotters/nsd/plot_coarseness.py --pca_labels alexnet
+python plotters/nsd/plot_coarseness.py --pca_labels alexnet --regions finegrained
+
+# NSD-Synthetic (default: --regions finegrained)
+python plotters/nsd_synthetic/plot_coarseness.py --pca_labels alexnet
+python plotters/nsd_synthetic/plot_coarseness.py --pca_labels clip --regions streams
+
+# TVSD / THINGS
+python plotters/tvsd/plot_coarseness.py --pca_labels alexnet
+python plotters/things/plot_coarseness.py --pca_labels alexnet
 ```
+NSD and NSD-Synthetic both support `--regions {streams,finegrained}`. Legacy `plot_coarseness_finegrained.py` (NSD only) still works but is superseded by `--regions finegrained`.
+
 *Note: All coarseness plotters default to RSA with Spearman correlation. To plot Encoding Score, add `--analysis encoding_score --compare_method pearson`.*
 
 **Architecture comparison** — `plot_architectures.py`:
@@ -70,7 +78,7 @@ pca_k               INTEGER           PCs for reconstruction; default 1 for stan
 | Dataset | Regions | Subjects | Analyses | Rows (std) |
 |---------|---------|----------|----------|------------|
 | `nsd` | `early visual stream`, `ventral visual stream`, `V1`, `V2`, `V3`, `hV4`, `FFA`, `PPA` | 8 (0–7) | rsa, encoding | ~1,369 |
-| `nsd_synthetic` | `V1`, `V2`, `V3`, `hV4`, `FFA`, `PPA` | 8 (0–7) | rsa | 672 |
+| `nsd_synthetic` | `early visual stream`, `ventral visual stream`, `V1`, `V2`, `V3`, `hV4`, `FFA`, `PPA` | 8 (0–7) | rsa | 672+ |
 | `tvsd` | `V1`, `V4`, `IT` | 2 (0–1) | rsa, encoding | 702 |
 | `things-behavior` | `N/A` | `N/A` | rsa | 78 |
 
