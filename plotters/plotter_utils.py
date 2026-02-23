@@ -18,7 +18,8 @@ DB_PATH = "results.db"
 # SQLite helpers: query scores and bootstrap CIs
 # --------------------------------------------------
 def query_best_scores(neural_dataset, region, pca_labels_folder, cfg_id,
-                      compare_method="spearman", epoch=None, db_path=DB_PATH):
+                      compare_method="spearman", epoch=None, analysis="rsa",
+                      db_path=DB_PATH):
     """Get best-layer score per (seed, subject) from results.db.
 
     Excludes PC reconstruction runs (reconstruct_from_pcs=1) by default,
@@ -32,10 +33,11 @@ def query_best_scores(neural_dataset, region, pca_labels_folder, cfg_id,
     SELECT run_id, seed, subject_idx, layer, score
     FROM results
     WHERE neural_dataset = ? AND region = ? AND pca_labels_folder = ?
-      AND cfg_id = ? AND compare_method = ?
+      AND cfg_id = ? AND compare_method = ? AND analysis = ?
       AND reconstruct_from_pcs = 0
     """
-    params = [neural_dataset, region, pca_labels_folder, cfg_id, compare_method]
+    params = [neural_dataset, region, pca_labels_folder, cfg_id, compare_method,
+              analysis]
     if epoch is not None:
         q += " AND epoch = ?"
         params.append(epoch)
@@ -111,7 +113,8 @@ def get_bootstrap_ci(run_ids, compare_method="spearman", alpha=0.05, db_path=DB_
 
 
 def get_condition_summary(neural_dataset, region, pca_labels_folder, cfg_id,
-                          compare_method="spearman", epoch=None, db_path=DB_PATH):
+                          compare_method="spearman", epoch=None, analysis="rsa",
+                          db_path=DB_PATH):
     """Get point estimate + bootstrap 95% CI for one condition.
 
     Point estimate = mean score across all seeds and subjects (best layer per run).
@@ -120,7 +123,7 @@ def get_condition_summary(neural_dataset, region, pca_labels_folder, cfg_id,
     Returns dict with keys: mean, ci_low, ci_high, n_runs, run_ids.
     """
     df = query_best_scores(neural_dataset, region, pca_labels_folder, cfg_id,
-                           compare_method, epoch, db_path)
+                           compare_method, epoch, analysis, db_path)
     if df.empty:
         return {"mean": np.nan, "ci_low": np.nan, "ci_high": np.nan,
                 "n_runs": 0, "run_ids": []}
@@ -148,13 +151,14 @@ def get_condition_summary(neural_dataset, region, pca_labels_folder, cfg_id,
 
 
 def get_subject_scores(neural_dataset, region, pca_labels_folder, cfg_id,
-                       compare_method="spearman", epoch=None, db_path=DB_PATH):
+                       compare_method="spearman", epoch=None, analysis="rsa",
+                       db_path=DB_PATH):
     """Get per-subject scores (averaged across seeds) for box/dot plots.
 
     Returns Series indexed by subject_idx with mean score per subject.
     """
     df = query_best_scores(neural_dataset, region, pca_labels_folder, cfg_id,
-                           compare_method, epoch, db_path)
+                           compare_method, epoch, analysis, db_path)
     if df.empty:
         return pd.Series(dtype=float)
 
