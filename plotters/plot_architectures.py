@@ -166,7 +166,7 @@ def plot_architecture_bars(args, nd, region, available_archs):
 
     plt.tight_layout(pad=1.2, rect=[0, 0, 0.85, 1])
     region_slug = region.lower().replace(" ", "_")
-    out = f"plotters/figures/{args.dataset}/arch_bars_{region_slug}.png"
+    out = f"plotters/{args.dataset}/figures/arch_bars_{region_slug}.png"
     plt.savefig(out, dpi=600, bbox_inches="tight", facecolor="white", edgecolor="none")
     plt.close()
     print(f"Saved -> {out}")
@@ -256,7 +256,7 @@ def plot_architecture_boxes(args, nd, region, available_archs):
 
     plt.tight_layout()
     region_slug = region.lower().replace(" ", "_")
-    out = f"plotters/figures/{args.dataset}/arch_boxes_{region_slug}.png"
+    out = f"plotters/{args.dataset}/figures/arch_boxes_{region_slug}.png"
     plt.savefig(out, dpi=600, bbox_inches="tight", facecolor="white", edgecolor="none")
     plt.close()
     print(f"Saved -> {out}")
