@@ -6,7 +6,7 @@ A central challenge in studying how label granularity shapes learned representat
 
 ### Coarse label generation
 
-We extract image representations from the entire ImageNet-1K training set (1,261,406 images) using a pretrained source model, then apply principal component analysis (PCA) to identify the dominant axes of variance in the resulting feature space. These principal components serve as a natural basis for recursively partitioning images into progressively coarser categories.
+We extract image representations from the entire ImageNet-1K training set (Deng et al., 2009; 1,261,406 images) using a pretrained source model, then apply principal component analysis (PCA) to identify the dominant axes of variance in the resulting feature space. These principal components serve as a natural basis for recursively partitioning images into progressively coarser categories.
 
 Concretely, all 1,261,406 feature vectors are mean-centred and projected onto the top 6 principal components. For each PC, a binary indicator is computed using a global median threshold: images whose projection falls above the median are assigned to one group, and those below to the other. To generate $K = 2^n$ classes, the binary indicators for the first $n$ PCs are concatenated and interpreted as a binary integer, yielding class assignments from 0 to $K - 1$. This produces a strictly nested hierarchy: the 2-class partition is a coarsening of the 4-class partition, which is a coarsening of the 8-class partition, and so on up to 64 classes (using 6 PCs). The resulting class sizes are approximately balanced (e.g., for the 32-class AlexNet-derived partition: minimum 15,923, maximum 76,584, mean 39,419 images per class).
 
@@ -17,9 +17,9 @@ To ensure that our findings are not contingent on the particular representationa
 | Source model | Architecture | Training objective | Feature layer | Dimensionality |
 |---|---|---|---|---|
 | AlexNet | CNN (supervised) | ImageNet-1K classification | FC2 | 4,096 |
-| CLIP | ViT-L/14 | Contrastive language-image pretraining | Image encoder output | 768 |
-| DINOv2 | ViT-L/16 | Self-supervised self-distillation | CLS token | 1,024 |
-| ViT | ViT-L/16 (supervised) | ImageNet-1K classification | CLS token | 1,024 |
+| CLIP | ViT-L/14 | Contrastive language-image pretraining (Radford et al., 2021) | Image encoder output | 768 |
+| DINOv2 | ViT-L/16 | Self-supervised self-distillation (Oquab et al., 2024) | CLS token | 1,024 |
+| ViT | ViT-L/16 (supervised) | ImageNet-1K classification (Dosovitskiy et al., 2021) | CLS token | 1,024 |
 
 All features are L2-normalised before PCA. The use of multiple source models — spanning supervised, self-supervised, and multimodal training — allows us to test whether the relationship between granularity and brain alignment is robust to the representational prior used to define the coarse labels.
 
@@ -53,11 +53,11 @@ All experiments use a custom CNN following the AlexNet blueprint (Krizhevsky et 
 | fc2 | Linear + BN + ReLU | 4,096 $\to$ 4,096 | — | — | — | — |
 | output | Linear | 4,096 $\to$ $K$ | — | — | — | — |
 
-The total parameter count is approximately 34 million for 1000-class models and 30 million for 32-class models; the only architectural difference across conditions is the number of output units. We deliberately choose a relatively simple architecture (AlexNet-class) to ensure that observed effects reflect label granularity rather than the representational capacity of the network. AlexNet-class models remain among the most widely used architectures in computational neuroscience benchmarking, making our results directly comparable to prior work.
+The total parameter count is approximately 34 million for 1000-class models and 30 million for 32-class models; the only architectural difference across conditions is the number of output units. We deliberately choose a relatively simple architecture (AlexNet-class) to ensure that observed effects reflect label granularity rather than the representational capacity of the network. AlexNet-class models remain among the most widely used architectures in computational neuroscience benchmarking (Schrimpf et al., 2018; Conwell et al., 2024), making our results directly comparable to prior work.
 
 ### Optimisation
 
-All models are trained for 20 epochs using AdamW with a learning rate of $5 \times 10^{-4}$, weight decay of $10^{-3}$ (applied to weight matrices only; biases and batch normalisation parameters are excluded), and gradient clipping at a maximum norm of 1.0. We use cross-entropy loss with label smoothing ($\varepsilon = 0.1$) and a batch size of 32. The learning rate follows a cosine annealing schedule with linear warmup: the learning rate increases linearly from $0.25 \times \text{lr}$ to $\text{lr}$ over the first 2 epochs, then decays following a cosine schedule to $0.05 \times \text{lr}$ over the remaining 18 epochs.
+All models are trained for 20 epochs using AdamW (Loshchilov & Hutter, 2019) with a learning rate of $5 \times 10^{-4}$, weight decay of $10^{-3}$ (applied to weight matrices only; biases and batch normalisation parameters are excluded), and gradient clipping at a maximum norm of 1.0. We use cross-entropy loss with label smoothing ($\varepsilon = 0.1$) and a batch size of 32. The learning rate follows a cosine annealing schedule with linear warmup: the learning rate increases linearly from $0.25 \times \text{lr}$ to $\text{lr}$ over the first 2 epochs, then decays following a cosine schedule to $0.05 \times \text{lr}$ over the remaining 18 epochs.
 
 Training images are resized to 256 pixels along the shorter edge, centre-cropped to $224 \times 224$, augmented with random horizontal flips ($p = 0.5$) and random rotations ($\pm 10°$), and normalised with ImageNet channel statistics (mean = [0.485, 0.456, 0.406], std = [0.229, 0.224, 0.225]). Evaluation images undergo the same resize and centre-crop without augmentation.
 
@@ -89,29 +89,52 @@ We evaluate brain-model alignment across four datasets spanning three measuremen
 
 ### 4.1 Natural Scenes Dataset (NSD)
 
-The Natural Scenes Dataset (Allen et al., 2022) is the largest publicly available single-subject human fMRI dataset, with 8 participants each viewing over 9,000 unique natural scene photographs across 30–40 scanning sessions at 7T field strength. Functional data were preprocessed using the `fithrf_GLMdenoise_RR` GLM pipeline, which combines hemodynamic response function fitting, GLMdenoise, and ridge-regularised denoising to produce z-scored single-trial beta weights per voxel. Responses to repeated presentations of the same stimulus were averaged.
+The Natural Scenes Dataset (Allen et al., 2022) is the largest publicly available single-subject human fMRI dataset. Eight healthy adult participants each viewed over 9,000 unique colour photographs of natural scenes drawn from the Microsoft COCO dataset (Lin et al., 2014), across 30–40 weekly scanning sessions. All data were acquired at 7T field strength (Siemens Magnetom, Center for Magnetic Resonance Research, University of Minnesota) using a whole-brain gradient-echo EPI sequence at 1.8 mm isotropic resolution (TR = 1.6 s). On each trial, a stimulus was presented for 3 seconds followed by a 1-second fixation interval, while subjects performed a continuous recognition memory task (indicating whether each image had been seen previously in the experiment). Each image was presented 3 times per subject across different sessions.
 
-For each subject, stimuli were split into a subject-specific training set (~9,000 unique images) and a shared test set (~1,000 images viewed by all 8 subjects). Using the shared test set ensures that test-phase representational dissimilarity matrices (RDMs) are computed over identical stimuli across subjects, enabling meaningful cross-subject comparisons. We analyse two broad cortical streams (early visual stream and ventral visual stream) and six individual regions of interest (V1, V2, V3, hV4, FFA, PPA), spanning the full hierarchy from low-level retinotopic cortex to high-level category-selective areas. Stimulus images are loaded lazily from HDF5 to avoid loading the full ~36 GB image set into memory.
+**Preprocessing.** Single-trial BOLD responses were estimated using GLMsingle (Prince et al., 2022), which produces the `betas_fithrf_GLMdenoise_RR` output through a three-stage pipeline: (1) per-voxel hemodynamic response function fitting from a library of ~20 empirically derived HRF shapes, accounting for spatial variation in hemodynamic delay; (2) GLMdenoise, which identifies a pool of non-task-responsive voxels and uses PCA on their time series to construct data-driven noise regressors, removing shared structured noise without external physiological recordings; and (3) fractional ridge regression for single-trial beta estimation, with per-voxel regularisation strength selected by cross-validation to address collinearity from overlapping trials. Betas were z-scored within each scanning session and averaged across the 3 repetitions of each stimulus.
+
+**Train/test split.** For each subject, stimuli were divided into subject-specific unique images (training set, ~9,000 per subject) and a set of ~1,000 images shared across all 8 subjects (test set). Using the shared test set ensures that test-phase representational dissimilarity matrices (RDMs) are computed over identical stimuli across subjects, enabling meaningful cross-subject comparisons.
+
+**Brain regions.** We analyse two broad cortical streams and six individual regions of interest, spanning the full hierarchy from retinotopic cortex to category-selective areas:
+
+| Region | Definition | Source |
+|---|---|---|
+| Early visual stream | V1, V2, V3 (bilateral) | NSD streams atlas |
+| Ventral visual stream | hV4, LO, and category-selective cortex (FFA, PPA, EBA) | NSD streams atlas |
+| V1, V2, V3 | Union of dorsal and ventral subdivisions | Population receptive field (pRF) mapping |
+| hV4 | Ventral V4 | pRF mapping |
+| FFA (fusiform face area) | FFA-1 and FFA-2 | Functional localiser (faces) |
+| PPA (parahippocampal place area) | PPA | Functional localiser (scenes) |
+
+The early and ventral stream ROIs were defined using the NSD-provided streams atlas, which delineates subject-specific volumetric masks based on pRF retinotopic mapping (for early areas) and functional localiser experiments (for higher-level areas). Individual ROIs (V1–hV4) were defined from pRF mapping, while FFA and PPA were defined from category-selective functional localiser scans, both acquired as part of the NSD protocol.
 
 ### 4.2 NSD-Synthetic (out-of-distribution evaluation)
 
-To test whether coarse-grained training yields representations that generalise beyond the distribution of natural images, we evaluate on NSD-Synthetic (Gifford et al., 2025), a companion dataset comprising 220 unconventional stimuli — including noise patterns, colour fields, text, and spirals — presented to the same 8 NSD participants under identical scanning conditions. These stimuli are deliberately dissimilar from ImageNet-style natural scenes, providing a stringent test of out-of-distribution robustness.
+To test whether coarse-grained training yields representations that generalise beyond the distribution of natural images, we evaluate on NSD-Synthetic (Gifford et al., 2026), a companion dataset comprising 284 synthetic stimuli presented to the same 8 NSD participants under identical scanning conditions (same 7T scanner, same EPI sequence, same 1.8 mm resolution). The stimuli were designed to be maximally distinct from natural scenes and include white and pink noise patterns, contrast- and phase-coherence-modulated scenes, spiral gratings at varying spatial frequencies and orientations, single words at different screen positions, line drawings, Mooney images, and upside-down scenes. All stimuli were generated through parametric, low- and mid-level feature manipulations rather than learned generative models, providing a principled test of out-of-distribution robustness.
 
-NSD-Synthetic serves as a test-only evaluation. Because no training data exist for these synthetic stimuli, layer selection cannot be performed independently; instead, we inherit the best layer identified during the corresponding standard NSD evaluation for each (subject, region) pair. This design ensures that the OOD evaluation is not biased by layer selection on the synthetic stimuli themselves. fMRI responses were preprocessed identically to NSD (z-scored betas, averaged across repetitions).
+Of the 284 stimuli, all were viewed by all 8 subjects, and 220 are used in our analyses (following the shared stimulus set provided by the dataset). fMRI responses were preprocessed identically to NSD (GLMsingle pipeline, z-scored betas, averaged across repetitions), and the same ROI definitions apply.
+
+NSD-Synthetic serves as a test-only evaluation. Because no training data exist for these synthetic stimuli, layer selection cannot be performed independently; instead, we inherit the best layer identified during the corresponding standard NSD evaluation for each (subject, region) pair. This design ensures that the OOD evaluation is not biased by layer selection on the synthetic stimuli themselves, and instead reflects the model's genuine generalisation capacity.
 
 ### 4.3 TVSD (macaque electrophysiology)
 
-The Temporal Visual Stream Dataset (Papale et al., 2025) provides multi-unit activity (MUA) recordings from 2 macaque monkeys across three cortical areas that form the core of the primate object recognition pathway: V1 (primary visual cortex), V4 (intermediate visual area), and IT (inferotemporal cortex). Including macaque data alongside human fMRI allows us to assess whether granularity effects on brain-model alignment generalise across species and recording modalities.
+The Temporal Visual Stream Dataset (Papale et al., 2025) provides multi-unit spiking activity (MUA) recordings from 2 adult male rhesus macaques (*Macaca mulatta*) across three cortical areas that form the core of the primate ventral object recognition pathway: V1 (primary visual cortex), V4 (intermediate visual area), and IT (inferotemporal cortex). Including macaque electrophysiology alongside human fMRI serves two purposes: it tests whether granularity effects on brain-model alignment generalise across species, and it provides a complementary recording modality — direct electrical recordings of neuronal population activity at millisecond resolution, rather than the indirect, haemodynamically delayed BOLD signal measured by fMRI.
 
-Stimuli are drawn from the THINGS object image set (Hebart et al., 2023). The training set comprises approximately 22,248 images (each presented once), while the test set contains 100 images presented 30 times each, with responses averaged across repetitions to obtain reliable estimates of neural tuning.
+**Recording.** Both monkeys were chronically implanted with Utah microelectrode arrays (Blackrock Microsystems; 8 $\times$ 8 electrode grids, 400 $\mu$m inter-electrode spacing). Signals were sampled at 30 kHz and processed into multi-unit activity (MUA), reflecting aggregate spiking of neuronal populations near each electrode. Monkey F had 16 arrays (8 in V1, 3 in V4, 5 in IT; 1,024 total electrodes), and Monkey N had 15 arrays (7 in V1, 4 in V4, 4 in IT; 1,024 total electrodes). Area identity was determined by anatomical implant location. The dataset is distributed as pre-normalised MUA responses.
+
+**Stimuli and paradigm.** Stimuli are drawn from the THINGS object image set (Hebart et al., 2019). Monkeys maintained central fixation while viewing sequences of four images per trial, with each image presented for 200 ms followed by a 200 ms inter-stimulus interval; successful fixation was rewarded with juice. The training set comprises approximately 22,248 images (each presented once), while the test set contains 100 images presented 30 times each, with responses averaged across repetitions to obtain reliable neural tuning estimates.
+
+**Evaluation structure.** TVSD follows the same evaluation paradigm as NSD: a single forward pass extracts model activations for all stimuli, then per-subject (per-monkey) per-region alignment is computed independently.
 
 ### 4.4 THINGS (behavioural similarity)
 
-The THINGS dataset (Hebart et al., 2023) provides a complementary, behaviour-level measure of human visual representation. It comprises 1,854 diverse object concepts, each associated with a 66-dimensional embedding derived from large-scale human odd-one-out similarity judgments. These dimensions capture perceptual axes such as size, animacy, and texture, providing a structured measure of how humans perceive similarity across a broad range of everyday objects.
+The THINGS dataset provides a complementary, behaviour-level measure of human visual representation, independent of any particular brain region or recording modality. The THINGS object concept database (Hebart et al., 2019) comprises 1,854 diverse object concepts — spanning animals, plants, food, tools, clothing, furniture, vehicles, and more — with over 26,000 high-quality naturalistic photographs (approximately 12–14 images per concept, mean resolution ~996 $\times$ 996 pixels).
 
-Unlike the neural datasets, THINGS operates at the concept level rather than the stimulus level. Each concept has multiple associated images; we pass all images through the model individually, then average the resulting activations within each concept to obtain a single concept-level representation before computing representational similarity. This concept averaging is essential because the behavioural embeddings are defined at the concept level, not the image level.
+**Behavioural embeddings.** The perceptual similarity structure of these concepts was characterised through a large-scale triplet odd-one-out task: on each trial, participants viewed three object images and identified "the odd one out" — the image least similar to the other two (Hebart et al., 2020; Hebart et al., 2023). In total, 4.70 million triplet judgments were collected from 12,340 participants via Amazon Mechanical Turk. From these judgments, a 66-dimensional embedding was derived using SPoSE (Sparse Positive Similarity Embedding; Zheng et al., 2019), which fits a sparse, non-negative linear model to predict triplet choices from a learned low-dimensional object representation. The resulting 66 dimensions are interpretable and span both semantic axes (e.g., animacy, food-relatedness) and perceptual features (e.g., roundness, colour, texture), capturing the multi-dimensional structure of human object similarity at a behavioural level.
 
-We use a fixed 80/20 concept-level train/test split (seed = 42), allocating approximately 370 concepts (20%) for layer selection and approximately 1,484 concepts (80%) for evaluation. Splitting at the concept level — rather than the image level — ensures that no concept appears in both the selection and evaluation sets, preventing information leakage between the two phases. THINGS behavioural data have no subject or region dimensions; a single alignment score is computed per model.
+**Concept-level evaluation.** Unlike the neural datasets, THINGS operates at the concept level rather than the stimulus level. Each concept has multiple associated images; we pass all images through the model individually, then average the resulting activations within each concept to obtain a single concept-level representation before computing representational similarity. This concept averaging is essential because the behavioural embeddings are defined at the concept level, not the image level.
+
+**Train/test split.** We use a fixed 80/20 concept-level split (seed = 42), allocating approximately 370 concepts (20%) for layer selection and approximately 1,484 concepts (80%) for evaluation. Splitting at the concept level — rather than the image level — ensures that no concept appears in both the selection and evaluation sets, preventing information leakage between the two phases. THINGS behavioural data have no subject or region dimensions; a single alignment score is computed per model.
 
 ### Image preprocessing (all datasets)
 
@@ -122,6 +145,8 @@ All evaluation images — regardless of dataset — undergo the same preprocessi
 ## 5. Representational similarity analysis (RSA)
 
 Representational similarity analysis (Kriegeskorte, 2008) provides an unweighted, geometry-preserving comparison between two representational spaces. Unlike encoding models that fit linear mappings (Section 6), RSA compares the *intrinsic structure* of representations without any learned transformation — making it sensitive to whether the model's representational geometry already resembles that of the brain, rather than whether brain-like information can be linearly extracted. This distinction is central to our study: if coarse-grained models achieve high RSA scores, it suggests that their representations are inherently more brain-like in structure, not merely that they contain recoverable information.
+
+Our RSA pipeline is implemented from scratch using PyTorch and SciPy primitives, without reliance on existing RSA toolboxes (e.g., rsatoolbox). RDM construction uses GPU-accelerated matrix operations in PyTorch for efficiency, while RDM comparison statistics (Spearman's $\rho$, Kendall's $\tau$) are computed via SciPy.
 
 ### 5.1 Representational dissimilarity matrices
 
@@ -172,7 +197,7 @@ While RSA tests whether the model's representational geometry already resembles 
 
 ### 6.1 Ridge regression
 
-For each voxel (or recording channel), we fit a ridge regression from model activations to neural responses using `himalaya.ridge.RidgeCV`, a GPU-accelerated implementation that performs voxelwise mass-univariate regression with cross-validated regularisation parameter selection. The regularisation strength $\alpha$ is selected from 20 log-spaced candidates spanning $10^{-10}$ to $10^{10}$, using 5-fold cross-validation within the training set. The intercept is not fitted because all features are pre-normalised to zero mean (see below).
+For each voxel (or recording channel), we fit a ridge regression from model activations to neural responses using the himalaya library (Dupré la Tour et al., 2022), a GPU-accelerated implementation optimised for mass-univariate voxelwise encoding models in neuroimaging. Himalaya performs banded ridge regression with efficient cross-validated regularisation parameter selection, scaling to hundreds of thousands of target voxels simultaneously on GPU. The regularisation strength $\alpha$ is selected from 20 log-spaced candidates spanning $10^{-10}$ to $10^{10}$, using 5-fold cross-validation within the training set. The intercept is not fitted because all features are pre-normalised to zero mean (see below).
 
 ### 6.2 Feature and response normalisation
 
@@ -231,6 +256,42 @@ RSA scores (Spearman's $\rho$ between model and neural RDMs) and encoding scores
 
 ---
 
-## 9. Computational resources
+## References
 
-All model training and evaluation were conducted on a single NVIDIA RTX 4090 GPU (24 GB VRAM) with 32 CPU cores and 125 GB RAM. Training each model on the full ImageNet training set for 20 epochs required approximately [X] GPU-hours. Encoding score evaluation required approximately 8 GB of free VRAM per run due to the GPU-accelerated ridge regression (himalaya library with CUDA backend). The complete experimental pipeline — training 87 models from scratch and evaluating each across 4 datasets, multiple regions, 8 subjects (NSD), and 2 alignment analyses — represents a substantial computational investment designed to ensure comprehensive coverage of the experimental space.
+Allen, E. J., St-Yves, G., Wu, Y., Breedlove, J. L., Prince, J. S., Dowdle, L. T., Nau, M., Caron, B., Pestilli, F., Charest, I., Hutchinson, J. B., Naselaris, T., & Kay, K. (2022). A massive 7T fMRI dataset to bridge cognitive neuroscience and artificial intelligence. *Nature Neuroscience*, 25(1), 116–126. https://doi.org/10.1038/s41593-021-00962-x
+
+Conwell, C., Prince, J. S., Kay, K. N., Alvarez, G. A., & Konkle, T. (2024). A large-scale examination of inductive biases shaping high-level visual representation in brains and machines. *Nature Communications*, 15, 8895. https://doi.org/10.1038/s41467-024-53147-y
+
+Deng, J., Dong, W., Socher, R., Li, L.-J., Li, K., & Fei-Fei, L. (2009). ImageNet: A large-scale hierarchical image database. In *Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition* (pp. 248–255). https://doi.org/10.1109/CVPR.2009.5206848
+
+Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X., Unterthiner, T., Dehghani, M., Minderer, M., Heigold, G., Gelly, S., Uszkoreit, J., & Houlsby, N. (2021). An image is worth 16x16 words: Transformers for image recognition at scale. In *Proceedings of the International Conference on Learning Representations (ICLR)*. https://arxiv.org/abs/2010.11929
+
+Dupré la Tour, T., Eickenberg, M., Nunez-Elizalde, A. O., & Gallant, J. L. (2022). Feature-space selection with banded ridge regression. *NeuroImage*, 264, 119728. https://doi.org/10.1016/j.neuroimage.2022.119728
+
+Gifford, A. T., Cichy, R. M., Naselaris, T., & Kay, K. (2026). A 7T fMRI dataset of synthetic images for out-of-distribution modeling of vision. *Nature Communications*, 17(1), 1589. https://doi.org/10.1038/s41467-026-69345-9
+
+Hebart, M. N., Dickter, A. H., Kidder, A., Kwok, W. Y., Corriveau, A., Van Wicklin, C., & Baker, C. I. (2019). THINGS: A database of 1,854 object concepts and more than 26,000 naturalistic object images. *PLoS ONE*, 14(10), e0223792. https://doi.org/10.1371/journal.pone.0223792
+
+Hebart, M. N., Zheng, C. Y., Pereira, F., & Baker, C. I. (2020). Revealing the multidimensional mental representations of natural objects underlying human similarity judgements. *Nature Human Behaviour*, 4(11), 1173–1185. https://doi.org/10.1038/s41562-020-00951-3
+
+Hebart, M. N., Contier, O., Teichmann, L., Rockter, A. H., Zheng, C. Y., Kidder, A., Corriveau, A., Vaziri-Pashkam, M., & Baker, C. I. (2023). THINGS-data, a multimodal collection of large-scale datasets for investigating object representations in human brain and behavior. *eLife*, 12, e82580. https://doi.org/10.7554/eLife.82580
+
+Kriegeskorte, N. (2008). Representational similarity analysis — connecting the branches of systems neuroscience. *Frontiers in Systems Neuroscience*, 2, 4. https://doi.org/10.3389/neuro.06.004.2008
+
+Krizhevsky, A., Sutskever, I., & Hinton, G. E. (2012). ImageNet classification with deep convolutional neural networks. In *Advances in Neural Information Processing Systems* (Vol. 25, pp. 1097–1105).
+
+Lin, T.-Y., Maire, M., Belongie, S., Hays, J., Perona, P., Ramanan, D., Dollár, P., & Zitnick, C. L. (2014). Microsoft COCO: Common objects in context. In *Proceedings of the European Conference on Computer Vision (ECCV)* (pp. 740–755). https://doi.org/10.1007/978-3-319-10602-1_48
+
+Loshchilov, I., & Hutter, F. (2019). Decoupled weight decay regularization. In *Proceedings of the International Conference on Learning Representations (ICLR)*. https://arxiv.org/abs/1711.05101
+
+Oquab, M., Darcet, T., Moutakanni, T., Vo, H., Szafraniec, M., Khalidov, V., Fernandez, P., Haziza, D., Massa, F., El-Nouby, A., Assran, M., Ballas, N., Galuba, W., Howes, R., Huang, P.-Y., Li, S.-W., Misra, I., Rabbat, M., Vasu, S., ... Bojanowski, P. (2024). DINOv2: Learning robust visual features without supervision. *Transactions on Machine Learning Research*. https://arxiv.org/abs/2304.07193
+
+Papale, P., Wang, F., Self, M. W., & Roelfsema, P. R. (2025). An extensive dataset of spiking activity to reveal the syntax of the ventral stream. *Neuron*, 113(4), 539–553.e5. https://doi.org/10.1016/j.neuron.2024.12.003
+
+Prince, J. S., Charest, I., Bhatt, J. Y., Hutchinson, J. B., Scholl, B. J., & Kay, K. (2022). Improving the accuracy of single-trial fMRI response estimates using GLMsingle. *eLife*, 11, e77599. https://doi.org/10.7554/eLife.77599
+
+Radford, A., Kim, J. W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., Krueger, G., & Sutskever, I. (2021). Learning transferable visual models from natural language supervision. In *Proceedings of the 38th International Conference on Machine Learning (ICML)*. https://arxiv.org/abs/2103.00020
+
+Schrimpf, M., Kubilius, J., Hong, H., Majaj, N. J., Rajalingham, R., Issa, E. B., Kar, K., Bashivan, P., Prescott-Roy, J., Geiger, F., Schmidt, K., Yamins, D. L. K., & DiCarlo, J. J. (2018). Brain-Score: Which artificial neural network for object recognition is most brain-like? *bioRxiv*. https://doi.org/10.1101/407007
+
+Zheng, C. Y., Pereira, F., Baker, C. I., & Hebart, M. N. (2019). Revealing interpretable object representations from human behavior. In *Proceedings of the International Conference on Learning Representations (ICLR)*. https://arxiv.org/abs/1901.02915
