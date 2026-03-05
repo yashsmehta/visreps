@@ -8,6 +8,7 @@ Evaluates downstream benefits of coarse-grained pre-training beyond brain alignm
 |--------|---------|--------|
 | `few_shot_learning.py` | Transfer to CIFAR-100 with k-shot linear probes | Classification accuracy |
 | `imagenet_c_robustness.py` | Robustness to ImageNet-C corruptions | Relative accuracy drop |
+| `imagenet_a_robustness.py` | Robustness to natural adversarial examples (ImageNet-A) | Accuracy + relative robustness |
 | `augmentation_invariance.py` | Representation stability under OOD augmentations | Cosine similarity |
 | `curriculum_finetuning.py` | Coarse→1000-way curriculum training | Top-1/Top-5 accuracy |
 
@@ -26,6 +27,9 @@ python few_shot_learning.py --k_shots 1 5 10 20 --n_trials 5
 # Corruption robustness (requires: pip install imagecorruptions)
 python imagenet_c_robustness.py --severity 3 --n_images 5000
 python imagenet_c_robustness.py --all_corruptions  # Full 15 corruptions
+
+# Natural adversarial robustness (auto-downloads ImageNet-A ~655MB on first run)
+python imagenet_a_robustness.py
 
 # Augmentation invariance (uses albumentations for OOD transforms)
 python augmentation_invariance.py --n_images 1000 --n_augments 10

@@ -1,8 +1,8 @@
 """
 Plot PC1-PC2 comparison between pretrained and coarse-trained AlexNet.
 
-Loads pre-computed analysis data (from run_analysis.py) and creates a
-publication-quality side-by-side scatter plot for a selected layer.
+Both models are projected onto the pretrained model's principal components,
+so the axes are directly comparable across panels.
 
 Usage (from project root):
     python experiments/representation_analysis/2pcs_compare/plot.py --n_classes 4
@@ -38,41 +38,38 @@ def main():
     pretrained_pcs = data[f'{layer}_pretrained_pcs']
     trained_pcs = data[f'{layer}_trained_pcs']
     quadrants = data[f'{layer}_quadrants']
-    pretrained_var = data[f'{layer}_pretrained_var']
-    trained_var = data[f'{layer}_trained_var']
+    var = data[f'{layer}_var']
     n_classes = int(data['n_classes'])
 
     layer_label = LAYER_LABELS.get(layer, layer)
 
     # --- Style ---
     sns.set_theme(style='ticks', context='paper', font_scale=1.2)
-
-    # Colorblind-friendly (ColorBrewer Dark2)
     colors = ['#1b9e77', '#7570b3', '#e6ab02', '#d95f02']
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.8))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.8),
+                                    sharex=True, sharey=True)
 
     panels = [
-        (ax1, pretrained_pcs, pretrained_var,
-         f'Pretrained AlexNet (1000-way)', 'a'),
-        (ax2, trained_pcs, trained_var,
-         f'Trained AlexNet ({n_classes}-way)', 'b'),
+        (ax1, pretrained_pcs, f'Pretrained AlexNet (1000-way)', 'a'),
+        (ax2, trained_pcs, f'Trained AlexNet ({n_classes}-way)', 'b'),
     ]
 
-    for ax, pcs, var, title, panel_label in panels:
+    for ax, pcs, title, panel_label in panels:
         for q in range(4):
             mask = quadrants == q
             ax.scatter(pcs[mask, 0], pcs[mask, 1], c=colors[q],
                        alpha=0.30, s=2, edgecolors='none', rasterized=True)
 
         ax.set_xlabel(f'PC 1 ({var[0]:.1f}% var.)', fontsize=15)
-        ax.set_ylabel(f'PC 2 ({var[1]:.1f}% var.)', fontsize=15)
         ax.set_title(title, fontsize=18, fontweight='bold', pad=15)
         ax.tick_params(labelsize=13, width=1.8)
 
         # Panel label
         ax.text(-0.12, 1.08, panel_label, transform=ax.transAxes,
                 fontsize=22, fontweight='bold', va='top')
+
+    ax1.set_ylabel(f'PC 2 ({var[1]:.1f}% var.)', fontsize=15)
 
     fig.suptitle(layer_label, fontsize=20, fontweight='bold', y=1.04)
 
