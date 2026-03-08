@@ -1,3 +1,4 @@
+discussion/
 datasets/
 *.db
 experiments/coarse_grain_benefits/results/*
@@ -28,6 +29,9 @@ slurm_logs/
 .cursor/
 
 bonner-libraries/
+
+# Large data files (keep locally, regenerable)
+experiments/things_visualizations/data/
 
 # Grid configs change per-experiment; keep local only
 configs/grids/
