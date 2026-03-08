@@ -1,21 +1,20 @@
 """
-Extract features from pretrained and coarse-trained AlexNet across multiple layers,
-project both onto the pretrained model's top 2 PCs, and save results for plotting.
+Extract features from pretrained and coarse-trained AlexNet,
+project each onto its OWN top 2 PCs, and color by the actual PCA labels.
 
-Both models are projected onto the same principal component axes (derived from the
-pretrained model), enabling direct visual comparison without alignment heuristics.
-
-Layers extracted: conv4, fc1, fc2 (raw activations, no L2 normalization).
-Conv layers are spatially pooled (adaptive avg pool to 3x3) before flattening.
+Each model is projected onto its own principal component axes, revealing its intrinsic
+geometry. Images are colored by PCA labels (the coarse model's training signal).
 
 Usage (from project root):
-    python experiments/representation_analysis/2pcs_compare/run_analysis.py --n_classes 4
+    python experiments/representation_analysis/2pcs_compare/run_analysis.py
+    python experiments/representation_analysis/2pcs_compare/run_analysis.py --n_classes 2 --pca_labels_folder pca_labels_clip --checkpoint_dir /data/ymehta3/clip_pca/
     python experiments/representation_analysis/2pcs_compare/run_analysis.py --n_classes 4 --seed 2
 """
 import os
 import sys
 import argparse
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 from torchvision import models, transforms
@@ -33,11 +32,11 @@ from visreps.dataloaders.obj_cls import get_obj_cls_loader
 from visreps.models.utils import FeatureExtractor
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.abspath(os.path.join(SCRIPT_DIR, '../../..'))
 LAYERS = ['conv4', 'fc1', 'fc2']
 
 
 def get_dataloader(dataset='imagenet-mini-50', batch_size=512):
-    """Get dataloader for all images in the dataset (no train/test split)."""
     data_cfg = {
         "dataset": dataset,
         "batchsize": batch_size,
@@ -56,25 +55,39 @@ def get_dataloader(dataset='imagenet-mini-50', batch_size=512):
     return loader
 
 
+def load_pca_labels(loader, n_classes, pca_labels_folder):
+    """Load PCA labels from CSV and match to dataset image order."""
+    csv_path = os.path.join(PROJECT_ROOT,
+                            f'pca_labels/{pca_labels_folder}/n_classes_{n_classes}.csv')
+    df = pd.read_csv(csv_path)
+    label_map = dict(zip(df['image'], df['pca_label']))
+
+    labels = []
+    for sample in loader.dataset.samples:
+        img_id = os.path.basename(sample[2])
+        labels.append(label_map.get(img_id, -1))
+
+    labels = np.array(labels)
+    n_valid = (labels >= 0).sum()
+    print(f"PCA labels ({pca_labels_folder}, {n_classes}-way): "
+          f"{n_valid}/{len(labels)} matched ({n_valid/len(labels)*100:.1f}%)")
+    return labels
+
+
 def load_pretrained_alexnet(device):
-    """Load pretrained AlexNet (full model, not truncated)."""
     model = models.alexnet(weights=models.AlexNet_Weights.IMAGENET1K_V1)
     return model.eval().to(device)
 
 
 def load_trained_alexnet(checkpoint_dir, n_classes, seed, device):
-    """Load coarse-trained CustomCNN from checkpoint (full model)."""
     seed_letter = {1: 'a', 2: 'b', 3: 'c'}[seed]
-    path = os.path.join(checkpoint_dir, f'cfg{n_classes}{seed_letter}', 'checkpoint_epoch_20.pth')
+    path = os.path.join(checkpoint_dir, f'cfg{n_classes}{seed_letter}',
+                        'checkpoint_epoch_20.pth')
     checkpoint = torch.load(path, map_location=device, weights_only=False)
     return checkpoint['model'].eval().to(device)
 
 
 def extract_features(model, loader, device, layers, pool_size=3):
-    """Extract raw features from multiple layers in a single forward pass.
-
-    Conv layers are spatially pooled to pool_size x pool_size before flattening.
-    """
     extractor = FeatureExtractor(model, return_nodes=layers,
                                  extract_pre_and_post=False, post_relu=True)
     extractor.to(device).eval()
@@ -94,7 +107,6 @@ def extract_features(model, loader, device, layers, pool_size=3):
 
 
 def compute_pca(features, n_pcs=2):
-    """Compute PCA. Returns (projections, components, mean, variance_explained)."""
     mean = features.mean(axis=0)
     centered = features - mean
     cov = (centered.T @ centered) / (len(features) - 1)
@@ -105,34 +117,38 @@ def compute_pca(features, n_pcs=2):
     return centered @ components, components, mean, var_explained
 
 
-def assign_quadrants(pc1, pc2):
-    """Assign 4 quadrants via median splits on PC1 and PC2."""
-    quadrants = np.zeros(len(pc1), dtype=int)
-    quadrants[(pc1 <= np.median(pc1)) & (pc2 > np.median(pc2))] = 1
-    quadrants[(pc1 > np.median(pc1)) & (pc2 <= np.median(pc2))] = 2
-    quadrants[(pc1 > np.median(pc1)) & (pc2 > np.median(pc2))] = 3
-    return quadrants
-
-
 def main():
     parser = argparse.ArgumentParser(
-        description="Extract features, compute PCA across layers, save results for plotting"
+        description="Extract features, compute per-model PCA, save results"
     )
-    parser.add_argument('--n_classes', type=int, default=4)
+    parser.add_argument('--n_classes', type=int, default=2)
     parser.add_argument('--seed', type=int, default=1, choices=[1, 2, 3])
     parser.add_argument('--checkpoint_dir', type=str,
-                        default='/data/ymehta3/alexnet_pca/')
+                        default='/data/ymehta3/clip_pca/')
+    parser.add_argument('--pca_labels_folder', type=str,
+                        default='pca_labels_clip')
     parser.add_argument('--dataset', type=str, default='imagenet-mini-50')
     parser.add_argument('--batch_size', type=int, default=512)
+    parser.add_argument('--layers', type=str, nargs='+', default=None,
+                        help='Layers to extract (default: conv4 fc1 fc2)')
     args = parser.parse_args()
 
+    layers = args.layers or LAYERS
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     loader = get_dataloader(args.dataset, batch_size=args.batch_size)
 
-    # --- Pretrained AlexNet (1000-way) ---
-    print("Extracting pretrained AlexNet...")
+    # --- Load PCA labels ---
+    print("Loading PCA labels...")
+    pca_labels = load_pca_labels(loader, args.n_classes, args.pca_labels_folder)
+    valid = pca_labels >= 0
+
+    # --- Save image paths ---
+    img_paths = np.array([sample[0] for sample in loader.dataset.samples])
+
+    # --- Pretrained AlexNet ---
+    print("\nExtracting pretrained AlexNet...")
     pretrained_model = load_pretrained_alexnet(device)
-    pretrained_feats = extract_features(pretrained_model, loader, device, LAYERS)
+    pretrained_feats = extract_features(pretrained_model, loader, device, layers)
     del pretrained_model
     torch.cuda.empty_cache()
 
@@ -141,46 +157,43 @@ def main():
     trained_model = load_trained_alexnet(
         args.checkpoint_dir, args.n_classes, args.seed, device
     )
-    trained_feats = extract_features(trained_model, loader, device, LAYERS)
+    trained_feats = extract_features(trained_model, loader, device, layers)
     del trained_model
     torch.cuda.empty_cache()
 
-    # --- PCA per layer (pretrained basis, project both) ---
-    save_dict = {'n_classes': args.n_classes}
+    # --- PCA per layer (each model gets its own PCs) ---
+    save_dict = {
+        'n_classes': args.n_classes,
+        'pca_labels': pca_labels[valid],
+        'pca_labels_folder': args.pca_labels_folder,
+        'img_paths': img_paths[valid],
+    }
 
     used_layers = []
-    for layer in LAYERS:
-        p_dim = pretrained_feats[layer].shape[1]
-        t_dim = trained_feats[layer].shape[1]
+    for layer in layers:
+        p_feats = pretrained_feats[layer][valid]
+        t_feats = trained_feats[layer][valid]
         print(f"\n--- {layer} ---")
-        print(f"  Pretrained: {pretrained_feats[layer].shape}, "
-              f"Trained: {trained_feats[layer].shape}")
+        print(f"  Pretrained: {p_feats.shape}, Trained: {t_feats.shape}")
 
-        if p_dim != t_dim:
-            print(f"  SKIPPING: dimension mismatch ({p_dim} vs {t_dim})")
-            continue
+        p_pcs, _, _, p_var = compute_pca(p_feats)
+        print(f"  Pretrained var: PC1={p_var[0]:.1f}%, PC2={p_var[1]:.1f}%")
 
-        # PCA on pretrained features
-        p_pcs, components, mean, var = compute_pca(pretrained_feats[layer])
-        print(f"  Pretrained var: PC1={var[0]:.1f}%, PC2={var[1]:.1f}%")
-
-        # Project trained features onto pretrained PCs
-        t_pcs = (trained_feats[layer] - mean) @ components
-
-        # Quadrants from pretrained projections (for coloring)
-        quadrants = assign_quadrants(p_pcs[:, 0], p_pcs[:, 1])
+        t_pcs, _, _, t_var = compute_pca(t_feats)
+        print(f"  Trained var: PC1={t_var[0]:.1f}%, PC2={t_var[1]:.1f}%")
 
         save_dict[f'{layer}_pretrained_pcs'] = p_pcs
+        save_dict[f'{layer}_pretrained_var'] = p_var
         save_dict[f'{layer}_trained_pcs'] = t_pcs
-        save_dict[f'{layer}_var'] = var
-        save_dict[f'{layer}_quadrants'] = quadrants
+        save_dict[f'{layer}_trained_var'] = t_var
         used_layers.append(layer)
 
     save_dict['layers'] = np.array(used_layers)
 
-    output_path = os.path.join(SCRIPT_DIR, f'data_{args.n_classes}way.npz')
+    tag = args.pca_labels_folder.replace('pca_labels_', '')
+    output_path = os.path.join(SCRIPT_DIR, f'data_{args.n_classes}way_{tag}.npz')
     np.savez_compressed(output_path, **save_dict)
-    print(f"\nSaved analysis data to {output_path}")
+    print(f"\nSaved: {output_path}")
 
 
 if __name__ == '__main__':
