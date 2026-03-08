@@ -70,6 +70,7 @@ def generate_slurm_script(job_name: str, overrides: list) -> str:
     # Construct the evaluation command
     cmd = [
         "python -m visreps.run",
+        "--mode eval",
         f"--config {BASE_CONFIG_PATH}",
         "--override"
     ] + [f"{override}" for override in overrides]
@@ -117,7 +118,6 @@ def main():
         overrides.append(f"checkpoint_model={json.dumps(checkpoint_model_name)}")
 
         overrides.extend([
-            "mode=eval",
             "log_expdata=true",
             "load_model_from=checkpoint",
         ])

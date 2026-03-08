@@ -16,7 +16,7 @@ PARAM_GRID = {
     "pca_labels": [True],
     "pca_n_classes": [2, 4, 8, 16, 32, 64],
     "pca_labels_folder": ["pca_labels_vit", "pca_labels_clip", "pca_labels_dino"],
-    "log_checkpoints": ["True"],
+    "log_checkpoints": [True],
 }
 
 # Used when pca_labels is False
@@ -57,7 +57,6 @@ def build_overrides(params):
     """Convert params dict to CLI override strings."""
     overrides = [f"{k}={json.dumps(v)}" for k, v in params.items()]
     overrides.append(f"checkpoint_dir={json.dumps(get_checkpoint_dir(params))}")
-    overrides.append("mode=train")
     return overrides
 
 
@@ -71,7 +70,7 @@ def generate_slurm_script(overrides):
         'echo "Running on: $(hostname)"',
         "nvidia-smi",
         "",
-        f"python -m visreps.run --config {BASE_CONFIG} --override " + " ".join(overrides),
+        f"python -m visreps.run --mode train --config {BASE_CONFIG} --override " + " ".join(overrides),
         "deactivate",
     ]
     return "\n".join(lines)
