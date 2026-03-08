@@ -159,3 +159,23 @@ def stitch_panels(panels, gap=100, margin=50, bg=(255, 255, 255)):
         final.paste(panel, (x, margin))
         x += panel.width + gap
     return final
+
+
+# ── Shared plot constants & helpers ──────────────────────────────────
+
+COLOR_CLIP4 = "#2d7f2d"
+COLOR_1K = "#b2182b"
+COLOR_2CLASS = "#2166ac"
+COLOR_NEUTRAL = "#888888"
+
+
+def save_fig(fig, path, dpi=300):
+    """Save figure, close it, and print the output path."""
+    import warnings
+    import matplotlib.pyplot as plt
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        fig.tight_layout()
+    fig.savefig(path, dpi=dpi, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+    print(f"Saved: {path}")
