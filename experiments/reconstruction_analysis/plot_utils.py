@@ -163,7 +163,7 @@ def _draw_baseline(ax, baseline, color, linestyle, linewidth, label, zorder=1):
                linewidth=linewidth, label=label, zorder=zorder)
 
 
-def plot_panel(ax, curve_df, trained_baseline, comparison_baseline,
+def plot_panel(ax, curve_df, comparison_baseline,
                untrained_baseline, title, comparison_label="Best coarse model",
                show_ylabel=True):
     """Plot one reconstruction curve panel with baselines."""
@@ -171,7 +171,6 @@ def plot_panel(ax, curve_df, trained_baseline, comparison_baseline,
     ci_low, ci_high = curve_df["ci_low"].values, curve_df["ci_high"].values
 
     _draw_baseline(ax, untrained_baseline, UNTRAINED_COLOR, ":", 1.3, "Untrained")
-    _draw_baseline(ax, trained_baseline, TRAINED_COLOR, "--", 1.3, "1000-way (all dims)")
 
     ax.fill_between(k, ci_low, ci_high, color=CURVE_COLOR, alpha=0.15, zorder=2)
     ax.plot(k, mean, "-o", color=CURVE_COLOR, markersize=3.5, linewidth=1.6,
@@ -186,7 +185,11 @@ def plot_panel(ax, curve_df, trained_baseline, comparison_baseline,
         ax.set_ylabel("Spearman $\\rho$", fontsize=10, labelpad=4)
     ax.set_title(title, fontsize=11, fontweight="bold", pad=6)
     ax.set_xticks(k)
-    ax.set_xticklabels([str(int(v)) if v % 2 == 1 or v == 2 else "" for v in k], fontsize=8)
+    # Label a sparse subset to avoid crowding on non-uniform axis
+    labeled = {1, 5, 10, 20, 30, 40, 50} | {int(k[0]), int(k[-1])}
+    ax.set_xticklabels(
+        [str(int(v)) if int(v) in labeled else "" for v in k], fontsize=8,
+    )
     ax.tick_params(axis="both", which="major", labelsize=8.5,
                    length=TICK_MAJOR_LEN, width=0.8, direction="out")
     ax.yaxis.set_minor_locator(plt.matplotlib.ticker.AutoMinorLocator(2))
@@ -225,7 +228,6 @@ def plot_figure(neural_dataset, query_comparison_fn, comparison_label,
 
         plot_panel(
             axes[i], agg,
-            trained_baseline=query_1000way_baseline(neural_dataset, region),
             comparison_baseline=query_comparison_fn(neural_dataset, region, **query_kwargs),
             untrained_baseline=query_untrained_baseline(neural_dataset, region),
             title=label, comparison_label=comparison_label, show_ylabel=(i == 0),

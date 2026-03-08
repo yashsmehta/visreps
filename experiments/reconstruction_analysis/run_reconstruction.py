@@ -1,16 +1,16 @@
 """
-Optimized Reconstruction Analysis
-===================================
-Sweeps pca_k from 1-15 for the 1000-way model, measuring how much of the
-brain-alignment signal is captured by the top-k PCs of layer activations.
+Reconstruction Analysis — Coarse-Layer Anchored
+=================================================
+For a coarse-grained model, finds the best layer per (region, subject). Then,
+at that SAME layer, sweeps pca_k to measure how many PCs are needed to
+reconstruct the alignment signal — for both the 1000-way and coarse models.
 
-Skips Phase 1 (layer selection) by querying results.db for pre-computed best
-layers from existing 1000-way evaluations. Extracts each unique best layer
-only ONCE per seed, then sweeps all pca_k values using cached activations.
+This answers: "At the layer where the coarse model peaks, how does the
+alignment of each model's top-k PCs compare?"
 
 Usage:
-    python experiments/reconstruction_analysis/run_reconstruction.py
-    python experiments/reconstruction_analysis/run_reconstruction.py --datasets nsd tvsd
+    python experiments/reconstruction_analysis/run_reconstruction.py --model-type coarse
+    python experiments/reconstruction_analysis/run_reconstruction.py --model-type both --datasets nsd tvsd
 """
 
 import argparse
@@ -49,11 +49,28 @@ from visreps.analysis.reconstruct_from_pcs import reconstruct_from_pcs
 # ── Constants ─────────────────────────────────────────────────────────────────
 
 DB_PATH = "results.db"
-CHECKPOINT_DIR = "/data/ymehta3/default"
-CFG_ID = 1000
+FINE_CONFIG = {"cfg_id": 1000, "checkpoint_dir": "/data/ymehta3/default"}
 SEEDS = [1, 2, 3]
-PCA_K_RANGE = range(1, 16)
 COMPARE_METHOD = "spearman"
+
+# Per-region coarse model configs for layer selection: region -> (cfg_id, checkpoint_dir)
+COARSE_CONFIG = {
+    "nsd": {
+        "early visual stream": (64, "/data/ymehta3/alexnet_pca"),
+        "ventral visual stream": (16, "/data/ymehta3/clip_pca"),
+    },
+    "tvsd": {
+        "V1": (64, "/data/ymehta3/alexnet_pca"),
+        "V4": (64, "/data/ymehta3/alexnet_pca"),
+        "IT": (64, "/data/ymehta3/alexnet_pca"),
+    },
+    "things-behavior": {
+        "N/A": (64, "/data/ymehta3/vit_pca"),
+    },
+}
+
+# Dense at small k (1-10), increasingly sparse up to 50
+PCA_K_VALUES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20, 25, 30, 40, 50]
 
 DATASET_CONFIG = {
     "nsd": {
@@ -73,13 +90,18 @@ DATASET_CONFIG = {
 
 # ── DB query ──────────────────────────────────────────────────────────────────
 
-def query_best_layers(neural_dataset, seed):
-    """Query results.db for best layers from existing 1000-way baseline evaluations.
+def query_best_layers(neural_dataset, seed, cfg_id, checkpoint_dir, region=None):
+    """Query results.db for a coarse model's best layers.
 
+    Finds the best layer per (region, subject_idx) for the given coarse model.
+    These layers are then used as anchors in the 1000-way model for PC
+    reconstruction.
+
+    If region is specified, only returns layers for that region.
     Returns dict mapping (region, subject_idx_str) -> best_layer_name.
     """
     conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql("""
+    query = """
         SELECT region, subject_idx, layer, score
         FROM results
         WHERE cfg_id = ?
@@ -89,13 +111,19 @@ def query_best_layers(neural_dataset, seed):
           AND compare_method = ?
           AND neural_dataset = ?
           AND seed = ?
-    """, conn, params=[CFG_ID, CHECKPOINT_DIR, COMPARE_METHOD, neural_dataset, seed])
+    """
+    params = [cfg_id, checkpoint_dir, COMPARE_METHOD, neural_dataset, seed]
+    if region is not None:
+        query += "  AND region = ?\n"
+        params.append(region)
+    df = pd.read_sql(query, conn, params=params)
     conn.close()
 
     if df.empty:
         raise ValueError(
-            f"No baseline results for {neural_dataset} seed={seed}. "
-            "Run the standard 1000-way evaluation first."
+            f"No baseline results for cfg_id={cfg_id} checkpoint_dir={checkpoint_dir} "
+            f"{neural_dataset} seed={seed} region={region}. "
+            "Run the coarse model evaluation first."
         )
 
     # Best layer per (region, subject_idx) — highest score
@@ -106,7 +134,7 @@ def query_best_layers(neural_dataset, seed):
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-def build_cfg(seed, neural_dataset):
+def build_cfg(seed, neural_dataset, cfg_id, checkpoint_dir):
     """Construct eval config and merge with training config from checkpoint."""
     cfg = OmegaConf.create({
         "mode": "eval",
@@ -117,8 +145,8 @@ def build_cfg(seed, neural_dataset):
         "pca_k": 1,
         "load_model_from": "checkpoint",
         "seed": seed,
-        "cfg_id": CFG_ID,
-        "checkpoint_dir": CHECKPOINT_DIR,
+        "cfg_id": cfg_id,
+        "checkpoint_dir": checkpoint_dir,
         "checkpoint_model": "checkpoint_epoch_20.pth",
         "analysis": "rsa",
         "compare_method": COMPARE_METHOD,
@@ -175,9 +203,72 @@ def _save(cfg, layer, score, ci_low, ci_high, boot_scores):
     save_results(result_df, cfg)
 
 
+# ── Shared helpers ─────────────────────────────────────────────────────────────
+
+def _extract_at_anchor_layers(cfg, best_layers, regions, subjects,
+                               dl_test, shared_test_ids, dev):
+    """Load a model and extract activations at anchor layers (no SRP)."""
+    model = load_model(cfg, dev)
+    model = configure_feature_extractor(cfg, model)
+
+    needed_layers = {
+        best_layers[(region, str(subj))]
+        for region in regions for subj in subjects
+    }
+    raw_acts = {}
+    for layer in sorted(needed_layers):
+        acts, _ = extract_single_layer(
+            model, dl_test, dev, layer, shared_test_ids
+        )
+        raw_acts[layer] = acts
+
+    del model
+    torch.cuda.empty_cache()
+    return raw_acts
+
+
+def _sweep_pca_k(raw_acts, neural_rdms, best_layers, cfg, regions, subjects):
+    """Sweep pca_k for one model's activations, compute RSA, and save."""
+    for pca_k in PCA_K_VALUES:
+        rprint(f"\n  --- pca_k = {pca_k} ---", style="info")
+
+        reconstructed = reconstruct_from_pcs(raw_acts, pca_k)
+        model_rdms = {
+            layer: compute_rdm(
+                acts.flatten(start_dim=1) if acts.ndim > 2 else acts
+            )
+            for layer, acts in reconstructed.items()
+        }
+        del reconstructed
+
+        for region in regions:
+            for subj in subjects:
+                best_layer = best_layers[(region, str(subj))]
+                score, ci_low, ci_high, boot_scores = bootstrap_rdm_correlation(
+                    model_rdms[best_layer],
+                    neural_rdms[region][subj],
+                    COMPARE_METHOD,
+                    n_bootstrap=cfg.n_bootstrap,
+                )
+
+                rprint(
+                    f"    {region} subj {subj} | {best_layer} = {score:.4f}"
+                    f"  [{ci_low:.4f}, {ci_high:.4f}]",
+                    style="highlight",
+                )
+
+                cfg.pca_k = pca_k
+                cfg.region = region
+                cfg.subject_idx = subj
+                cfg.reconstruct_from_pcs = True
+                _save(cfg, best_layer, score, ci_low, ci_high, boot_scores)
+
+        del model_rdms
+
+
 # ── NSD / TVSD ────────────────────────────────────────────────────────────────
 
-def run_nsd_tvsd(neural_dataset):
+def run_nsd_tvsd(neural_dataset, model_types):
     """Run pca_k reconstruction sweep for NSD or TVSD."""
     ds = DATASET_CONFIG[neural_dataset]
     regions, subjects = ds["regions"], ds["subjects"]
@@ -188,21 +279,27 @@ def run_nsd_tvsd(neural_dataset):
         rprint(f"  {neural_dataset.upper()} | seed {seed}", style="info")
         rprint(f"{'='*60}\n", style="info")
 
-        # 1. Query DB for best layers
-        best_layers = query_best_layers(neural_dataset, seed)
-        rprint(f"  Best layers from DB:", style="success")
+        # 1. Query DB for coarse model best layers per region (used as anchors)
+        coarse_cfg = COARSE_CONFIG[neural_dataset]
+        best_layers = {}
+        rprint(f"  Coarse model best layers (per-region anchors):", style="success")
         for region in regions:
+            cfg_id_r, ckpt_r = coarse_cfg[region]
+            region_layers = query_best_layers(
+                neural_dataset, seed, cfg_id_r, ckpt_r, region=region,
+            )
+            best_layers.update(region_layers)
             for subj in subjects:
                 layer = best_layers[(region, str(subj))]
-                rprint(f"    {region} subj {subj}: {layer}", style="info")
+                rprint(f"    {region} subj {subj}: {layer}  "
+                       f"(cfg_id={cfg_id_r}, {ckpt_r.split('/')[-1]})",
+                       style="info")
 
-        # 2. Build config, load model + neural data
-        cfg = build_cfg(seed, neural_dataset)
-        model = load_model(cfg, dev)
-        model = configure_feature_extractor(cfg, model)
-
+        # 2. Load neural data (shared across model types)
+        base_cfg = build_cfg(seed, neural_dataset,
+                             FINE_CONFIG["cfg_id"], FINE_CONFIG["checkpoint_dir"])
         loader_fn = load_all_nsd_data if neural_dataset == "nsd" else load_all_tvsd_data
-        all_data = loader_fn(cfg, subjects=subjects, regions=regions)
+        all_data = loader_fn(base_cfg, subjects=subjects, regions=regions)
         stimuli = all_data["stimuli"]
         shared_test_ids = all_data["shared_test_ids"]
         neural = all_data["neural"]
@@ -212,28 +309,10 @@ def run_nsd_tvsd(neural_dataset):
         test_stimuli = {sid: stimuli[sid] for sid in shared_test_ids if sid in stimuli}
         dl_test = _make_loader(
             test_stimuli, get_transform(ds_stats="imgnet"),
-            cfg.batchsize, cfg.num_workers,
+            base_cfg.batchsize, base_cfg.num_workers,
         )
 
-        # 4. Re-extract unique best layers ONCE (no SRP)
-        #    Filter to only layers needed for our regions/subjects
-        #    (best_layers may include extra fine-grained regions from the DB)
-        needed_layers = {
-            best_layers[(region, str(subj))]
-            for region in regions for subj in subjects
-        }
-        unique_layers = sorted(needed_layers)
-        raw_acts = {}
-        for layer in unique_layers:
-            acts, _ = extract_single_layer(
-                model, dl_test, dev, layer, shared_test_ids
-            )
-            raw_acts[layer] = acts
-
-        del model, dl_test
-        torch.cuda.empty_cache()
-
-        # 5. Pre-compute neural RDMs (invariant across pca_k)
+        # 4. Pre-compute neural RDMs (invariant across models and pca_k)
         neural_rdms = {}
         for region in regions:
             neural_rdms[region] = {}
@@ -248,57 +327,46 @@ def run_nsd_tvsd(neural_dataset):
                 )
                 neural_rdms[region][subj] = compute_rdm(neural_tensor)
 
-        # 6. Sweep pca_k
-        for pca_k in PCA_K_RANGE:
-            rprint(f"\n  --- pca_k = {pca_k} ---", style="info")
+        # 5. Sweep per model type
+        if "1000way" in model_types:
+            rprint(f"\n  ── 1000-way model sweep ──", style="success")
+            raw_acts = _extract_at_anchor_layers(
+                base_cfg, best_layers, regions, subjects,
+                dl_test, shared_test_ids, dev,
+            )
+            _sweep_pca_k(raw_acts, neural_rdms, best_layers, base_cfg,
+                         regions, subjects)
+            del raw_acts
+            torch.cuda.empty_cache()
 
-            # Reconstruct each unique layer from k PCs
-            reconstructed = {
-                layer: reconstruct_from_pcs({layer: acts}, pca_k)[layer]
-                for layer, acts in raw_acts.items()
-            }
-
-            # Build model RDMs
-            model_rdms = {
-                layer: compute_rdm(
-                    acts.flatten(start_dim=1) if acts.ndim > 2 else acts
-                )
-                for layer, acts in reconstructed.items()
-            }
-            del reconstructed
-
+        if "coarse" in model_types:
+            # Group regions by their coarse model to minimize model loads
+            model_to_regions = {}
             for region in regions:
-                for subj in subjects:
-                    best_layer = best_layers[(region, str(subj))]
-                    score, ci_low, ci_high, boot_scores = bootstrap_rdm_correlation(
-                        model_rdms[best_layer],
-                        neural_rdms[region][subj],
-                        COMPARE_METHOD,
-                        n_bootstrap=cfg.n_bootstrap,
-                    )
+                key = coarse_cfg[region]
+                model_to_regions.setdefault(key, []).append(region)
 
-                    rprint(
-                        f"    {region} subj {subj} | {best_layer} = {score:.4f}"
-                        f"  [{ci_low:.4f}, {ci_high:.4f}]",
-                        style="highlight",
-                    )
+            for (cfg_id_c, ckpt_c), c_regions in model_to_regions.items():
+                rprint(f"\n  ── Coarse model sweep: cfg_id={cfg_id_c}, "
+                       f"{ckpt_c.split('/')[-1]} ──", style="success")
+                cfg_c = build_cfg(seed, neural_dataset, cfg_id_c, ckpt_c)
+                raw_acts = _extract_at_anchor_layers(
+                    cfg_c, best_layers, c_regions, subjects,
+                    dl_test, shared_test_ids, dev,
+                )
+                _sweep_pca_k(raw_acts, neural_rdms, best_layers, cfg_c,
+                             c_regions, subjects)
+                del raw_acts
+                torch.cuda.empty_cache()
 
-                    cfg.pca_k = pca_k
-                    cfg.region = region
-                    cfg.subject_idx = subj
-                    cfg.reconstruct_from_pcs = True
-                    _save(cfg, best_layer, score, ci_low, ci_high, boot_scores)
-
-            del model_rdms
-
-        del raw_acts, neural_rdms
+        del neural_rdms, dl_test
         torch.cuda.empty_cache()
         rprint(f"\n  Seed {seed} complete.\n", style="success")
 
 
 # ── THINGS ────────────────────────────────────────────────────────────────────
 
-def run_things():
+def run_things(model_types):
     """Run pca_k reconstruction sweep for THINGS behavioral."""
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -307,28 +375,39 @@ def run_things():
         rprint(f"  THINGS-BEHAVIOR | seed {seed}", style="info")
         rprint(f"{'='*60}\n", style="info")
 
-        # 1. Query DB for best layer
-        best_layers = query_best_layers("things-behavior", seed)
+        # 1. Query DB for coarse model's best layer (used as anchor)
+        cfg_id_t, ckpt_t = COARSE_CONFIG["things-behavior"]["N/A"]
+        best_layers = query_best_layers(
+            "things-behavior", seed, cfg_id_t, ckpt_t,
+        )
         best_layer = best_layers[("N/A", "N/A")]
-        rprint(f"  Best layer from DB: {best_layer}", style="success")
+        rprint(f"  Anchor layer: {best_layer}  "
+               f"(cfg_id={cfg_id_t}, {ckpt_t.split('/')[-1]})", style="success")
 
-        # 2. Build config, load model + THINGS data
-        cfg = build_cfg(seed, "things-behavior")
-        cfg.region = "N/A"
-        cfg.subject_idx = "N/A"
-        model = load_model(cfg, dev)
-        model = configure_feature_extractor(cfg, model)
+        # 2. Establish concept mapping (model-independent, use first available)
+        if "1000way" in model_types:
+            ref_cfg_id, ref_ckpt = FINE_CONFIG["cfg_id"], FINE_CONFIG["checkpoint_dir"]
+        else:
+            ref_cfg_id, ref_ckpt = cfg_id_t, ckpt_t
 
-        neural_data, dl = get_neural_loader(cfg)
+        ref_cfg = build_cfg(seed, "things-behavior", ref_cfg_id, ref_ckpt)
+        ref_cfg.region = "N/A"
+        ref_cfg.subject_idx = "N/A"
+
+        model = load_model(ref_cfg, dev)
+        model = configure_feature_extractor(ref_cfg, model)
+        neural_data, dl = get_neural_loader(ref_cfg)
         rprint(f"  THINGS data loaded", style="success")
 
-        # 3. SRP activations -> concept averaging (establishes concept mapping)
         acts, ids = get_activations(model, dl, dev)
-        all_concepts = prepare_concept_alignment(cfg, acts, neural_data, ids)
+        all_concepts = prepare_concept_alignment(ref_cfg, acts, neural_data, ids)
         del acts
         torch.cuda.empty_cache()
 
-        # 4. Fixed 80/20 concept split (seed=42, same as original pipeline)
+        # Keep reference model alive for reuse in the first sweep
+        ref_model = model
+
+        # 3. Fixed 80/20 concept split (seed=42, same as original pipeline)
         rng = np.random.RandomState(42)
         n_concepts = all_concepts.neural.size(0)
         perm = rng.permutation(n_concepts)
@@ -351,42 +430,59 @@ def run_things():
         del all_concepts
         rprint(f"  {len(eval_idx)} evaluation concepts\n", style="success")
 
-        # 5. Re-extract best layer without SRP ONCE
-        raw_acts, raw_ids = extract_single_layer(model, dl, dev, best_layer)
-        del model
-        torch.cuda.empty_cache()
-
-        # 6. Pre-compute neural RDM (invariant across pca_k)
+        # 4. Pre-compute neural RDM (shared across model types)
         neural_rdm = compute_rdm(evaluation.neural)
+        evaluation.activations.clear()  # not used in sweep; free memory
 
-        # 7. Sweep pca_k
-        for pca_k in PCA_K_RANGE:
-            rprint(f"\n  --- pca_k = {pca_k} ---", style="info")
+        # 5. Define models to sweep
+        models_to_run = []
+        if "1000way" in model_types:
+            models_to_run.append(
+                ("1000-way model", FINE_CONFIG["cfg_id"], FINE_CONFIG["checkpoint_dir"]))
+        if "coarse" in model_types:
+            models_to_run.append(
+                (f"Coarse model (cfg_id={cfg_id_t})", cfg_id_t, ckpt_t))
 
-            # Reconstruct from k PCs
-            recon = reconstruct_from_pcs({best_layer: raw_acts}, pca_k)[best_layer]
+        # 6. Sweep each model
+        for label, m_cfg_id, m_ckpt in models_to_run:
+            rprint(f"\n  ── {label} sweep ──", style="success")
+            cfg = build_cfg(seed, "things-behavior", m_cfg_id, m_ckpt)
+            cfg.region = "N/A"
+            cfg.subject_idx = "N/A"
 
-            # Concept-average the eval set
-            eval_acts = _concept_average_exact(recon, raw_ids, evaluation)
+            # Reuse reference model if it matches, otherwise load fresh
+            if ref_model is not None and m_cfg_id == ref_cfg_id and m_ckpt == ref_ckpt:
+                mdl = ref_model
+                ref_model = None  # consumed
+            else:
+                mdl = load_model(cfg, dev)
+                mdl = configure_feature_extractor(cfg, mdl)
+            raw_acts, raw_ids = extract_single_layer(mdl, dl, dev, best_layer)
+            del mdl
+            torch.cuda.empty_cache()
 
-            # Build model RDM
-            flat = eval_acts.flatten(start_dim=1) if eval_acts.ndim > 2 else eval_acts
-            model_rdm = compute_rdm(flat)
+            for pca_k in PCA_K_VALUES:
+                rprint(f"\n  --- pca_k = {pca_k} ---", style="info")
+                recon = reconstruct_from_pcs({best_layer: raw_acts}, pca_k)[best_layer]
+                eval_acts = _concept_average_exact(recon, raw_ids, evaluation)
+                flat = eval_acts.flatten(start_dim=1) if eval_acts.ndim > 2 else eval_acts
+                model_rdm = compute_rdm(flat)
 
-            score, ci_low, ci_high, boot_scores = bootstrap_rdm_correlation(
-                model_rdm, neural_rdm, COMPARE_METHOD, n_bootstrap=cfg.n_bootstrap,
-            )
+                score, ci_low, ci_high, boot_scores = bootstrap_rdm_correlation(
+                    model_rdm, neural_rdm, COMPARE_METHOD, n_bootstrap=cfg.n_bootstrap,
+                )
+                rprint(
+                    f"    {best_layer} = {score:.4f}  [{ci_low:.4f}, {ci_high:.4f}]",
+                    style="highlight",
+                )
+                cfg.pca_k = pca_k
+                cfg.reconstruct_from_pcs = True
+                _save(cfg, best_layer, score, ci_low, ci_high, boot_scores)
 
-            rprint(
-                f"    {best_layer} = {score:.4f}  [{ci_low:.4f}, {ci_high:.4f}]",
-                style="highlight",
-            )
+            del raw_acts
+            torch.cuda.empty_cache()
 
-            cfg.pca_k = pca_k
-            cfg.reconstruct_from_pcs = True
-            _save(cfg, best_layer, score, ci_low, ci_high, boot_scores)
-
-        del raw_acts, neural_rdm
+        del ref_model, neural_rdm
         torch.cuda.empty_cache()
         rprint(f"\n  Seed {seed} complete.\n", style="success")
 
@@ -397,7 +493,7 @@ def main():
     load_dotenv()
 
     parser = argparse.ArgumentParser(
-        description="Optimized reconstruction analysis: sweep pca_k for 1000-way model"
+        description="Reconstruction analysis: sweep pca_k for 1000-way and/or coarse models"
     )
     parser.add_argument(
         "--datasets", nargs="*",
@@ -405,7 +501,15 @@ def main():
         choices=["nsd", "tvsd", "things-behavior"],
         help="Which neural datasets to run (default: all three)",
     )
+    parser.add_argument(
+        "--model-type", default="coarse",
+        choices=["1000way", "coarse", "both"],
+        help="Which model(s) to sweep (default: coarse)",
+    )
     args = parser.parse_args()
+
+    model_types = (["1000way", "coarse"] if args.model_type == "both"
+                   else [args.model_type])
 
     for ds in args.datasets:
         rprint(f"\n{'#'*60}", style="info")
@@ -413,9 +517,9 @@ def main():
         rprint(f"{'#'*60}", style="info")
 
         if ds in ("nsd", "tvsd"):
-            run_nsd_tvsd(ds)
+            run_nsd_tvsd(ds, model_types)
         else:
-            run_things()
+            run_things(model_types)
 
 
 if __name__ == "__main__":
