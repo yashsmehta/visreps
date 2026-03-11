@@ -7,9 +7,9 @@ import os, subprocess
 # so we only need it for the default (1000-way) network.
 jobs = [
     {
-        "folder": "default",
-        "subdirs": ["cfg1000a", "cfg1000b", "cfg1000c"],
-        "files": ["checkpoint_epoch_0.pth"],
+        "folder": "pixels_pca",
+        "subdirs": [f"cfg{n}{s}" for n in [2, 4, 8, 16, 32, 64] for s in "abc"],
+        "files": ["checkpoint_epoch_20.pth", "config.json"],
     },
 ]
 remote_base = "/scratch4/mbonner5/ymehta3/visreps/model_checkpoints"
@@ -53,6 +53,10 @@ for job in jobs:
         local_dir = f"{local_base}/{folder}/{cfg}"
         os.makedirs(local_dir, exist_ok=True)
         for f in job["files"]:
+            local_path = os.path.join(local_dir, f)
+            if os.path.exists(local_path):
+                print(f"Skipping {local_path} (already exists)")
+                continue
             src = f"{ssh_target}:{subdir}/{f}"
             print(f"Copying {src} → {local_dir}")
             subprocess.run([

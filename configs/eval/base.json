@@ -9,7 +9,7 @@
   "cfg_id": 4,
   "checkpoint":
   {
-    "checkpoint_dir": "/data/ymehta3/default",
+    "checkpoint_dir": "/data/ymehta3/pixels_pca",
     "checkpoint_model": "checkpoint_epoch_20.pth"
   },
   "torchvision":
