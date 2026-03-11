@@ -816,11 +816,14 @@ class ConfigVerifier:
                 "pca_n_classes must be greater than 1 when pca_labels is True"
             )
 
-        if (self.cfg.pca_n_classes & (self.cfg.pca_n_classes - 1)) != 0:
+        pca_folder = getattr(self.cfg, "pca_labels_folder", "")
+        is_power_of_2 = (self.cfg.pca_n_classes & (self.cfg.pca_n_classes - 1)) == 0
+        if not is_power_of_2 and "wordnet" not in pca_folder:
             self.rprint(
-                "[red]Invalid pca_n_classes. Must be a power of 2[/red]", style="error"
+                "[red]Invalid pca_n_classes. Must be a power of 2 (unless using WordNet labels)[/red]",
+                style="error",
             )
-            raise AssertionError("pca_n_classes must be a power of 2")
+            raise AssertionError("pca_n_classes must be a power of 2 (unless using WordNet labels)")
 
 
 def setup_optimizer(model, cfg):
