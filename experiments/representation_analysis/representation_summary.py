@@ -23,8 +23,9 @@ import os
 import sys
 import numpy as np
 import torch
+import matplotlib
 import matplotlib.pyplot as plt
-import matplotlib.cm as cm
+import seaborn as sns
 from tqdm import tqdm
 
 # Setup paths
@@ -67,17 +68,17 @@ OUTPUT_DIR = os.path.join(SCRIPT_DIR, "figs")
 
 
 # ── Styling ────────────────────────────────────────────────────────────
-UNTRAINED_STYLE = {'color': '0.5', 'linestyle': '--', 'linewidth': 1.5, 'markersize': 4}
-FINE_STYLE = {'color': '#e67e22', 'linestyle': '-', 'linewidth': 1.5, 'markersize': 4}
+UNTRAINED_STYLE = {'color': '0.5', 'linestyle': (0, (5, 2.5)), 'linewidth': 1.6, 'markersize': 4.5, 'zorder': 1}
+FINE_STYLE = {'color': '#e8590c', 'linestyle': '-', 'linewidth': 1.8, 'markersize': 5.5, 'zorder': 10}
 
 def get_coarse_colors(n):
     """Blue gradient: light (fewest classes) to dark (most classes)."""
-    cmap = cm.get_cmap('Blues')
-    return [cmap(0.3 + 0.6 * i / (n - 1)) for i in range(n)]
+    cmap = matplotlib.colormaps['Blues']
+    return [cmap(0.25 + 0.65 * i / (n - 1)) for i in range(n)]
 
 
 def get_style(cfg_id):
-    """Return (color, linestyle, linewidth, markersize) for a given cfg_id."""
+    """Return style dict for a given cfg_id."""
     if cfg_id == 'untrained':
         return UNTRAINED_STYLE
     elif cfg_id == 1000:
@@ -85,7 +86,7 @@ def get_style(cfg_id):
     else:
         idx = COARSE_IDS.index(cfg_id)
         colors = get_coarse_colors(len(COARSE_IDS))
-        return {'color': colors[idx], 'linestyle': '-', 'linewidth': 1.5, 'markersize': 4}
+        return {'color': colors[idx], 'linestyle': '-', 'linewidth': 1.4, 'markersize': 4.5, 'zorder': 5}
 
 
 def get_label(cfg_id):
@@ -177,33 +178,57 @@ def aggregate_seeds(all_seed_results, layers, metric_key):
 
 
 # ── Plotting ───────────────────────────────────────────────────────────
-def _plot_layer_metric(ax, all_results, layers, metric_key, ylabel, title,
+LAYER_LABELS = {
+    'conv1': 'Conv1', 'conv2': 'Conv2', 'conv3': 'Conv3',
+    'conv4': 'Conv4', 'conv5': 'Conv5', 'fc1': 'FC1', 'fc2': 'FC2',
+}
+
+
+def _despine(ax):
+    sns.despine(ax=ax, offset=5)
+
+
+def _plot_layer_metric(ax, all_results, layers, metric_key, ylabel, panel_label,
                        log_y=False):
-    """Plot a metric across layers for all cfg_ids."""
+    """Plot a metric across layers with shaded SEM bands."""
     x = np.arange(len(layers))
 
     for cfg_id in ALL_IDS:
         style = get_style(cfg_id)
         label = get_label(cfg_id)
         means, sems = aggregate_seeds(all_results[cfg_id], layers, metric_key)
-        ax.errorbar(x, means, yerr=sems, fmt='o-',
-                    color=style['color'], linestyle=style['linestyle'],
-                    linewidth=style['linewidth'], markersize=style['markersize'],
-                    label=label, capsize=2)
+        n_seeds = len(all_results[cfg_id])
+        if n_seeds > 1:
+            ax.fill_between(x, means - sems, means + sems,
+                            color=style['color'], alpha=0.12, linewidth=0)
+        ax.plot(x, means, color=style['color'], linestyle=style['linestyle'],
+                linewidth=style['linewidth'], marker='o',
+                markersize=style['markersize'], markeredgecolor='white',
+                markeredgewidth=0.8, label=label, zorder=style.get('zorder', 5))
 
     ax.set_xticks(x)
-    ax.set_xticklabels(layers)
+    ax.set_xticklabels([LAYER_LABELS.get(l, l) for l in layers])
     ax.set_ylabel(ylabel)
     ax.set_xlabel('Layer')
-    ax.set_title(title, fontweight='bold')
-    ax.grid(True, alpha=0.3)
+    ax.set_title(panel_label, loc='left', fontsize=10, fontweight='bold', pad=8)
     if log_y:
         ax.set_yscale('log')
+    _despine(ax)
 
 
 def make_figure(all_results, layers, output_path):
     """Create the 2x2 summary figure."""
-    fig, axes = plt.subplots(2, 2, figsize=(11, 9))
+    sns.set_theme(style='ticks', context='paper', font_scale=1.05)
+    plt.rcParams.update({
+        'font.family': 'sans-serif',
+        'axes.linewidth': 0.8,
+        'xtick.major.width': 0.6,
+        'ytick.major.width': 0.6,
+        'xtick.major.size': 3.5,
+        'ytick.major.size': 3.5,
+    })
+
+    fig, axes = plt.subplots(2, 2, figsize=(10, 8.5))
 
     # ── (a) FC1 Eigenspectrum (top-left, log-log) ─────────────────────
     ax = axes[0, 0]
@@ -215,42 +240,53 @@ def make_figure(all_results, layers, output_path):
         for r in all_results[cfg_id]:
             eigs = r['eigenvalues'][layer]
             n_plot = min(N_EIGEN_COMPONENTS, len(eigs))
-            spectra.append(eigs[:n_plot] / eigs[0])
+            spectra.append(eigs[:n_plot] / eigs.sum())
         spectra = np.array(spectra)
         mean_spec = spectra.mean(axis=0)
+        sem_spec = spectra.std(axis=0) / np.sqrt(len(spectra)) if len(spectra) > 1 else np.zeros_like(mean_spec)
         comps = np.arange(1, len(mean_spec) + 1)
+        if len(spectra) > 1:
+            ax.fill_between(comps, mean_spec - sem_spec, mean_spec + sem_spec,
+                            color=style['color'], alpha=0.10, linewidth=0)
         ax.plot(comps, mean_spec, color=style['color'],
-                linestyle=style['linestyle'], linewidth=style['linewidth'],
-                label=label)
+                linestyle=style['linestyle'], linewidth=style['linewidth'] + 0.2,
+                label=label, zorder=style.get('zorder', 5))
 
     ax.set_xscale('log')
     ax.set_yscale('log')
     ax.set_xlabel('Component')
-    ax.set_ylabel('Normalized Eigenvalue')
-    ax.set_title(f'(a) {layer.upper()} Eigenspectrum', fontweight='bold')
-    ax.grid(True, alpha=0.3, which='both')
+    ax.set_ylabel('Fraction of variance')
+    ax.set_title('(a) FC1 eigenspectrum', loc='left', fontsize=10, fontweight='bold', pad=8)
+    _despine(ax)
 
     # ── (b) Effective Dimensionality (top-right, log y) ────────────────
     _plot_layer_metric(axes[0, 1], all_results, layers, 'pr',
-                       'Participation Ratio', '(b) Effective Dimensionality',
+                       'Participation ratio', '(b) Effective dimensionality',
                        log_y=True)
 
     # ── (c) Two-NN Intrinsic Dimension (bottom-left) ──────────────────
     _plot_layer_metric(axes[1, 0], all_results, layers, 'twonn',
-                       'Intrinsic Dimension', '(c) Two-NN Intrinsic Dimension')
+                       'Intrinsic dimension', '(c) Two-NN intrinsic dimension')
 
     # ── (d) Activation Sparsity (bottom-right) ────────────────────────
     _plot_layer_metric(axes[1, 1], all_results, layers, 'sparsity',
-                       'Hoyer Sparsity', '(d) Activation Sparsity')
-    axes[1, 1].set_ylim(0, 1)
+                       'Hoyer sparsity', '(d) Activation sparsity')
+    axes[1, 1].set_ylim(0.1, 1.02)
 
-    # Single shared legend
+    # ── Legend below figure as horizontal strip ─────────────────────────
     handles, labels = axes[0, 0].get_legend_handles_labels()
-    fig.legend(handles, labels, loc='center right', fontsize=9,
-               bbox_to_anchor=(1.13, 0.5), title='Training', title_fontsize=10)
 
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=200, bbox_inches='tight', facecolor='white')
+    plt.tight_layout(h_pad=2.5, w_pad=2.5)
+    fig.subplots_adjust(bottom=0.11)
+
+    fig.legend(
+        handles, labels, loc='lower center',
+        bbox_to_anchor=(0.5, -0.005), frameon=False,
+        fontsize=8, ncol=4, columnspacing=1.8,
+        handlelength=2.2, handletextpad=0.5, labelspacing=0.4,
+    )
+    plt.savefig(output_path, dpi=600, bbox_inches='tight',
+                facecolor='white', edgecolor='none')
     plt.close()
     print(f"Saved: {output_path}")
 

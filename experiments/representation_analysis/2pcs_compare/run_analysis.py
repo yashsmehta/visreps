@@ -5,10 +5,14 @@ project each onto its OWN top 2 PCs, and color by the actual PCA labels.
 Each model is projected onto its own principal component axes, revealing its intrinsic
 geometry. Images are colored by PCA labels (the coarse model's training signal).
 
+Features are L2-normalized by default to match the PCA label generation pipeline
+(see scripts/extract_representations/alexnet_representations.py).
+
 Usage (from project root):
     python experiments/representation_analysis/2pcs_compare/run_analysis.py
     python experiments/representation_analysis/2pcs_compare/run_analysis.py --n_classes 2 --pca_labels_folder pca_labels_clip --checkpoint_dir /data/ymehta3/clip_pca/
     python experiments/representation_analysis/2pcs_compare/run_analysis.py --n_classes 4 --seed 2
+    python experiments/representation_analysis/2pcs_compare/run_analysis.py --no_l2_norm  # raw activations
 """
 import os
 import sys
@@ -17,6 +21,7 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torchvision import models, transforms
 from tqdm import tqdm
 
@@ -87,7 +92,7 @@ def load_trained_alexnet(checkpoint_dir, n_classes, seed, device):
     return checkpoint['model'].eval().to(device)
 
 
-def extract_features(model, loader, device, layers, pool_size=3):
+def extract_features(model, loader, device, layers, pool_size=3, l2_norm=False):
     extractor = FeatureExtractor(model, return_nodes=layers,
                                  extract_pre_and_post=False, post_relu=True)
     extractor.to(device).eval()
@@ -101,7 +106,10 @@ def extract_features(model, loader, device, layers, pool_size=3):
                 out = feats[name]
                 if out.dim() == 4:
                     out = pool(out)
-                features[name].append(out.flatten(1).cpu())
+                out = out.flatten(1)
+                if l2_norm:
+                    out = F.normalize(out, p=2, dim=-1)
+                features[name].append(out.cpu())
 
     return {name: torch.cat(features[name]).numpy() for name in layers}
 
@@ -121,16 +129,20 @@ def main():
     parser = argparse.ArgumentParser(
         description="Extract features, compute per-model PCA, save results"
     )
-    parser.add_argument('--n_classes', type=int, default=2)
+    parser.add_argument('--n_classes', type=int, default=4)
     parser.add_argument('--seed', type=int, default=1, choices=[1, 2, 3])
     parser.add_argument('--checkpoint_dir', type=str,
-                        default='/data/ymehta3/clip_pca/')
+                        default='/data/ymehta3/alexnet_pca/')
     parser.add_argument('--pca_labels_folder', type=str,
-                        default='pca_labels_clip')
+                        default='pca_labels_alexnet')
     parser.add_argument('--dataset', type=str, default='imagenet-mini-50')
     parser.add_argument('--batch_size', type=int, default=512)
     parser.add_argument('--layers', type=str, nargs='+', default=None,
                         help='Layers to extract (default: conv4 fc1 fc2)')
+    parser.add_argument('--l2_norm', action='store_true', default=True,
+                        help='L2-normalize features (matches PCA label generation)')
+    parser.add_argument('--no_l2_norm', action='store_false', dest='l2_norm',
+                        help='Disable L2 normalization')
     args = parser.parse_args()
 
     layers = args.layers or LAYERS
@@ -146,18 +158,21 @@ def main():
     img_paths = np.array([sample[0] for sample in loader.dataset.samples])
 
     # --- Pretrained AlexNet ---
-    print("\nExtracting pretrained AlexNet...")
+    norm_str = " (L2-normed)" if args.l2_norm else ""
+    print(f"\nExtracting pretrained AlexNet{norm_str}...")
     pretrained_model = load_pretrained_alexnet(device)
-    pretrained_feats = extract_features(pretrained_model, loader, device, layers)
+    pretrained_feats = extract_features(pretrained_model, loader, device, layers,
+                                        l2_norm=args.l2_norm)
     del pretrained_model
     torch.cuda.empty_cache()
 
     # --- Coarse-trained AlexNet ---
-    print(f"\nExtracting {args.n_classes}-way trained AlexNet (seed {args.seed})...")
+    print(f"\nExtracting {args.n_classes}-way trained AlexNet (seed {args.seed}){norm_str}...")
     trained_model = load_trained_alexnet(
         args.checkpoint_dir, args.n_classes, args.seed, device
     )
-    trained_feats = extract_features(trained_model, loader, device, layers)
+    trained_feats = extract_features(trained_model, loader, device, layers,
+                                     l2_norm=args.l2_norm)
     del trained_model
     torch.cuda.empty_cache()
 
