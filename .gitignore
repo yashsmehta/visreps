@@ -27,6 +27,7 @@ plots/
 slurm_logs/
 .CLAUDE.md
 .cursor/
+.claude/commands/
 
 bonner-libraries/
 
