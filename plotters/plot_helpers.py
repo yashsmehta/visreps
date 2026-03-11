@@ -22,6 +22,7 @@ PCA_MODELS = {
     "vit": "ViT",
     "clip": "CLIP",
     "dino": "DINO",
+    "pixels": "Pixels",
 }
 # Back-compat alias
 FOLDER_DISPLAY = {f"pca_labels_{k}": v for k, v in PCA_MODELS.items()}

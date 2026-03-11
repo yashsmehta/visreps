@@ -27,6 +27,7 @@ ARCHITECTURES = [
     ("alexnet", "pca_labels_alexnet", "AlexNet"),
     ("clip",    "pca_labels_clip",    "CLIP"),
     ("vit",     "pca_labels_vit",     "ViT"),
+    ("pixels",  "pca_labels_pixels",  "Pixels"),
 ]
 N_ARCH = len(ARCHITECTURES)
 
@@ -42,6 +43,7 @@ ARCH_STYLE = {
     "clip":    {"color": "#1B7837", "marker": "s"},    # Forest green
     "dino":    {"color": "#E08214", "marker": "D"},    # Warm orange
     "vit":     {"color": "#C51B7D", "marker": "^"},    # Magenta-pink
+    "pixels":  {"color": "#762A83", "marker": "v"},    # Purple
 }
 BASELINE_1K_COLOR = "#404040"
 UNTRAINED_STYLE = {"color": "#AAAAAA", "linestyle": (0, (6, 3)), "linewidth": 1.4}
