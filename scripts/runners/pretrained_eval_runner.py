@@ -1,23 +1,29 @@
-"""Run pretrained ViT and CLIP evaluations across NSD, TVSD, and THINGS.
+"""Run pretrained model evaluations on THINGS behavioral similarity.
 
-Populates results.db with pretrained model baselines for Figure 5.
-Usage: python scripts/runners/pretrained_eval_runner.py [--models vit clip] [--datasets nsd tvsd things]
+Evaluates a range of pretrained models (supervised, self-supervised, vision-language)
+and saves RSA results to results.db.
+
+Usage:
+    python scripts/runners/pretrained_eval_runner.py --dry-run
+    python scripts/runners/pretrained_eval_runner.py --datasets things
+    python scripts/runners/pretrained_eval_runner.py --models alexnet vgg16 resnet50 --datasets things
 """
 
 import argparse
 import subprocess
 import json
-import sys
 
 MODELS = {
-    "vit": {
-        "model_name": "ViTBase",
-        "pretrained_dataset": "imagenet1k",
-    },
-    "clip": {
-        "model_name": "CLIP_ViT_L14",
-        "pretrained_dataset": "openai",
-    },
+    "alexnet":  {"model_name": "AlexNet",          "pretrained_dataset": "imagenet1k"},
+    "vgg16":    {"model_name": "VGG16",            "pretrained_dataset": "imagenet1k"},
+    "resnet50": {"model_name": "ResNet50",         "pretrained_dataset": "imagenet1k"},
+    "convnext": {"model_name": "ConvNeXt_Base",    "pretrained_dataset": "imagenet1k"},
+    "vit":      {"model_name": "ViTBase",          "pretrained_dataset": "imagenet1k"},
+    "clip_b32": {"model_name": "CLIP_ViT_B32",     "pretrained_dataset": "openai"},
+    "clip_l14": {"model_name": "CLIP_ViT_L14",     "pretrained_dataset": "openai"},
+    "dinov1":   {"model_name": "DINOv1_ResNet50",  "pretrained_dataset": "dino"},
+    "dinov2":   {"model_name": "DINOv2_ViT_B14",   "pretrained_dataset": "dinov2"},
+    "dinov3":   {"model_name": "DINOv3_ViT_L16",   "pretrained_dataset": "dinov3"},
 }
 
 DATASETS = {
@@ -26,14 +32,9 @@ DATASETS = {
         "subject_idx": [0, 1, 2, 3, 4, 5, 6, 7],
         "region": ["early visual stream", "ventral visual stream"],
     },
-    # "tvsd": {
-    #     "neural_dataset": "tvsd",
-    #     "subject_idx": [0, 1],
-    #     "region": ["V1", "V4", "IT"],
-    # },
-    # "things": {
-    #     "neural_dataset": "things-behavior",
-    # },
+    "things": {
+        "neural_dataset": "things-behavior",
+    },
 }
 
 SHARED = {
@@ -61,9 +62,12 @@ def build_overrides(params):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--models", nargs="+", default=list(MODELS), choices=list(MODELS))
-    parser.add_argument("--datasets", nargs="+", default=list(DATASETS), choices=list(DATASETS))
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--models", nargs="+", default=list(MODELS),
+                        choices=list(MODELS), metavar="MODEL")
+    parser.add_argument("--datasets", nargs="+", default=["things"],
+                        choices=list(DATASETS), metavar="DATASET")
     parser.add_argument("--dry-run", action="store_true", help="Print commands without running")
     args = parser.parse_args()
 

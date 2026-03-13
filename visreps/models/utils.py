@@ -23,14 +23,25 @@ from visreps.utils import console, rprint
 from visreps.utils import get_seed_letter
 from visreps.analysis.sparse_random_projection import get_srp_transformer
 
-# Default extraction points for pretrained torchvision models
+# Default extraction points for pretrained models.
+# For deep models, layers are evenly subsampled to keep memory bounded.
 TORCHVISION_RETURN_NODES = {
     "AlexNet":  ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2"],
+    "VGG16":    ["conv2", "conv4", "conv7", "conv10", "conv13", "fc1", "fc2", "fc3"],
     "ResNet18": ["conv1", "block1", "block2", "block3", "block4",
                  "block5", "block6", "block7", "block8", "fc1"],
+    "ResNet50": ["conv1"] + [f"block{i}" for i in range(1, 17, 2)] + ["fc1"],
     "ViTBase":  [f"block{i}" for i in range(1, 13)] + ["head"],
-    "CLIP_ViT_L14": [f"block{i}" for i in range(4, 25, 4)],  # every 4th block
+    "ConvNeXt_Base":    ["block3", "block6",  # last of stage 1, 2
+                         "block9", "block14", "block19", "block24", "block29", "block33",  # stage 3
+                         "block36", "fc1"],  # last of stage 4 + classifier
+    "CLIP_ViT_B32":     [f"block{i}" for i in range(2, 13, 2)],
+    "CLIP_ViT_L14":     [f"block{i}" for i in range(4, 25, 4)],
+    "DINOv1_ResNet50":  None,  # filled below (same as ResNet50)
+    "DINOv2_ViT_B14":   [f"block{i}" for i in range(1, 13)],
+    "DINOv3_ViT_L16":   [f"block{i}" for i in range(2, 25, 2)],
 }
+TORCHVISION_RETURN_NODES["DINOv1_ResNet50"] = TORCHVISION_RETURN_NODES["ResNet50"]
 
 class FeatureExtractor(nn.Module):
     def __init__(self, model: nn.Module, return_nodes: Dict[str, str] = None,
@@ -121,6 +132,24 @@ class FeatureExtractor(nn.Module):
                 mapping['head'] = 'heads.head'
                 seen_modules.add(id(self.model.heads.head))
                 
+        elif isinstance(self.model, torchvision.models.convnext.ConvNeXt):
+            # ConvNeXt: map at CNBlock level (like ResNet's block-level mapping)
+            from torchvision.models.convnext import CNBlock
+            block_count = 1
+            for i, stage in enumerate(self.model.features):
+                if hasattr(stage, '__len__'):
+                    for j, sub in enumerate(stage):
+                        if isinstance(sub, CNBlock):
+                            mapping[f'block{block_count}'] = f'features.{i}.{j}'
+                            block_count += 1
+                            seen_modules.add(id(sub))
+            # classifier: [LayerNorm2d, Flatten, Linear]
+            for name, module in self.model.classifier.named_modules():
+                if is_fc(module) and id(module) not in seen_modules:
+                    mapping[f'fc{fc_count}'] = f'classifier.{name}'
+                    fc_count += 1
+                    seen_modules.add(id(module))
+
         elif hasattr(self.model, 'features') and hasattr(self.model, 'classifier'):
             # AlexNet/VGG style
             for name, module in self.model.features.named_modules():
@@ -315,7 +344,7 @@ def get_activations(
     k_fixed, density, seed, cache_dir = 4096, None, None, "model_checkpoints/srp_cache"
     num_layers = len(probe_out)
     for name, out in probe_out.items():
-        D = out.view(out.size(0), -1).size(1)
+        D = out.reshape(out.size(0), -1).size(1)
         transformer = get_srp_transformer(
             D=D,
             k=min(k_fixed, D),
@@ -349,7 +378,7 @@ def get_activations(
             for name, out in feats.items():
                 proj_matrix = srp.get(name)
                 if proj_matrix is not None:
-                    flat = out.view(out.size(0), -1).float()  # (batch, D) on GPU
+                    flat = out.reshape(out.size(0), -1).float()  # (batch, D) on GPU
                     out = torch.sparse.mm(proj_matrix, flat.t()).t()  # (batch, k)
                 activations[name].append(out.cpu().float())
             progress.advance(task)
@@ -397,7 +426,7 @@ def extract_single_layer(
             all_ids.extend(keys)
             feats = model(imgs.to(device))
             out = feats[layer_name]
-            flat = out.view(out.size(0), -1)
+            flat = out.reshape(out.size(0), -1)
             all_acts.append(flat.cpu().float())
             progress.advance(task)
 

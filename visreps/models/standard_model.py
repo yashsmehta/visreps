@@ -99,17 +99,17 @@ def ViTBase(pretrained_dataset="imagenet1k", num_classes=1000):
 
 
 class CLIPVisualExtractor(nn.Module):
-    """CLIP ViT-L/14 visual encoder with per-block feature extraction.
+    """CLIP visual encoder with per-block feature extraction.
 
     Runs the forward pass manually so that intermediate block outputs are
     captured in (N, L, D) format, compatible with the eval pipeline's
     flatten-then-SRP logic.
     """
 
-    def __init__(self):
+    def __init__(self, variant="ViT-L/14"):
         super().__init__()
         import clip
-        model, _ = clip.load("ViT-L/14", device="cpu")
+        model, _ = clip.load(variant, device="cpu")
         self.visual = model.visual.float()
         self.return_nodes = None  # set by configure_feature_extractor
 
@@ -135,6 +135,66 @@ class CLIPVisualExtractor(nn.Module):
 
 
 def CLIP_ViT_L14(pretrained_dataset=None, num_classes=None):
-    """Load CLIP ViT-L/14 visual encoder as a feature extractor."""
-    return CLIPVisualExtractor()
+    return CLIPVisualExtractor(variant="ViT-L/14")
+
+
+def CLIP_ViT_B32(pretrained_dataset=None, num_classes=None):
+    return CLIPVisualExtractor(variant="ViT-B/32")
+
+
+class TimmViTExtractor(nn.Module):
+    """Feature extractor for timm Vision Transformers (DINOv2, DINOv3)."""
+
+    def __init__(self, model_name):
+        super().__init__()
+        import timm
+        self.model = timm.create_model(
+            model_name, pretrained=True, num_classes=0, dynamic_img_size=True,
+        )
+        self.model.float()
+        self.return_nodes = None
+
+    def forward(self, x):
+        m = self.model
+        x = m.patch_embed(x)
+        pos_out = m._pos_embed(x)
+        # DINOv3 returns (x, rot_pos_embed); DINOv2 returns just x
+        if isinstance(pos_out, tuple):
+            x, rot_pos_embed = pos_out
+        else:
+            x, rot_pos_embed = pos_out, None
+        x = m.norm_pre(x) if hasattr(m, 'norm_pre') else x
+
+        features = {}
+        for i, block in enumerate(m.blocks):
+            x = block(x, rope=rot_pos_embed) if rot_pos_embed is not None else block(x)
+            name = f"block{i + 1}"
+            if self.return_nodes and name in self.return_nodes:
+                features[self.return_nodes[name]] = x.float()
+        return features
+
+
+def DINOv2_ViT_B14(pretrained_dataset=None, num_classes=None):
+    return TimmViTExtractor('vit_base_patch14_dinov2')
+
+
+def DINOv3_ViT_L16(pretrained_dataset=None, num_classes=None):
+    return TimmViTExtractor('vit_large_patch16_dinov3')
+
+
+def DINOv1_ResNet50(pretrained_dataset=None, num_classes=None):
+    """DINO v1 self-supervised ResNet50 (returns standard torchvision ResNet)."""
+    model = torch.hub.load('facebookresearch/dino:main', 'dino_resnet50', pretrained=True)
+    return model
+
+
+def ConvNeXt_Base(pretrained_dataset="imagenet1k", num_classes=None):
+    """ConvNeXt-Base with ImageNet pretraining."""
+    if pretrained_dataset == "imagenet1k":
+        model = models.convnext_base(weights=models.ConvNeXt_Base_Weights.IMAGENET1K_V1)
+    elif pretrained_dataset == "none":
+        model = models.convnext_base(weights=None)
+    else:
+        raise ValueError(f"Invalid pretrained dataset: {pretrained_dataset}")
+    return model
 
