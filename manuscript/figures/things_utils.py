@@ -313,31 +313,45 @@ def plot_scatter_panel(ax_scatter, ax_hist, precomputed):
             text.set_fontweight("bold")
             text.set_fontsize(5.5)
 
-    # ── Histogram ──
-    bins = np.linspace(diff.min() - 0.02, diff.max() + 0.02, 48)
+    # ── Histogram (works as standalone or inset) ──
+    bins = np.linspace(diff.min() - 0.02, diff.max() + 0.02, 40)
     c_green_hist = "#1a8a42"
     c_orange_hist = "#d95e1a"
     bin_colors = [c_green_hist if (b_lo + b_hi) / 2 > 0 else c_orange_hist
                   for b_lo, b_hi in zip(bins[:-1], bins[1:])]
-    _, _, patches = ax_hist.hist(diff, bins=bins, edgecolor="white", linewidth=0.4)
+    _, _, patches = ax_hist.hist(diff, bins=bins, edgecolor="white", linewidth=0.3)
     for patch, c in zip(patches, bin_colors):
         patch.set_facecolor(c)
         patch.set_alpha(0.78)
 
     ax_hist.axvspan(-buffer_threshold, buffer_threshold,
                      color="#f4f4f4", alpha=0.7, zorder=0, lw=0)
-    ax_hist.axvline(0, color="#333333", lw=1.0, ls="-", zorder=3)
+    ax_hist.axvline(0, color="#333333", lw=0.8, ls="-", zorder=3)
 
-    ax_hist.set_xlabel(r"$\Delta\rho_s$ (CLIP 4-class $-$ 1000-class)", fontsize=8.5)
-    ax_hist.set_ylabel("Count", fontsize=8.5)
-    sns.despine(ax=ax_hist, offset=4)
+    # Detect if this is an inset (small axes) or standalone
+    bbox = ax_hist.get_position()
+    is_inset = (bbox.width < 0.2)  # heuristic: insets are small
+
+    if is_inset:
+        ax_hist.set_xlabel(r"$\Delta\rho_s$", fontsize=6, labelpad=2)
+        ax_hist.set_ylabel("")
+        ax_hist.tick_params(axis="both", labelsize=5, length=2, width=0.4, pad=1)
+        ax_hist.yaxis.set_major_locator(mticker.MaxNLocator(3, integer=True))
+        pct_fs = 8.5
+    else:
+        ax_hist.set_xlabel(r"$\Delta\rho_s$ (CLIP 4-class $-$ 1000-class)",
+                           fontsize=8.5)
+        ax_hist.set_ylabel("Count", fontsize=8.5)
+        pct_fs = 11
+
+    sns.despine(ax=ax_hist, offset=2 if is_inset else 4)
 
     n_win = (diff > 0).sum()
     pct_win = 100 * n_win / len(diff)
     pct_lose = 100 - pct_win
-    ax_hist.text(0.97, 0.88, f"{pct_win:.0f}%",
-                  transform=ax_hist.transAxes, fontsize=11, va="top", ha="right",
-                  color=c_green_hist, fontweight="bold")
+    ax_hist.text(0.95, 0.88, f"{pct_win:.0f}%",
+                  transform=ax_hist.transAxes, fontsize=pct_fs, va="top",
+                  ha="right", color=c_green_hist, fontweight="bold")
     ax_hist.text(0.08, 0.88, f"{pct_lose:.0f}%",
-                  transform=ax_hist.transAxes, fontsize=11, va="top", ha="left",
-                  color=c_orange_hist, fontweight="bold")
+                  transform=ax_hist.transAxes, fontsize=pct_fs, va="top",
+                  ha="left", color=c_orange_hist, fontweight="bold")

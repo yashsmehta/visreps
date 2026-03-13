@@ -8,6 +8,7 @@ Usage:
     python manuscript/figures/fig4/figure4.py
 """
 
+import os
 import sys
 import sqlite3
 
@@ -79,13 +80,27 @@ ARCH_MARKERS = {"cnn": "p", "vit": "*"}
 
 # ── Comparison panel ─────────────────────────────────────────────────────
 
+DATA_EFF_CSV = os.path.join("experiments", "coarse_grain_benefits",
+                            "data_efficiency", "data_efficiency.csv")
+
+# Data scales for the bar groups (label, CSV dataset key)
+DATA_SCALES = [
+    ("5",     "imagenet-mini-5"),
+    ("10",    "imagenet-mini-10"),
+    ("50",    "imagenet-mini-50"),
+    ("~1300", "imagenet-full"),
+]
+
+
 def _fetch_comparison_data():
     """Fetch all data needed for the comparison panel."""
-    bl = get_condition_summary("things-behavior", "N/A", "imagenet1k", 1000,
-                               "spearman", epoch=20, analysis="rsa")
-    coarse = get_condition_summary("things-behavior", "N/A", "pca_labels_clip", 64,
-                                   "spearman", epoch=20, analysis="rsa")
+    # ── Data efficiency bars (best epoch per dataset × condition) ──
+    eff_df = pd.read_csv(DATA_EFF_CSV)
+    best_eff = eff_df.loc[
+        eff_df.groupby(["dataset", "condition"])["score"].idxmax()
+    ].reset_index(drop=True)
 
+    # ── Pretrained model scatter ──
     conn = sqlite3.connect(DB_PATH)
     pretrained_df = pd.read_sql("""
         SELECT model_name, score, ci_low, ci_high
@@ -98,7 +113,6 @@ def _fetch_comparison_data():
     conn.close()
     scores = pretrained_df.set_index("model_name")
 
-    # Collect pretrained points sorted by score
     all_points = []
     for group_name, models in PRETRAINED_GROUPS.items():
         color = GROUP_COLORS[group_name]
@@ -114,7 +128,7 @@ def _fetch_comparison_data():
             })
     all_points.sort(key=lambda p: p["score"], reverse=True)
 
-    return bl, coarse, all_points
+    return best_eff, all_points
 
 
 def _draw_neurips_bar(ax, x, height, width, color, y_base=0.25,
@@ -134,54 +148,80 @@ def _draw_neurips_bar(ax, x, height, width, color, y_base=0.25,
 
 
 def plot_comparison_panel(ax, standalone=False):
-    """Panel A: NeurIPS-style bars for 1K / coarse + grouped scatter for pretrained.
+    """Panel A: Data-efficiency bars (8-class vs 1000-class at 4 data scales)
+    + grouped scatter for pretrained models.
 
     If standalone=True, uses larger fonts and more spacing.
     """
-    bl, coarse, all_points = _fetch_comparison_data()
+    best_eff, all_points = _fetch_comparison_data()
 
     s = 1.0 if standalone else 0.72
 
     # ── Layout x-positions ──
-    # Bars at x=0, 1; pretrained groups at x=2.8, 4.0, 5.2
-    bar_positions = [0, 1]
-    group_positions = {"Supervised": 2.8, "Self-supervised": 4.0,
-                       "Vision-language": 5.2}
-    bar_w = 0.65
-    jitter_spread = 0.22  # half-width of jitter band
+    # 4 bar groups (5, 10, 50, full) then pretrained scatter
+    n_groups = len(DATA_SCALES)
+    group_spacing = 1.6
+    bar_w = 0.5
+    bar_gap = 0.06
+    group_centers = [i * group_spacing for i in range(n_groups)]
 
-    # ── Draw NeurIPS-style bars ──
-    for x, data, color in [
-        (0, bl, BASELINE_1K_COLOR),
-        (1, coarse, COARSE_BAR_COLOR),
-    ]:
-        mean = data["mean"]
-        _draw_neurips_bar(ax, x, mean, bar_w, color,
-                          edgecolor="#333333", linewidth=0.7)
-        ci_lo, ci_hi = data["ci_low"], data["ci_high"]
-        err_lo = max(mean - ci_lo, 0) if not np.isnan(ci_lo) else 0
-        err_hi = max(ci_hi - mean, 0) if not np.isnan(ci_hi) else 0
-        ax.errorbar(x, mean, yerr=[[err_lo], [err_hi]], fmt="none",
-                    ecolor="#333333", capsize=3.5 * s, capthick=0.8,
-                    elinewidth=0.8, zorder=4)
+    # Pretrained scatter starts after the last bar group
+    scatter_start = group_centers[-1] + group_spacing * 1.1
+    group_positions = {
+        "Supervised":      scatter_start,
+        "Self-supervised": scatter_start + 1.2,
+        "Vision-language": scatter_start + 2.4,
+    }
+    jitter_spread = 0.22
 
-    # Dashed reference line — only in the pretrained scatter region
-    x_ref_start = 2.3
-    x_ref_end = 6.0 if standalone else 5.6
-    ax.plot([x_ref_start, x_ref_end], [coarse["mean"], coarse["mean"]],
-            color=COARSE_BAR_COLOR, linestyle=(0, (5, 3)),
-            linewidth=0.7, alpha=0.40, zorder=1)
+    # ── Draw paired bars at each data scale ──
+    conditions = [(8, COARSE_BAR_COLOR), (1000, BASELINE_1K_COLOR)]
+    for gi, (label, ds_key) in enumerate(DATA_SCALES):
+        cx = group_centers[gi]
+        for ci, (cond, color) in enumerate(conditions):
+            offset = (ci - 0.5) * (bar_w + bar_gap)
+            x = cx + offset
+            row = best_eff[(best_eff["dataset"] == ds_key) &
+                           (best_eff["condition"] == cond)]
+            if len(row) == 0:
+                continue
+            row = row.iloc[0]
+            score = row["score"]
+            _draw_neurips_bar(ax, x, score, bar_w, color,
+                              y_base=0.2, edgecolor="#333333", linewidth=0.7)
+            err_lo = score - row["ci_low"]
+            err_hi = row["ci_high"] - score
+            ax.errorbar(x, score, yerr=[[err_lo], [err_hi]], fmt="none",
+                        ecolor="#333333", capsize=3.0 * s, capthick=0.7,
+                        elinewidth=0.7, zorder=4)
+
+    # "(full)" sub-label beneath the last group
+    full_cx = group_centers[-1]
+    ax.annotate("(full)", xy=(full_cx, 0), xycoords=("data", "axes fraction"),
+                xytext=(0, -22), textcoords="offset points",
+                ha="center", va="top", fontsize=6.5 * s, color="#555555")
+
+    # ── Dashed reference line from full-data coarse bar into scatter region ──
+    full_coarse = best_eff[(best_eff["dataset"] == "imagenet-full") &
+                           (best_eff["condition"] == 8)]
+    if len(full_coarse) > 0:
+        ref_score = full_coarse.iloc[0]["score"]
+        x_ref_start = group_centers[-1] + bar_w
+        x_ref_end = list(group_positions.values())[-1] + 0.6
+        ax.plot([x_ref_start, x_ref_end], [ref_score, ref_score],
+                color=COARSE_BAR_COLOR, linestyle=(0, (5, 3)),
+                linewidth=0.7, alpha=0.40, zorder=1)
 
     # Subtle vertical separator between bars and scatter
-    ax.axvline(1.9, color="#e8e8e8", linewidth=0.5, linestyle="-",
+    sep_x = (group_centers[-1] + scatter_start) / 2
+    ax.axvline(sep_x, color="#e8e8e8", linewidth=0.5, linestyle="-",
                ymin=0.0, ymax=1.0, zorder=0)
 
     # ── Draw pretrained points grouped by paradigm ──
     pt_size_base = 95 * s * s
-    pt_size_star = 130 * s * s  # stars need more area to read well
+    pt_size_star = 130 * s * s
     for pt in all_points:
         gx = group_positions[pt["group"]]
-        # Jitter: spread models evenly within group
         group_pts = [p for p in all_points if p["group"] == pt["group"]]
         idx = group_pts.index(pt)
         n = len(group_pts)
@@ -191,38 +231,41 @@ def plot_comparison_panel(ax, standalone=False):
             x_jit = gx + np.linspace(-jitter_spread, jitter_spread, n)[idx]
         pt["x_plot"] = x_jit
 
-        # CI whisker
         ax.plot([x_jit, x_jit], [pt["ci_low"], pt["ci_high"]],
                 color=pt["color"], linewidth=1.0, alpha=0.35, zorder=4,
                 solid_capstyle="round")
-        # Point
         sz = pt_size_star if pt["marker"] == "*" else pt_size_base
         ax.scatter(x_jit, pt["score"], marker=pt["marker"], c=pt["color"],
-                   s=sz, edgecolors="white", linewidths=0.6,
-                   zorder=5)
+                   s=sz, edgecolors="white", linewidths=0.6, zorder=5)
 
-    # ── Model name labels (directly beside each point, same y) ──
-    fs_model = 7.9 * s  # 1.25x larger model name labels
-    x_offset = 0.18 * s  # small offset to sit right beside the marker
+    # ── Model name labels ──
+    fs_model = 7.9 * s
+    x_offset = 0.18 * s
     for pt in all_points:
         ax.text(pt["x_plot"] + x_offset, pt["score"], pt["display"],
-                ha="left", va="center", fontsize=fs_model,
-                color="#2a2a2a")
+                ha="left", va="center", fontsize=fs_model, color="#2a2a2a")
 
     # ── Axis formatting ──
-    xlim_right = 6.2 if standalone else 5.8
-    ax.set_xlim(-0.5, xlim_right)
-    ax.set_ylim(0.25, 0.61)
+    xlim_right = list(group_positions.values())[-1] + (1.5 if standalone else 1.1)
+    ax.set_xlim(-0.6, xlim_right)
+    ax.set_ylim(0.2, 0.65)
     ax.set_ylabel(r"Spearman $\rho$", fontsize=10 * s, labelpad=6)
     ax.set_title("THINGS Behavioral Similarity",
                  fontsize=11 * s, fontweight="semibold", pad=10)
 
-    # X-ticks: bar labels + group labels
-    all_xticks = bar_positions + [group_positions[g] for g in group_positions]
-    all_xlabels = ["1K\n(ImageNet)", "Coarse\n(CLIP 64)",
-                   "Supervised", "Self-\nSupervised", "Vision-\nLanguage"]
+    # X-ticks: bar group labels + pretrained group labels
+    all_xticks = group_centers + [group_positions[g] for g in group_positions]
+    all_xlabels = [lbl for lbl, _ in DATA_SCALES] + [
+        "Supervised", "Self-\nSupervised", "Vision-\nLanguage"]
     ax.set_xticks(all_xticks)
     ax.set_xticklabels(all_xlabels, fontsize=7.5 * s)
+
+    # x-axis label for the bar region
+    bar_mid = (group_centers[0] + group_centers[-1]) / 2
+    ax.annotate("Images per class", xy=(bar_mid, 0),
+                xycoords=("data", "axes fraction"),
+                xytext=(0, -35), textcoords="offset points",
+                ha="center", va="top", fontsize=8.5 * s, color="#333333")
 
     # Subtle horizontal grid
     ax.yaxis.grid(True, which="major", color="#EBEBEB", linewidth=0.4, zorder=0)
@@ -244,8 +287,13 @@ def plot_comparison_panel(ax, standalone=False):
     ax.spines["bottom"].set_linewidth(1.2)
     ax.spines["left"].set_linewidth(1.2)
 
-    # ── Legend: architecture markers only (colors explained by x-axis) ──
+    # ── Legend ──
+    import matplotlib.patches as mpatches
     leg_handles = [
+        mpatches.Patch(facecolor=COARSE_BAR_COLOR, edgecolor="#333333",
+                       linewidth=0.6, label="Coarse (8-class)"),
+        mpatches.Patch(facecolor=BASELINE_1K_COLOR, edgecolor="#333333",
+                       linewidth=0.6, label="Fine (1000-class)"),
         Line2D([], [], marker="p", color="none", markerfacecolor="#777777",
                markeredgecolor="white", markeredgewidth=0.5,
                markersize=8, label="CNN"),
@@ -253,17 +301,17 @@ def plot_comparison_panel(ax, standalone=False):
                markeredgecolor="white", markeredgewidth=0.4,
                markersize=10, label="ViT"),
     ]
-    leg = ax.legend(handles=leg_handles, fontsize=9.4 * s, frameon=True,
-                    loc="center right", edgecolor="#dddddd", fancybox=False,
-                    framealpha=0.95, handletextpad=0.5, borderpad=0.5,
-                    labelspacing=0.35, bbox_to_anchor=(1.0, 0.15))
+    leg = ax.legend(handles=leg_handles, fontsize=7.5 * s, frameon=True,
+                    loc="upper left", edgecolor="#dddddd", fancybox=False,
+                    framealpha=0.95, handletextpad=0.5, borderpad=0.4,
+                    labelspacing=0.3, ncol=2)
     leg.get_frame().set_linewidth(0.3)
 
 
 def save_standalone_comparison():
     """Save a standalone version of the comparison panel."""
     setup_style()
-    fig, ax = plt.subplots(figsize=(5.2, 4.8))
+    fig, ax = plt.subplots(figsize=(8.0, 4.8))
     plot_comparison_panel(ax, standalone=True)
     plt.tight_layout(pad=0.8)
     out = f"{OUTPUT_DIR}/model_comparison.png"
@@ -348,25 +396,25 @@ def main():
     save_standalone_comparison()
 
     # ── Full figure 4 ──
-    fig = plt.figure(figsize=(13, 9))
+    fig = plt.figure(figsize=(15, 9))
 
     # Top row: 4 columns; Bottom row: RDMs spanning full width
     gs = gridspec.GridSpec(2, 1, figure=fig, height_ratios=[1.05, 1.15],
                            hspace=0.38, left=0.06, right=0.96,
                            top=0.95, bottom=0.04)
 
-    # ── Top row: 4 panels ──
-    gs_top = gridspec.GridSpecFromSubplotSpec(1, 4, subplot_spec=gs[0],
-                                              wspace=0.48,
-                                              width_ratios=[1.15, 1, 1, 0.85])
+    # ── Top row: 3 panels (histogram is inset in scatter) ──
+    gs_top = gridspec.GridSpecFromSubplotSpec(1, 3, subplot_spec=gs[0],
+                                              wspace=0.38,
+                                              width_ratios=[1, 1.6, 1.1])
 
-    # Panel A: Model Comparison
-    ax_compare = fig.add_subplot(gs_top[0, 0])
-    plot_comparison_panel(ax_compare)
-
-    # Panel B: Coarseness (Alignment vs. Granularity)
-    ax_coarse = fig.add_subplot(gs_top[0, 1])
+    # Panel A: Coarseness (Alignment vs. Granularity)
+    ax_coarse = fig.add_subplot(gs_top[0, 0])
     plot_coarseness_raw(ax_coarse)
+
+    # Panel B: Model Comparison (data efficiency + pretrained)
+    ax_compare = fig.add_subplot(gs_top[0, 1])
+    plot_comparison_panel(ax_compare)
 
     # Coarseness legend — local color scheme
     legend_handles = []
@@ -392,15 +440,24 @@ def main():
         borderpad=0.3, bbox_to_anchor=(0.0, 0.0))
     leg_c.get_frame().set_linewidth(0.5)
 
-    # Panels C: Scatter and Histogram
+    # Panel C: Scatter with histogram inset
     ax_scatter = fig.add_subplot(gs_top[0, 2])
-    ax_hist = fig.add_subplot(gs_top[0, 3])
 
     # Compute THINGS data (RDMs + scatter data)
     print("Computing THINGS data for scatter and RDMs...")
     precomputed = compute_things_data()
 
+    # Create histogram inset in upper-left of scatter
+    ax_hist = ax_scatter.inset_axes([0.03, 0.58, 0.38, 0.38])
+
     plot_scatter_panel(ax_scatter, ax_hist, precomputed)
+
+    # Style the inset: clean white background, subtle border
+    ax_hist.patch.set_alpha(0.97)
+    ax_hist.patch.set_facecolor("white")
+    for spine in ax_hist.spines.values():
+        spine.set_color("#aaaaaa")
+        spine.set_linewidth(0.6)
 
     # ── Bottom row: 3 RDMs + colorbar ──
     gs_bot = gridspec.GridSpecFromSubplotSpec(1, 4, subplot_spec=gs[1],
@@ -418,9 +475,9 @@ def main():
 
     # ── Panel labels ──
     for ax, label, x_off in zip(
-        [ax_compare, ax_coarse, ax_scatter, ax_rdm1],
+        [ax_coarse, ax_compare, ax_scatter, ax_rdm1],
         ["A", "B", "C", "D"],
-        [-0.08, -0.14, -0.12, -0.04]):
+        [-0.14, -0.08, -0.10, -0.04]):
         ax.text(x_off, 1.10, label, transform=ax.transAxes,
                 fontsize=13, fontweight="bold", va="top", ha="left",
                 family="sans-serif")

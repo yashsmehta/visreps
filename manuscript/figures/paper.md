@@ -31,63 +31,48 @@ Computational models of vision increasingly rely on detailed training objectives
 
 ## Narrative Arc
 
-The four main figures follow a progression: **method & expectations → representation analysis → neural data (combined TVSD + NSD) → behavioral data (THINGS) with reconstruction control**.
+The four main figures follow a progression: **method overview → representation analysis → neural data (combined TVSD + NSD) → behavioral data (THINGS) with reconstruction control**.
 
-1. **Figure 1** introduces the coarse-graining procedure, shows the training setup, gives intuition for how representations change, and frames the conventional expectation.
-2. **Figure 2** establishes that coarse-trained representations are genuinely different from 1000-way representations and cannot be recovered by low-dimensional projection of the fine-grained model.
+1. **Figure 1** is a schematic overview: the PCA-based coarse-graining procedure, the DNN training paradigm, how alignment is measured (RSA), and the evaluation domains (brain and behavior).
+2. **Figure 2** establishes that coarse-trained representations are genuinely different from 1000-way representations — via class-level RDMs, cross-model RSA, projection controls, and PC-space visualizations with image insets showing the geometric reorganization.
 3. **Figure 3** presents neural alignment across species: macaque electrophysiology (TVSD) and human fMRI (NSD) side by side, with coarseness curves (raw Spearman ρ). Per-layer profiles in supplementary.
 4. **Figure 4** presents behavioral alignment (THINGS): reconstruction control, coarseness results, per-concept analysis (scatter + histogram), and RDM visualizations explaining *why* coarse models win. Summary bar plots and neural reconstruction controls in supplementary.
 
 ---
 
-## Figure 1: Method, Training Setup & Expectations
+## Figure 1: Method Overview (Schematic)
 
 **Directory:** `manuscript/figures/fig1/`
 
-**Narrative role:** Introduce the PCA-based coarse-graining procedure, show the training paradigm, give the reader visual intuition for how representations change, and set up the conventional expectation that fine-grained supervision should be necessary for brain-model alignment. No actual results yet — this figure is entirely about framing.
+**Narrative role:** A purely schematic figure that introduces the approach. No data, no results — just the method pipeline and evaluation framework. This is the "how we did it" figure.
+
+**Status:** Schematic — to be composed manually (e.g., in Illustrator/Inkscape). Code-generated components (PC scatter) have been moved to Figure 2C.
 
 ### Panel A — The coarse-graining procedure
 
 Schematic of the pipeline: ImageNet images → pretrained source model (AlexNet, CLIP, ViT, or raw Pixels) → PCA on feature space (or pixel space) → recursive median splits along top PCs → coarse label sets (2, 4, 8, 16, 32, 64 classes).
 
-The style should follow the spirit of the NeurIPS schematic (`experiments/neurips_2025/fig1/schematic_imagenet_pca.png`) — a clean, linear pipeline diagram — but freshly created for this manuscript with updated content. Show the flow from images to features to PCA projection to class assignments. Include example images at each split to give intuition for what PC1, PC2, etc. separate (e.g., PC1 roughly separates man-made vs. natural).
+Follow the spirit of the NeurIPS schematic (`experiments/neurips_2025/fig1/schematic_imagenet_pca.png`) — a clean, linear pipeline diagram. Show the flow from images to features to PCA projection to class assignments. Include example images at each split to give intuition for what PC1, PC2, etc. separate (e.g., PC1 roughly separates man-made vs. natural).
 
 - *Key message:* The procedure is principled (data-driven, not arbitrary taxonomy), produces balanced classes, and uses only visual statistics — no linguistic or semantic labels.
-- *Pixels variant:* Briefly note that one condition uses raw image pixels instead of pretrained features, as a baseline for minimal visual statistics.
 
 ### Panel B — DNN training schematic
 
-Minimal diagram showing the training paradigm: same architecture (CustomCNN / AlexNet-style) × same ~1.26M ImageNet images × same training protocol (SGD, 20 epochs, same augmentations), only varying the output classification head (2, 4, 8, 16, 32, 64, or 1000 classes). Three seeds per condition. Labels from four PCA source models (AlexNet, CLIP, ViT, Pixels).
+Minimal diagram showing the training paradigm: same architecture (CustomCNN / AlexNet-style) × same ~1.26M ImageNet images × same training protocol (SGD, 20 epochs, same augmentations), only varying the output classification head (2, 4, 8, 16, 32, 64, or 1000 classes). Three seeds per condition.
 
-- *Key message:* The **only** variable is label granularity. Architecture, data, and training procedure are identical across all conditions. This is a clean, controlled experiment with 84+ models trained from scratch.
-- *Visual elements:* A schematic CNN diagram with the final FC layer branching into different output sizes. Keep it simple — no table or grid, just the schematic emphasizing the controlled design.
+- *Key message:* The **only** variable is label granularity. Architecture, data, and training procedure are identical across all conditions.
 
-### Panel C — PC1/PC2 visualizations: how representations change
+### Panel C — RSA methodology schematic
 
-Side-by-side PC1 vs. PC2 scatter plots of ImageNet activations for a coarse-trained model vs. the 1000-way model. Points colored by 4-way PCA label.
+Schematic showing how representational similarity analysis is computed: model activations → RDM (representational dissimilarity matrix) → comparison with neural/behavioral RDMs via Spearman correlation.
 
-- *Layer choice:* Compare FC1 and FC2 and pick whichever shows the more stark visual difference. FC2 may show the clearest divergence (coarse models collapse to class clusters in FC2 while 1000-way has a smooth gradient), but FC1 might show richer intermediate structure. Generate both and pick the most compelling.
-- *Key visual:* The 1000-way model has a smooth gradient in PC space; the coarse model has clearly structured clusters that are internally variable. Different geometry, not just reduced geometry.
-- *Key message:* Give the reader immediate visual intuition that coarse training fundamentally changes how the network organizes visual information, before showing any quantitative results.
+- *Key message:* RSA provides a common currency to compare model representations with brain and behavioral data.
 
-### Panel D — Conventional expectations (setting the premise)
+### Panel D — Brain and behavior evaluation domains
 
-A conceptual/schematic plot showing what one *might* expect for the relationship between label granularity and brain/behavioral alignment. This is a thought-experiment panel — no real data.
+Schematic showing the three evaluation benchmarks: (1) macaque electrophysiology (TVSD — V1, V4, IT), (2) human fMRI (NSD — early and ventral visual stream), (3) human behavioral similarity judgments (THINGS triplet task).
 
-Two evaluation paradigms shown with icons:
-1. **Brain alignment** (brain icon — fMRI/electrode schematic): Number of classes (x-axis, log scale) vs. neural alignment (y-axis).
-2. **Behavioral alignment** (human/behavior icon — triplet task schematic): Same axes.
-
-The conventional expectation could take several forms:
-- *Monotonic increase:* More categories → richer supervision → more brain-like features. The "fine-grained supervision hypothesis" — the default in the field.
-- *Flat-then-jump:* Alignment is low for coarse labels, then jumps once you have enough classes to force the network to learn fine-grained visual features (e.g., for object classification).
-- *Diminishing returns:* Rapid initial gains, then saturation — but always increasing.
-
-All these share the common assumption that **1000-way should be best or at least near-best**. Show one or two of these as schematic curves (the monotonic increase being the primary expectation) with a question mark: "Is fine-grained supervision necessary?"
-
-- *Key message:* Set up the conventional wisdom as the null hypothesis. No dataset details or schematics here — just the conceptual framing. The actual datasets are introduced in Figures 3–5. Do NOT reveal the actual pattern — let the data deliver the surprise.
-
-**Design note:** Consider showing the two evaluation types (brain, behavior) as separate small schematic plots side by side, since the actual results will diverge between them (brain: coarse ≈ 1000-way; behavior: coarse >> 1000-way). This foreshadows without spoiling.
+- *Key message:* We test across species (macaque + human), measurement modalities (spiking + BOLD), and levels (neural + behavioral).
 
 ---
 
@@ -95,7 +80,7 @@ All these share the common assumption that **1000-way should be best or at least
 
 **Directory:** `manuscript/figures/fig2/`
 
-**Narrative role:** Establish that the internal representations learned from coarse supervision are *qualitatively distinct* from 1000-way representations. They are not just a low-dimensional projection or subset of the fine-grained features. This figure answers two key questions: (1) How different are coarse representations from fine-grained? (2) Can you recover them by simple dimensionality reduction of the 1000-way model? The answer to the second question is no — and this matters because it means the brain alignment results in Figures 3–5 cannot be dismissed as a trivial dimensionality artifact.
+**Narrative role:** Establish that the internal representations learned from coarse supervision are *qualitatively distinct* from 1000-way representations. They are not just a low-dimensional projection or subset of the fine-grained features. This figure answers three key questions: (1) How do class-level RDMs change with granularity? (2) Can you recover coarse representations by simple dimensionality reduction of the 1000-way model? (No.) (3) How does the geometry of the representation space itself change? The PC scatter with image insets gives immediate visual intuition.
 
 ### Panel A — 2×3 grid of class-level RDMs
 
@@ -112,6 +97,19 @@ Six rank-normalized class-level RDMs (1000×1000, Pearson dissimilarity, FC1 lay
 
 - *Key message:* Coarse representations are genuinely different from 1000-way, and cannot be recovered by projecting the fine-grained model onto a low-dimensional subspace.
 
+### Panel C — PC1/PC2 scatter with image insets (moved from Figure 1)
+
+Two vertically stacked PC1 vs. PC2 scatter plots of ImageNet activations (FC1 layer, L2-normalized), colored by 4-way AlexNet-PCA labels:
+
+**Top:** Fine-grained (1000-way) model — smooth gradient in PC space, no clear class separation.
+**Bottom:** Coarsened (4-way) model — distinct clusters with rich internal variability.
+
+A subset of representative points (~3 per class) show actual ImageNet thumbnails as insets, with borders colored by class. Inset points are selected at class extremes and centroids for maximum informativeness.
+
+- *Key visual:* The 1000-way model distributes images along a continuous gradient; the coarse model reorganizes the same images into clearly separated groups. The image insets make this concrete — you can *see* that each cluster contains visually coherent images.
+- *Key message:* Coarse training fundamentally changes how the network organizes visual information — different geometry, not just reduced geometry.
+- *Data source:* `experiments/representation_analysis/2pcs_compare/data_4way_alexnet.npz` (AlexNet-PCA labels, imagenet-mini-50, L2-normed FC1).
+
 ### Observed results
 
 **(A) Class-level RDM grid.** Six RDMs showing the progression from 4-way to 1000-way. The 1000-way RDM shows fine-grained within-category structure with sharp diagonal blocks. Coarser models show progressively broader block structure — the 4-way model has large uniform blocks while the 64-way model approaches the 1000-way pattern but with coarser boundaries.
@@ -119,6 +117,8 @@ Six rank-normalized class-level RDMs (1000×1000, Pearson dissimilarity, FC1 lay
 **(B-top) 1000-way vs. coarse RSA (FC1).** Cross-model RSA increases from ρ ≈ 0.22 (2-way) to ρ ≈ 0.52 (64-way), but never approaches the inter-seed baseline (ρ ≈ 0.76). Even the 64-way model's representations remain substantially different from 1000-way.
 
 **(B-bottom) Projection vs. coarse (FC1).** Projected-1K vs. coarse RSA is extremely low: ρ ≈ 0.03 at 2-class, rising to ρ ≈ 0.35 at 64-class. The gap to the inter-seed baseline never closes, confirming coarse features cannot be recovered by PCA of the fine-grained model.
+
+**(C) PC scatter with image insets (FC1, AlexNet-PCA 4-way).** Top panel: the 1000-way model's FC1 activations projected onto their own top 2 PCs show a smooth gradient (PC1 ≈ 3.0%, PC2 ≈ 2.4% var.) — 4-way PCA labels are intermixed with no clear boundaries. Bottom panel: the 4-way model's FC1 activations show four well-separated clusters (PC1 ≈ 22.5%, PC2 ≈ 19.5% var.), each internally variable but categorically distinct. Image insets reveal the semantic content of each cluster. The coarse model imposes a fundamentally different geometry, not just a lower-dimensional version of the fine-grained geometry.
 
 ---
 
@@ -191,22 +191,23 @@ Full per-layer RSA profiles (all 7 granularity levels, 14 layer taps) available 
 
 ```
 ┌───────────┬──────────────────┬──────────────────┬──────────────────┐
-│ THINGS    │ Coarseness       │ Per-concept       │ Per-concept      │
-│ Recon.    │ (raw Spearman ρ) │ scatter           │ advantage        │
-│ control   │                  │ (CLIP coarse      │ histogram        │
-│           │                  │  vs. 1000-way)    │                  │
+│ Model     │ Coarseness       │ Per-concept       │ Per-concept      │
+│ Comparison│ (raw Spearman ρ) │ scatter           │ advantage        │
+│ (bars +   │                  │ (CLIP coarse      │ histogram        │
+│ pretrained│                  │  vs. 1000-way)    │                  │
+│ scatter)  │                  │                   │                  │
 ├───────────┴──────────────────┴──────────────────┴──────────────────┤
 │                     3 RDMs side by side                             │
 │  [Human behavioral]    [Coarse (CLIP 4-way)]    [1000-way model]   │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-### Top-left: THINGS reconstruction control
+### Top-left: Model comparison panel
 
-Dual-curve reconstruction plot: alignment (Spearman ρ) vs. number of PCs retained (k = 1–50). Green = best coarse model (ViT-PCA 64-way), orange = 1000-way, gray dotted = untrained baseline.
+NeurIPS-style bars comparing 1000-way (amber) vs. coarse CLIP 64-way (dark blue) on THINGS, plus a grouped scatter of pretrained models (supervised, self-supervised, vision-language) with architecture markers (CNN pentagon, ViT star). A dashed reference line from the coarse bar extends into the pretrained region.
 
-- *Key visual:* The coarse model (green) reaches ρ ≈ 0.57 by k ≈ 5 PCs and plateaus. The 1000-way model (orange) saturates at ρ ≈ 0.39 — never reaching the coarse model regardless of k.
-- *Key message:* The coarse advantage is not a dimensionality artifact. Even when the 1000-way model retains all PCs, it cannot match the coarse model's behavioral alignment. The coarse training signal creates genuinely different, more brain-aligned features.
+- *Key visual:* The coarse-trained model (trained from scratch) matches or exceeds many large pretrained models (CLIP, DINOv2, ViT-B/16) on behavioral alignment.
+- *Key message:* Coarse supervision is not just better than 1000-way — it competes with the best pretrained vision models.
 
 ### Top: Coarseness log plot (raw Spearman ρ)
 
@@ -246,7 +247,7 @@ Concepts sorted by the 27 THINGS semantic categories with boundary lines overlai
 
 ### Observed results
 
-**(A) THINGS reconstruction control.** Green curve (ViT-PCA 64-way) reaches ρ ≈ 0.57 by k ≈ 5 PCs and plateaus. Orange curve (1000-way) saturates at ρ ≈ 0.39, never reaching the coarse model. This rules out dimensionality as an explanation — the coarse advantage reflects genuinely different feature content.
+**(A) Model comparison.** Coarse CLIP 64-way bar (ρ ≈ 0.57) substantially exceeds 1000-way bar (ρ ≈ 0.39). Among pretrained models, CLIP-L/14 and DINOv2 approach but do not exceed the coarse-trained model. Supervised CNNs (AlexNet, VGG, ResNet) cluster well below the coarse reference line. The coarse model trained from scratch on 64 classes competes with billion-parameter pretrained models.
 
 **(B) Coarseness log plot.** The headline result of the paper. All coarse models sit well above the 1000-way baseline. CLIP labels (dark blue) are strongest: ρ ≈ 0.55–0.57. AlexNet (medium blue): ρ ≈ 0.44–0.48. Pixels (brown) starts low at ρ ≈ 0.10 (2-class), rises to ρ ≈ 0.23 at 64-class but never reaches 1000-way (ρ ≈ 0.39). The untrained baseline is at ρ ≈ 0.20.
 
@@ -320,10 +321,10 @@ All scripts live in `manuscript/figures/supplementary/` and are run from the pro
 manuscript/figures/
 ├── paper.md              # This file
 ├── fig_utils.py                # Shared constants, style, helpers
-├── fig1/                       # Method, setup, expectations
-│   └── (schematics, PC space visualizations, conceptual plots)
+├── fig1/                       # Method overview (schematic only)
+│   └── (schematics — coarse-graining, training, RSA, evaluation domains)
 ├── fig2/                       # Representations are different
-│   ├── figure2.py              # Cross-model RSA + projection control
+│   ├── figure2.py              # RDMs + cross-model RSA + PC scatter w/ image insets
 │   └── figure2.png
 ├── fig3/                       # Combined neural data (TVSD + NSD)
 │   ├── figure3.py              # Combined TVSD + NSD figure
@@ -353,8 +354,10 @@ manuscript/figures/
   - Supplementary figures retain the original 4-architecture palette (AlexNet teal, CLIP purple, ViT crimson, Pixels brown) in `fig_utils.py`.
 - **Raw Spearman ρ (Figures 3 & 4):** All coarseness plots show raw Spearman ρ values.
 - **Per-layer profiles moved to supplementary (S3).** Main figures show only coarseness curves.
-- **Reconstruction controls in supplementary (S4).** Neural reconstruction for TVSD/NSD; THINGS reconstruction in Figure 4A.
+- **Reconstruction controls in supplementary (S4).** Neural reconstruction for TVSD/NSD; THINGS reconstruction also in supplementary.
 - **Summary bars in supplementary (S2).** Cross-dataset pretrained vs. scratch comparison.
+- **Figure 1 is schematic-only** — no code-generated panels. PC scatter moved to Figure 2C. Expectations panel removed.
+- **Figure 2 Panel C** — PC scatter with image insets (from `experiments/representation_analysis/2pcs_compare/data_4way.npz`). Moved from former Figure 1C.
 - **Log-scale x-axis** for all coarseness plots (Figures 3 and 4).
 - **Schematics should be simple** — the reader should grasp each dataset in 5–10 seconds.
 - **Reconstruction controls in supplementary** — not in main figures. This keeps Figures 3–5 focused on results.
