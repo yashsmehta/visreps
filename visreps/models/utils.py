@@ -28,6 +28,8 @@ TORCHVISION_RETURN_NODES = {
     "AlexNet":  ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2"],
     "ResNet18": ["conv1", "block1", "block2", "block3", "block4",
                  "block5", "block6", "block7", "block8", "fc1"],
+    "ViTBase":  [f"block{i}" for i in range(1, 13)] + ["head"],
+    "CLIP_ViT_L14": [f"block{i}" for i in range(4, 25, 4)],  # every 4th block
 }
 
 class FeatureExtractor(nn.Module):
@@ -264,6 +266,14 @@ def configure_feature_extractor(cfg, model, verbose=False):
     if not return_nodes:
         raise ValueError("return_nodes must be specified in config")
     return_nodes = {node: node for node in return_nodes} if isinstance(return_nodes, list) else return_nodes
+
+    # Models that already act as feature extractors (e.g. CLIPVisualExtractor)
+    if hasattr(model, 'return_nodes') and not isinstance(model, FeatureExtractor):
+        model.return_nodes = return_nodes
+        model.eval()
+        rprint(f"  ✓ {len(return_nodes)} extraction points", style="success")
+        return model
+
     extract_pre_and_post = cfg.get("extract_pre_and_post", True)
     model.eval()
     extractor = FeatureExtractor(model, return_nodes,

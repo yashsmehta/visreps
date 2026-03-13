@@ -70,6 +70,12 @@ def _listify(val):
     return [val]
 
 
+def _get_eval_transform(cfg):
+    """Return the correct preprocessing transform based on model."""
+    stats = "clip" if "CLIP" in cfg.get("model_name", "") else "imgnet"
+    return get_transform(ds_stats=stats)
+
+
 # ───────────────────────── eval ──────────────────────────
 def eval(cfg):
     """Unified evaluation: one forward pass, per-subject per-region results.
@@ -85,7 +91,7 @@ def eval(cfg):
         cfg = _load_cfg(cfg)
     elif cfg.load_model_from == "torchvision":
         cfg.epoch = -1
-        cfg.cfg_id = "pretrained" if cfg.pretrained_dataset == "imagenet1k" else "untrained"
+        cfg.cfg_id = "untrained" if cfg.get("pretrained_dataset", "none") == "none" else "pretrained"
         cfg.return_nodes = mutils.TORCHVISION_RETURN_NODES[cfg.model_name]
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -98,6 +104,8 @@ def eval(cfg):
         model = mutils.configure_feature_extractor(cfg, model, verbose=verbose)
 
         neural_data, dl = get_neural_loader(cfg)
+        if "CLIP" in cfg.get("model_name", ""):
+            dl.dataset.transform = _get_eval_transform(cfg)
         rprint(f"  THINGS data loaded", style="success")
 
         acts, ids = mutils.get_activations(model, dl, dev)
@@ -135,13 +143,38 @@ def eval(cfg):
             style="success",
         )
 
-        # Re-extract: get all images without SRP, concept-average for eval concepts
+        # Re-extract: concept-average on-the-fly to avoid materializing full tensor
+        # Build reverse map: image_id -> list of concept names it belongs to
+        _img_to_concepts = {}
+        for concept in evaluation.stimulus_ids:
+            for img_id in evaluation.concept_image_ids[concept]:
+                _img_to_concepts.setdefault(str(img_id), []).append(concept)
+
         def re_extract_fn(layer, sids=None):
-            raw_acts, raw_ids = mutils.extract_single_layer(model, dl, dev, layer)
-            if cfg.get("reconstruct_from_pcs"):
-                raw_acts = reconstruct_from_pcs({layer: raw_acts}, cfg.pca_k)[layer]
-                rprint(f"    Reconstructed from {cfg.pca_k} PCs", style="info")
-            return _concept_average_exact(raw_acts, raw_ids, evaluation), evaluation.stimulus_ids
+            model.eval()
+            concept_sums = {}   # concept -> running sum tensor
+            concept_counts = {} # concept -> int
+            with torch.no_grad():
+                for imgs, keys in dl:
+                    feats = model(imgs.to(dev))
+                    out = feats[layer].view(feats[layer].size(0), -1).cpu().float()
+                    if cfg.get("reconstruct_from_pcs"):
+                        out = reconstruct_from_pcs({layer: out}, cfg.pca_k)[layer]
+                    for i, key in enumerate(keys):
+                        for concept in _img_to_concepts.get(str(key), []):
+                            if concept not in concept_sums:
+                                concept_sums[concept] = torch.zeros(out.size(1))
+                                concept_counts[concept] = 0
+                            concept_sums[concept] += out[i]
+                            concept_counts[concept] += 1
+            avgs = []
+            for concept in evaluation.stimulus_ids:
+                if concept in concept_sums and concept_counts[concept] > 0:
+                    avgs.append(concept_sums[concept] / concept_counts[concept])
+                else:
+                    avgs.append(torch.zeros(next(iter(concept_sums.values())).size(0)))
+            rprint(f"  ✓ Re-extracted {layer}: streaming concept-average ({len(avgs)} concepts)", style="success")
+            return torch.stack(avgs), evaluation.stimulus_ids
 
         alignment_scores = compute_traintest_alignment(
             cfg, selection, evaluation, verbose=verbose, re_extract_fn=re_extract_fn)
@@ -199,7 +232,7 @@ def eval(cfg):
     )
 
     # Single forward pass -> SRP activations
-    transform = get_transform(ds_stats="imgnet")
+    transform = _get_eval_transform(cfg)
     dl = _make_loader(stimuli, transform, cfg.batchsize, cfg.num_workers)
     acts, ids = mutils.get_activations(model, dl, dev)
     rprint(f"  Activations extracted once for all subjects/regions", style="success")
@@ -300,7 +333,7 @@ def _eval_rsa(cfg, model, acts, ids, all_data, subjects, regions, dev, verbose):
 
     # Small test-only dataloader
     test_stimuli = {sid: stimuli[sid] for sid in shared_test_ids if sid in stimuli}
-    transform = get_transform(ds_stats="imgnet")
+    transform = _get_eval_transform(cfg)
     dl_test = _make_loader(test_stimuli, transform, cfg.batchsize, cfg.num_workers)
     rprint(f"  Test dataloader: {len(test_stimuli)} stimuli", style="success")
 
@@ -468,7 +501,7 @@ def _eval_rsa_nsd_synthetic(cfg, subjects, regions, dev, verbose):
     model = mutils.load_model(cfg, dev, verbose=verbose)
     model = mutils.configure_feature_extractor(cfg, model, verbose=verbose)
 
-    transform = get_transform(ds_stats="imgnet")
+    transform = _get_eval_transform(cfg)
     dl_test = _make_loader(stimuli, transform, cfg.batchsize, cfg.num_workers)
 
     unique_layers = {l for rl in best_layers.values() for l in rl.values()}

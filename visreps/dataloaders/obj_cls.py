@@ -18,10 +18,12 @@ warnings.filterwarnings('ignore', category=UserWarning, module='PIL.TiffImagePlu
 DS_MEAN = {
     "tiny-imagenet": [0.480, 0.448, 0.398],
     "imgnet": [0.485, 0.456, 0.406],
+    "clip":   [0.48145466, 0.4578275, 0.40821073],
 }
 DS_STD = {
     "tiny-imagenet": [0.272, 0.265, 0.274],
     "imgnet": [0.229, 0.224, 0.225],
+    "clip":   [0.26862954, 0.26130258, 0.27577711],
 }
 
 def get_transform(ds_stats="imgnet", data_augment=False, image_size=224, preprocess=True):
