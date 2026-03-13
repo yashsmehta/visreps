@@ -17,6 +17,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 from matplotlib.lines import Line2D
+from matplotlib.colors import ListedColormap
 import seaborn as sns
 
 sys.path.insert(0, "plotters")
@@ -161,6 +162,106 @@ def plot_raw_coarseness(ax, dataset, region, show_ylabel=True, show_xlabel=True)
                            show_xlabel=show_xlabel)
 
 
+# ── Class count dot grids ──────────────────────────────────────────────
+
+def _ordered_grid_positions(n_classes, margin=0.22):
+    """Generate centered, evenly-spaced dot positions for N classes.
+
+    Uses clean rectangular layouts (powers of 2 map to natural grids).
+    A generous inner margin ensures clear white space between dots and
+    the box border so dots don't crowd the edges.
+    Returns (N, 2) array of (x, y) positions in [0, 1]² space.
+    """
+    # Hand-picked layouts: (rows, cols) for each coarse granularity
+    layouts = {2: (1, 2), 4: (2, 2), 8: (2, 4), 16: (4, 4),
+               32: (4, 8), 64: (8, 8)}
+    rows, cols = layouts.get(n_classes, (int(np.ceil(np.sqrt(n_classes))),
+                                         int(np.ceil(np.sqrt(n_classes)))))
+    x_pos = np.linspace(margin, 1 - margin, cols) if cols > 1 else [0.5]
+    y_pos = np.linspace(margin, 1 - margin, rows) if rows > 1 else [0.5]
+    xx, yy = np.meshgrid(x_pos, y_pos)
+    return np.column_stack([xx.ravel(), yy.ravel()])[:n_classes]
+
+
+def draw_class_count_grids(fig, bottom_axes, grid_dim=32):
+    """Draw dot density grids below x-axis ticks to visualize class counts.
+
+    Low counts (2–64) use ordered grid layouts so individual dots are clearly
+    countable and evenly spaced. N=1000 uses random fill on a 32×32 grid,
+    creating a solid packed field that contrasts dramatically with the sparse
+    low-count boxes.
+    """
+    fig.canvas.draw()  # finalize positions before reading coordinates
+
+    class_counts = COARSE_CFGS + [1000]
+    x_data_positions = COARSE_CFGS + [BREAK_1K_POS]
+
+    fill_color = '#8fa8be'   # muted slate blue — understated, not competing
+    bg_color = '#fafafa'     # near-white background
+    border_color = '#b5b5b5'
+
+    grid_side = 0.045  # figure fraction per grid square (scaled for wider figure)
+    gap = 0.038        # gap below axes y0 (tight — "Classes" label removed)
+
+    # Dot sizes scale with class count: prominent circles for sparse grids
+    # (easy to count), tiny dots for N=1000 (overlap into solid fill).
+    dot_sizes = {2: 16, 4: 12, 8: 9, 16: 7, 32: 5.5, 64: 4.5, 1000: 4.0}
+
+    # Pre-generate dot positions for each class count
+    # Low counts: ordered grid.  N=1000: random fill on dense grid.
+    dot_positions = {}
+    for n_classes in class_counts:
+        if n_classes <= 64:
+            dot_positions[n_classes] = _ordered_grid_positions(n_classes)
+        else:
+            inner_margin = 0.12
+            pos = np.linspace(inner_margin, 1 - inner_margin, grid_dim)
+            xx, yy = np.meshgrid(pos, pos)
+            all_pos = np.column_stack([xx.ravel(), yy.ravel()])
+            rng = np.random.RandomState(42 + n_classes)
+            n_fill = min(n_classes, len(all_pos))
+            idx = rng.choice(len(all_pos), n_fill, replace=False)
+            dot_positions[n_classes] = all_pos[idx]
+
+    for ax in bottom_axes:
+        ax_pos = ax.get_position()
+
+        for x_data, n_classes in zip(x_data_positions, class_counts):
+            # Convert data x-position to figure x-coordinate
+            display_pt = ax.transData.transform([x_data, 0])
+            fig_pt = fig.transFigure.inverted().transform(display_pt)
+            cx = fig_pt[0]
+
+            left = cx - grid_side / 2
+            bottom = ax_pos.y0 - gap - grid_side
+
+            if bottom < 0.01 or left < 0:
+                continue
+
+            inset = fig.add_axes([left, bottom, grid_side, grid_side])
+            inset.set_facecolor(bg_color)
+
+            # Draw dots (size scales with class count)
+            pts = dot_positions[n_classes]
+            inset.scatter(pts[:, 0], pts[:, 1],
+                          s=dot_sizes[n_classes], c=fill_color,
+                          edgecolors='none', linewidths=0, zorder=2)
+
+            inset.set_xlim(0, 1)
+            inset.set_ylim(0, 1)
+            inset.set_xticks([])
+            inset.set_yticks([])
+            if n_classes == 1000:
+                # Solid fill, no border — reads as a completely packed block
+                inset.set_facecolor(fill_color)
+                for spine in inset.spines.values():
+                    spine.set_visible(False)
+            else:
+                for spine in inset.spines.values():
+                    spine.set_linewidth(0.5)
+                    spine.set_color(border_color)
+
+
 # ── Main ─────────────────────────────────────────────────────────────────
 
 def main():
@@ -175,13 +276,13 @@ def main():
         "ytick.major.width": 0.8,
     })
 
-    fig = plt.figure(figsize=(9, 7.5))
+    fig = plt.figure(figsize=(11.7, 9.0))
 
     # 3 rows (TVSD, separator, NSD) × 2 regions
     outer = gridspec.GridSpec(3, 2, figure=fig,
                               hspace=0.35, wspace=0.25,
                               height_ratios=[1, 0.005, 1],
-                              left=0.09, right=0.96, top=0.91, bottom=0.10)
+                              left=0.09, right=0.96, top=0.92, bottom=0.19)
 
     axes = {}
 
@@ -250,6 +351,22 @@ def main():
                                transform=fig.transFigure, color="#cccccc",
                                linewidth=0.7, linestyle="-", clip_on=False))
 
+    # ── Remove "Classes" xlabel from bottom row — dot grids replace it ──
+    axes[(2, 0)].set_xlabel("")
+    axes[(2, 1)].set_xlabel("")
+
+    # ── Class count dot grids (below bottom row) ──
+    draw_class_count_grids(fig, [axes[(2, 0)], axes[(2, 1)]])
+
+    # ── Per-axis "Number of training classes" labels ──
+    for ax in [axes[(2, 0)], axes[(2, 1)]]:
+        ax_pos = ax.get_position()
+        ax_cx = (ax_pos.x0 + ax_pos.x1) / 2
+        label_y = ax_pos.y0 - 0.038 - 0.045 - 0.008
+        fig.text(ax_cx, max(label_y, 0.045),
+                 "Number of training classes", fontsize=8, ha="center",
+                 va="top", color="#555555")
+
     # ── Shared legend ──
     fig_left = axes[(0, 0)].get_position().x0
     fig_right = axes[(0, 1)].get_position().x1
@@ -273,7 +390,7 @@ def main():
     fig.legend(handles=handles, loc="center", fontsize=8, frameon=False,
                handletextpad=0.3, columnspacing=0.8, ncol=5,
                borderpad=0.3, handlelength=1.5,
-               bbox_to_anchor=(fig_center, 0.025))
+               bbox_to_anchor=(fig_center, 0.02))
 
     # ── Save ──
     out = f"{OUTPUT_DIR}/figure3.png"
