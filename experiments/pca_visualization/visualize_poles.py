@@ -37,7 +37,7 @@ POLES_FILES = {
 MODEL_DISPLAY_NAMES = {
     "alexnet": "AlexNet",
     "clip": "CLIP ViT-L/14",
-    "dino": "DINOv2 ViT-L",
+    "dino": "DINOv3 ViT-L",
     "vit": "ViT-L (supervised)",
 }
 

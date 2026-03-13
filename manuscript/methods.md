@@ -18,7 +18,7 @@ To ensure that our findings are not contingent on the particular representationa
 |---|---|---|---|---|
 | AlexNet | CNN (supervised) | ImageNet-1K classification | FC2 | 4,096 |
 | CLIP | ViT-L/14 | Contrastive language-image pretraining (Radford et al., 2021) | Image encoder output | 768 |
-| DINOv2 | ViT-L/16 | Self-supervised self-distillation (Oquab et al., 2024) | CLS token | 1,024 |
+| DINOv3 | ViT-L/16 | Self-supervised self-distillation (Oquab et al., 2024) | CLS token | 1,024 |
 | ViT | ViT-L/16 (supervised) | ImageNet-1K classification (Dosovitskiy et al., 2021) | CLS token | 1,024 |
 
 All features are L2-normalised before PCA. The use of multiple source models — spanning supervised, self-supervised, and multimodal training — allows us to test whether the relationship between granularity and brain alignment is robust to the representational prior used to define the coarse labels.
