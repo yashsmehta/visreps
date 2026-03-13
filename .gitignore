@@ -33,6 +33,7 @@ bonner-libraries/
 
 # Large data files (keep locally, regenerable)
 experiments/things_visualizations/data/
+manuscript/figures/fig2/class_rdm_data.npz
 
 # Grid configs change per-experiment; keep local only
 configs/grids/
