@@ -36,8 +36,9 @@ PALETTE_28 = [
     "#3182bd", "#74c476", "#bdbdbd",
 ]
 
-# Scatter colors
-GREEN_COLORS = ["#0b6623", "#2e86ab", "#52b788", "#8ecae6", "#95d5b2"]
+# Scatter colors — greens for 8-class advantage, warm orange/reds for 1K advantage
+# Dark forest → bright green → lime → teal → olive — max distinguishability
+GREEN_COLORS = ["#1b5e20", "#2e7d32", "#8bc34a", "#00897b", "#6a8e3e"]
 GREEN_MARKERS = ["o", "s", "^", "D", "v"]
 ORANGE_COLORS = ["#c1121f", "#e07a28", "#d4a373", "#f4a261"]
 ORANGE_MARKERS = ["o", "s", "^", "D"]
@@ -59,7 +60,7 @@ def compute_things_data(data=None):
 
     print("  Computing RDMs...")
     rdm_behav = compute_rdm(torch.tensor(data["embeddings"], dtype=torch.float32)).numpy()
-    rdm_clip4 = compute_rdm(torch.tensor(data["clip4_acts"], dtype=torch.float32)).numpy()
+    rdm_clip8 = compute_rdm(torch.tensor(data["clip8_acts"], dtype=torch.float32)).numpy()
     rdm_1k = compute_rdm(torch.tensor(data["thousand_acts"], dtype=torch.float32)).numpy()
 
     print("  Loading categories and sorting...")
@@ -71,13 +72,13 @@ def compute_things_data(data=None):
     # Sorted RDMs
     rdms_sorted = {
         "Behavioral": rdm_behav[np.ix_(sort_idx, sort_idx)],
-        "CLIP 4-class": rdm_clip4[np.ix_(sort_idx, sort_idx)],
+        "CLIP 8-class": rdm_clip8[np.ix_(sort_idx, sort_idx)],
         "1000-class": rdm_1k[np.ix_(sort_idx, sort_idx)],
     }
 
     # RSA scores
     rsa_scores = {}
-    for key in ["CLIP 4-class", "1000-class"]:
+    for key in ["CLIP 8-class", "1000-class"]:
         rsa_scores[key] = compute_rdm_correlation(
             torch.tensor(rdms_sorted[key]), torch.tensor(rdms_sorted["Behavioral"]),
             correlation="Spearman"
@@ -87,7 +88,7 @@ def compute_things_data(data=None):
     ranked_behav = rank_transform(rdms_sorted["Behavioral"])
     diff_rdm = (
         np.abs(ranked_behav - rank_transform(rdms_sorted["1000-class"]))
-        - np.abs(ranked_behav - rank_transform(rdms_sorted["CLIP 4-class"]))
+        - np.abs(ranked_behav - rank_transform(rdms_sorted["CLIP 8-class"]))
     )
 
     # Rank-transform for display
@@ -95,7 +96,7 @@ def compute_things_data(data=None):
 
     # Per-row correlations (for scatter panel)
     print("  Computing per-row correlations...")
-    corr_clip4 = per_row_correlations(rdm_clip4, rdm_behav)
+    corr_clip8 = per_row_correlations(rdm_clip8, rdm_behav)
     corr_1k = per_row_correlations(rdm_1k, rdm_behav)
 
     return {
@@ -106,7 +107,7 @@ def compute_things_data(data=None):
         "rdms_ranked": rdms_ranked,
         "diff_rdm": diff_rdm,
         "rsa_scores": rsa_scores,
-        "corr_clip4": corr_clip4,
+        "corr_clip8": corr_clip8,
         "corr_1k": corr_1k,
     }
 
@@ -118,7 +119,7 @@ def compute_things_data(data=None):
 def plot_rdm_panels(axes, precomputed, show_difference=True, colorbar_axes=None):
     """Draw RDM panels using precomputed data.
 
-    axes: list of 3 or 4 axes (Behavioral, CLIP 4-class, 1000-class, [Difference])
+    axes: list of 3 or 4 axes (Behavioral, CLIP 8-class, 1000-class, [Difference])
     colorbar_axes: tuple (ax_cb_magma, ax_cb_diff) or None to skip colorbars.
     """
     block_boundaries = precomputed["block_boundaries"]
@@ -133,7 +134,7 @@ def plot_rdm_panels(axes, precomputed, show_difference=True, colorbar_axes=None)
 
     panels = [
         ("Behavioral", rdms_ranked["Behavioral"], None, "magma"),
-        ("CLIP 4-class", rdms_ranked["CLIP 4-class"], rsa_scores["CLIP 4-class"], "magma"),
+        ("CLIP 8-class", rdms_ranked["CLIP 8-class"], rsa_scores["CLIP 8-class"], "magma"),
         ("1000-class", rdms_ranked["1000-class"], rsa_scores["1000-class"], "magma"),
     ]
     if show_difference:
@@ -199,12 +200,12 @@ def plot_rdm_panels(axes, precomputed, show_difference=True, colorbar_axes=None)
 def plot_scatter_panel(ax_scatter, ax_hist, precomputed):
     """Draw per-concept scatter and histogram using precomputed data."""
     categories = precomputed["categories"]
-    corr_clip4 = precomputed["corr_clip4"]
+    corr_clip8 = precomputed["corr_clip8"]
     corr_1k = precomputed["corr_1k"]
-    diff = corr_clip4 - corr_1k
+    diff = corr_clip8 - corr_1k
 
     df = pd.DataFrame({
-        "corr_clip4": corr_clip4,
+        "corr_clip8": corr_clip8,
         "corr_1k": corr_1k,
         "diff": diff,
         "category": categories,
@@ -245,18 +246,19 @@ def plot_scatter_panel(ax_scatter, ax_hist, precomputed):
     df["marker"] = markers
     df["highlighted"] = is_highlighted
 
-    # ── Scatter ──
-    lims = [min(df["corr_1k"].min(), df["corr_clip4"].min()) - 0.08,
-            max(df["corr_1k"].max(), df["corr_clip4"].max()) + 0.05]
+    # ── Scatter (x = CLIP 8-class, y = 1000-class) ──
+    lims = [min(df["corr_1k"].min(), df["corr_clip8"].min()) - 0.08,
+            max(df["corr_1k"].max(), df["corr_clip8"].max()) + 0.05]
     xx = np.linspace(lims[0], lims[1], 200)
+    # Buffer band around diagonal
     ax_scatter.fill_between(xx, xx - buffer_threshold, xx + buffer_threshold,
-                             color="#f4f4f4", alpha=0.8, zorder=0, lw=0)
-    ax_scatter.plot(lims, lims, color="#b0b0b0", lw=0.6, ls="--", zorder=0.5)
+                             color="#f0f0f0", alpha=0.6, zorder=0, lw=0)
+    ax_scatter.plot(lims, lims, color="#999999", lw=0.7, ls="--", zorder=0.5)
 
     grey_df = df[~df["highlighted"]]
-    ax_scatter.scatter(grey_df["corr_1k"], grey_df["corr_clip4"],
-                        c=grey_df["color"].values, s=8, marker="o",
-                        alpha=0.20, edgecolors="none", rasterized=True, zorder=1)
+    ax_scatter.scatter(grey_df["corr_clip8"], grey_df["corr_1k"],
+                        c="#c8c8c8", s=14, marker="o",
+                        alpha=0.35, edgecolors="none", rasterized=True, zorder=1)
 
     for cat in positive_cats + negative_cats:
         if cat not in cat_style:
@@ -266,30 +268,41 @@ def plot_scatter_panel(ax_scatter, ax_hist, precomputed):
         if subset.empty:
             continue
         c, m = cat_style[cat]
-        ax_scatter.scatter(subset["corr_1k"], subset["corr_clip4"],
-                            c=c, s=18, marker=m, alpha=0.70,
-                            edgecolors="white", linewidths=0.3,
+        ax_scatter.scatter(subset["corr_clip8"], subset["corr_1k"],
+                            c=c, s=32, marker=m, alpha=0.80,
+                            edgecolors="white", linewidths=0.5,
                             rasterized=True, zorder=2)
 
     ax_scatter.set_xlim(lims)
     ax_scatter.set_ylim(lims)
-    ax_scatter.set_xlabel(r"Per-concept $\rho_s$ (1000-class)", fontsize=8.5)
-    ax_scatter.set_ylabel(r"Per-concept $\rho_s$ (CLIP 4-class)", fontsize=8.5)
-    ax_scatter.set_title("Per-Concept Alignment", fontsize=9.5,
-                          fontweight="semibold", pad=8)
+    ax_scatter.set_xlabel(r"Per-concept $\rho_s$ (CLIP 8-class)", fontsize=10.5)
+    ax_scatter.set_ylabel(r"Per-concept $\rho_s$ (1000-class)", fontsize=10.5)
+    ax_scatter.set_title("Per-Concept Alignment", fontsize=12,
+                          fontweight="semibold", pad=10)
+    ax_scatter.tick_params(axis="both", labelsize=9, length=4, width=0.8)
     ax_scatter.set_aspect("equal")
-    sns.despine(ax=ax_scatter, offset=4)
+    sns.despine(ax=ax_scatter, offset=5)
+
+    # Subtle region annotations
+    ax_scatter.text(0.92, 0.07, "8-class better",
+                     transform=ax_scatter.transAxes,
+                     ha="right", va="bottom", fontsize=9, color="#1a7a3a",
+                     fontstyle="italic", alpha=0.50)
+    ax_scatter.text(0.05, 0.52, "1K better",
+                     transform=ax_scatter.transAxes,
+                     ha="left", va="top", fontsize=9, color="#c1121f",
+                     fontstyle="italic", alpha=0.50)
 
     # Legend
     legend_elements = []
     legend_elements.append(Line2D([0], [0], marker="None", color="w",
-                                   label="4-class advantage"))
+                                   label="8-class advantage"))
     for i, cat in enumerate(positive_cats):
         med = cat_medians[cat]
         legend_elements.append(
             Line2D([0], [0], marker=GREEN_MARKERS[i], color="w",
-                   markerfacecolor=GREEN_COLORS[i], markersize=5,
-                   markeredgecolor="none",
+                   markerfacecolor=GREEN_COLORS[i], markersize=7.5,
+                   markeredgecolor="white", markeredgewidth=0.4,
                    label=f"  {short_cat_label(cat)} ({med:+.2f})"))
     legend_elements.append(Line2D([0], [0], marker="None", color="w",
                                    label="1K advantage"))
@@ -297,32 +310,32 @@ def plot_scatter_panel(ax_scatter, ax_hist, precomputed):
         med = cat_medians[cat]
         legend_elements.append(
             Line2D([0], [0], marker=ORANGE_MARKERS[i], color="w",
-                   markerfacecolor=ORANGE_COLORS[i], markersize=5,
-                   markeredgecolor="none",
+                   markerfacecolor=ORANGE_COLORS[i], markersize=7.5,
+                   markeredgecolor="white", markeredgewidth=0.4,
                    label=f"  {short_cat_label(cat)} ({med:+.2f})"))
 
-    leg = ax_scatter.legend(handles=legend_elements, fontsize=5, frameon=True,
-                             loc="lower right", handletextpad=0.15,
-                             framealpha=0.92, edgecolor="#cccccc", fancybox=False,
-                             borderpad=0.25, labelspacing=0.12,
-                             handlelength=1.2)
-    leg.get_frame().set_linewidth(0.4)
+    leg = ax_scatter.legend(handles=legend_elements, fontsize=7.5, frameon=True,
+                             loc="upper left", handletextpad=0.3,
+                             framealpha=0.95, edgecolor="#bbbbbb", fancybox=False,
+                             borderpad=0.4, labelspacing=0.2,
+                             handlelength=1.4, bbox_to_anchor=(0.0, 1.0))
+    leg.get_frame().set_linewidth(0.5)
     for text in leg.get_texts():
         label = text.get_text()
-        if label in ("4-class advantage", "1K advantage"):
+        if label in ("8-class advantage", "1K advantage"):
             text.set_fontweight("bold")
-            text.set_fontsize(5.5)
+            text.set_fontsize(8.0)
 
     # ── Histogram (works as standalone or inset) ──
-    bins = np.linspace(diff.min() - 0.02, diff.max() + 0.02, 40)
-    c_green_hist = "#1a8a42"
+    bins = np.linspace(diff.min() - 0.02, diff.max() + 0.02, 36)
+    c_green_hist = "#1a7a3a"
     c_orange_hist = "#d95e1a"
     bin_colors = [c_green_hist if (b_lo + b_hi) / 2 > 0 else c_orange_hist
                   for b_lo, b_hi in zip(bins[:-1], bins[1:])]
-    _, _, patches = ax_hist.hist(diff, bins=bins, edgecolor="white", linewidth=0.3)
+    _, _, patches = ax_hist.hist(diff, bins=bins, edgecolor="white", linewidth=0.4)
     for patch, c in zip(patches, bin_colors):
         patch.set_facecolor(c)
-        patch.set_alpha(0.78)
+        patch.set_alpha(0.85)
 
     ax_hist.axvspan(-buffer_threshold, buffer_threshold,
                      color="#f4f4f4", alpha=0.7, zorder=0, lw=0)
@@ -339,19 +352,25 @@ def plot_scatter_panel(ax_scatter, ax_hist, precomputed):
         ax_hist.yaxis.set_major_locator(mticker.MaxNLocator(3, integer=True))
         pct_fs = 8.5
     else:
-        ax_hist.set_xlabel(r"$\Delta\rho_s$ (CLIP 4-class $-$ 1000-class)",
-                           fontsize=8.5)
-        ax_hist.set_ylabel("Count", fontsize=8.5)
-        pct_fs = 11
+        ax_hist.set_xlabel(r"$\Delta\rho_s$ (CLIP 8-class $-$ 1000-class)",
+                           fontsize=10.5)
+        ax_hist.set_ylabel("Count", fontsize=10.5)
+        ax_hist.tick_params(axis="both", labelsize=9, length=4, width=0.8)
+        pct_fs = 13
 
-    sns.despine(ax=ax_hist, offset=2 if is_inset else 4)
+    sns.despine(ax=ax_hist, offset=2 if is_inset else 5)
+
+    # Add headroom above tallest bar
+    if not is_inset:
+        ymax = ax_hist.get_ylim()[1]
+        ax_hist.set_ylim(top=ymax * 1.12)
 
     n_win = (diff > 0).sum()
     pct_win = 100 * n_win / len(diff)
     pct_lose = 100 - pct_win
-    ax_hist.text(0.95, 0.88, f"{pct_win:.0f}%",
+    ax_hist.text(0.78, 0.88, f"{pct_win:.0f}%",
                   transform=ax_hist.transAxes, fontsize=pct_fs, va="top",
-                  ha="right", color=c_green_hist, fontweight="bold")
-    ax_hist.text(0.08, 0.88, f"{pct_lose:.0f}%",
+                  ha="center", color=c_green_hist, fontweight="bold")
+    ax_hist.text(0.18, 0.88, f"{pct_lose:.0f}%",
                   transform=ax_hist.transAxes, fontsize=pct_fs, va="top",
-                  ha="left", color=c_orange_hist, fontweight="bold")
+                  ha="center", color=c_orange_hist, fontweight="bold")

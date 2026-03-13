@@ -23,7 +23,7 @@ Computational models of vision increasingly rely on detailed training objectives
 
 ---
 
-**Status:** Working draft — figures are organized into 4 main figures with subdirectories (`fig1/`–`fig4/`). Supplementary figures listed at the end.
+**Status:** Working draft — figures are organized into 6 main figures with subdirectories (`fig1/`–`fig6/`). Supplementary figures listed at the end.
 
 **PCA source models in main figures:** AlexNet, CLIP, Pixels. ViT and DINOv3-derived labels in supplementary only.
 
@@ -31,12 +31,14 @@ Computational models of vision increasingly rely on detailed training objectives
 
 ## Narrative Arc
 
-The four main figures follow a progression: **method overview → representation analysis → neural data (combined TVSD + NSD) → behavioral data (THINGS) with reconstruction control**.
+The six main figures follow a progression: **method overview → representation analysis → neural data → behavioral data → per-concept analysis → data efficiency**.
 
 1. **Figure 1** is a schematic overview: the PCA-based coarse-graining procedure, the DNN training paradigm, how alignment is measured (RSA), and the evaluation domains (brain and behavior).
 2. **Figure 2** establishes that coarse-trained representations are genuinely different from 1000-way representations — via class-level RDMs, cross-model RSA, projection controls, and PC-space visualizations with image insets showing the geometric reorganization.
 3. **Figure 3** presents neural alignment across species: macaque electrophysiology (TVSD) and human fMRI (NSD) side by side, with coarseness curves (raw Spearman ρ). Per-layer profiles in supplementary.
-4. **Figure 4** presents behavioral alignment (THINGS): reconstruction control, coarseness results, per-concept analysis (scatter + histogram), and RDM visualizations explaining *why* coarse models win. Summary bar plots and neural reconstruction controls in supplementary.
+4. **Figure 4** presents behavioral alignment (THINGS): coarseness results, model comparison with pretrained baselines, and RDM visualizations explaining *why* coarse models win.
+5. **Figure 5** digs into per-concept alignment: which semantic categories drive the coarse advantage, and how broad is the effect?
+6. **Figure 6** introduces the data-efficiency paradigm: coarse vs fine-grained training at varying data scales.
 
 ---
 
@@ -80,7 +82,7 @@ Schematic showing the three evaluation benchmarks: (1) macaque electrophysiology
 
 **Directory:** `manuscript/figures/fig2/`
 
-**Narrative role:** Establish that the internal representations learned from coarse supervision are *qualitatively distinct* from 1000-way representations. They are not just a low-dimensional projection or subset of the fine-grained features. This figure answers three key questions: (1) How do class-level RDMs change with granularity? (2) Can you recover coarse representations by simple dimensionality reduction of the 1000-way model? (No.) (3) How does the geometry of the representation space itself change? The PC scatter with image insets gives immediate visual intuition.
+**Narrative role:** Establish that the internal representations learned from coarse supervision are *qualitatively distinct* from 1000-way representations. The RDMs show how internal structure changes with granularity, and the PC scatter with image insets gives immediate visual intuition for geometric reorganization. Cross-model RSA and projection control results are described in text and available in supplementary.
 
 ### Panel A — 2×3 grid of class-level RDMs
 
@@ -89,15 +91,7 @@ Six rank-normalized class-level RDMs (1000×1000, Pearson dissimilarity, FC1 lay
 - *Key visual:* The block-diagonal structure (within-category similarity) progressively sharpens from 4-way to 1000-way, but even the coarsest models show meaningful category organization.
 - *Key message:* Coarse training produces qualitatively distinct internal geometry — not simply a blurred version of fine-grained representations.
 
-### Panel B — Cross-model RSA + projection control (two stacked bar plots)
-
-**Top:** Cross-model RSA (1000-way vs. each coarse model, FC1). Bars show Spearman ρ for each granularity level (2–64). Dashed line = inter-seed 1K baseline (ρ ≈ 0.76). Coarse models fall well below the cross-seed ceiling, confirming they learn different representations.
-
-**Bottom:** Projection control. For each coarseness level, project the 1000-way model's FC1 activations onto the top-k PCs (k = log₂(n_classes)) and compute RSA with the actual coarse model. Hatched bars show projected-1K vs. coarse RSA remains very low — you cannot recover coarse representations by dimensionality reduction.
-
-- *Key message:* Coarse representations are genuinely different from 1000-way, and cannot be recovered by projecting the fine-grained model onto a low-dimensional subspace.
-
-### Panel C — PC1/PC2 scatter with image insets (moved from Figure 1)
+### Panel B — PC1/PC2 scatter with image insets
 
 Two vertically stacked PC1 vs. PC2 scatter plots of ImageNet activations (FC1 layer, L2-normalized), colored by 4-way AlexNet-PCA labels:
 
@@ -114,11 +108,9 @@ A subset of representative points (~3 per class) show actual ImageNet thumbnails
 
 **(A) Class-level RDM grid.** Six RDMs showing the progression from 4-way to 1000-way. The 1000-way RDM shows fine-grained within-category structure with sharp diagonal blocks. Coarser models show progressively broader block structure — the 4-way model has large uniform blocks while the 64-way model approaches the 1000-way pattern but with coarser boundaries.
 
-**(B-top) 1000-way vs. coarse RSA (FC1).** Cross-model RSA increases from ρ ≈ 0.22 (2-way) to ρ ≈ 0.52 (64-way), but never approaches the inter-seed baseline (ρ ≈ 0.76). Even the 64-way model's representations remain substantially different from 1000-way.
+**(B) PC scatter with image insets (FC1, AlexNet-PCA 4-way).** Top panel: the 1000-way model's FC1 activations projected onto their own top 2 PCs show a smooth gradient (PC1 ≈ 3.0%, PC2 ≈ 2.4% var.) — 4-way PCA labels are intermixed with no clear boundaries. Bottom panel: the 4-way model's FC1 activations show four well-separated clusters (PC1 ≈ 22.5%, PC2 ≈ 19.5% var.), each internally variable but categorically distinct. Image insets reveal the semantic content of each cluster. The coarse model imposes a fundamentally different geometry, not just a lower-dimensional version of the fine-grained geometry.
 
-**(B-bottom) Projection vs. coarse (FC1).** Projected-1K vs. coarse RSA is extremely low: ρ ≈ 0.03 at 2-class, rising to ρ ≈ 0.35 at 64-class. The gap to the inter-seed baseline never closes, confirming coarse features cannot be recovered by PCA of the fine-grained model.
-
-**(C) PC scatter with image insets (FC1, AlexNet-PCA 4-way).** Top panel: the 1000-way model's FC1 activations projected onto their own top 2 PCs show a smooth gradient (PC1 ≈ 3.0%, PC2 ≈ 2.4% var.) — 4-way PCA labels are intermixed with no clear boundaries. Bottom panel: the 4-way model's FC1 activations show four well-separated clusters (PC1 ≈ 22.5%, PC2 ≈ 19.5% var.), each internally variable but categorically distinct. Image insets reveal the semantic content of each cluster. The coarse model imposes a fundamentally different geometry, not just a lower-dimensional version of the fine-grained geometry.
+**Cross-model RSA (described in text, supplementary).** Cross-model RSA (1000-way vs. coarse) increases from ρ ≈ 0.22 (2-way) to ρ ≈ 0.52 (64-way), but never approaches the inter-seed baseline (ρ ≈ 0.76). Projection control: projected-1K vs. coarse RSA is extremely low (ρ ≈ 0.03 at 2-class, ρ ≈ 0.35 at 64-class), confirming coarse features cannot be recovered by PCA of the fine-grained model.
 
 ---
 
@@ -185,31 +177,28 @@ Full per-layer RSA profiles (all 7 granularity levels, 14 layer taps) available 
 
 **Directory:** `manuscript/figures/fig4/`
 
-**Narrative role:** Present the behavioral alignment results — the most surprising finding. Coarse models *vastly* outperform 1000-way on human similarity judgments. This figure shows the result (normalized log coarseness plot), explains *which* concepts drive the effect (scatter + histogram), and visualizes *why* via RDMs. No reconstruction controls here — those are in Supplementary S4.
+**Narrative role:** Present the behavioral alignment results — the most surprising finding. Coarse models *vastly* outperform 1000-way on human similarity judgments. This figure shows the result (coarseness log plot), compares against pretrained models, and visualizes *why* via RDMs. Per-concept analysis is in Figure 5; data efficiency is in Figure 6.
 
 ### Layout — 2 rows
 
 ```
-┌───────────┬──────────────────┬──────────────────┬──────────────────┐
-│ Model     │ Coarseness       │ Per-concept       │ Per-concept      │
-│ Comparison│ (raw Spearman ρ) │ scatter           │ advantage        │
-│ (bars +   │                  │ (CLIP coarse      │ histogram        │
-│ pretrained│                  │  vs. 1000-way)    │                  │
-│ scatter)  │                  │                   │                  │
-├───────────┴──────────────────┴──────────────────┴──────────────────┤
+┌───────────────┬──────────────────┬──────────────────────────────────┐
+│ Schematic     │ Coarseness       │ Model Comparison                 │
+│ (THINGS)      │ (raw Spearman ρ) │ (coarse vs 1K bars +             │
+│               │                  │  pretrained scatter)             │
+├───────────────┴──────────────────┴──────────────────────────────────┤
 │                     3 RDMs side by side                             │
-│  [Human behavioral]    [Coarse (CLIP 4-way)]    [1000-way model]   │
+│  [Human behavioral]    [Coarse (CLIP 8-way)]    [1000-way model]   │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-### Top-left: Model comparison panel
+### Panel A — THINGS schematic
 
-NeurIPS-style bars comparing 1000-way (amber) vs. coarse CLIP 64-way (dark blue) on THINGS, plus a grouped scatter of pretrained models (supervised, self-supervised, vision-language) with architecture markers (CNN pentagon, ViT star). A dashed reference line from the coarse bar extends into the pretrained region.
+Schematic of the THINGS behavioral similarity task: triplet odd-one-out judgments, how behavioral RDMs are constructed, and the comparison with model RDMs.
 
-- *Key visual:* The coarse-trained model (trained from scratch) matches or exceeds many large pretrained models (CLIP, DINOv2, ViT-B/16) on behavioral alignment.
-- *Key message:* Coarse supervision is not just better than 1000-way — it competes with the best pretrained vision models.
+- *Key message:* Introduces the behavioral benchmark before showing results.
 
-### Top: Coarseness log plot (raw Spearman ρ)
+### Panel B — Coarseness log plot (raw Spearman ρ)
 
 Y-axis shows raw Spearman ρ. Log₂ x-axis (2 → 1000). Three PCA architectures (AlexNet, CLIP, Pixels — same blue/amber color scheme as Figure 3). ViT moved to supplementary.
 
@@ -217,49 +206,112 @@ Y-axis shows raw Spearman ρ. Log₂ x-axis (2 → 1000). Three PCA architecture
 - *Error bars:* Bootstrap 95% CIs across 3 seeds.
 - *Architectures:* AlexNet (medium blue circle), CLIP (dark blue square), Pixels (brown triangle-down), 1K (warm amber diamond).
 
-### Top: Per-concept scatter plot (CLIP model)
+### Panel C — Model comparison (coarse vs 1K + pretrained)
 
-Scatter plot of per-concept RSA contribution: **CLIP coarse model** (y-axis) vs. 1000-way model (x-axis). Identity line for reference. Points color-coded by THINGS semantic category (27 categories).
+Two NeurIPS-style bars: best coarse model (dark blue) vs 1000-way (amber), plus a grouped scatter of pretrained models (supervised, self-supervised, vision-language) with architecture markers (CNN pentagon, ViT star). A dashed reference line from the coarse bar extends into the pretrained region.
 
-- *Coarse model:* CLIP-PCA, best granularity level (likely 4-way).
-- *Key pattern:* ~70% of concepts fall above the diagonal (coarse model wins). The advantage is broad and systematic, not driven by outliers. Plants, animals, clothing accessories strongly favor coarse. Body parts, drinks favor 1000-way.
-- *Key message:* The coarse model advantage is pervasive across most concept categories, not a niche effect.
+- *Key visual:* The coarse-trained model (trained from scratch) matches or exceeds many large pretrained models on behavioral alignment.
+- *Key message:* Coarse supervision is not just better than 1000-way — it competes with the best pretrained vision models.
 
-### Top: Per-concept advantage histogram
-
-Histogram of per-concept advantage: `(coarse_score - 1000way_score)` for each of the ~1,480 eval concepts (CLIP model). Positive values = coarse wins, negative = 1000-way wins.
-
-- *Key visual:* Distribution clearly shifted to the right (positive). Prominent vertical line at **zero** divides coarse-advantage (green) from 1K-advantage (orange) bins. Annotation shows percentage of concepts where 4-class wins.
-- *Key message:* Quantifies that the advantage is broad — not driven by a few outlier concepts.
-
-### Bottom: Category-annotated RDMs
+### Panel D — Category-annotated RDMs
 
 Three RDMs side by side — the most visually striking evidence for *why* coarse models win:
 
 1. **Human behavioral RDM** — ground truth similarity structure from THINGS triplet judgments
-2. **Coarse model RDM** (CLIP 4-class) — captures the broad block structure
+2. **Coarse model RDM** (CLIP 8-class) — captures the broad block structure
 3. **1000-way model RDM** — imposes finer distinctions that don't match human judgments
 
 Concepts sorted by the 27 THINGS semantic categories with boundary lines overlaid.
 
-- *Key visual:* The coarse model RDM captures the broad categorical block structure of human similarity (animals grouped together, food grouped together, vehicles grouped together) much better than the 1000-way model, which over-differentiates within categories.
-- *Key message:* Fine-grained training forces the network to emphasize within-category distinctions (needed to tell apart 1000 classes) at the expense of the broad between-category structure that dominates human similarity judgments.
+- *Key visual:* The coarse model RDM captures the broad categorical block structure of human similarity much better than the 1000-way model, which over-differentiates within categories.
+- *Key message:* Fine-grained training emphasizes within-category distinctions at the expense of the broad between-category structure that dominates human similarity judgments.
 
 ### Observed results
 
-**(A) Model comparison.** Coarse CLIP 64-way bar (ρ ≈ 0.57) substantially exceeds 1000-way bar (ρ ≈ 0.39). Among pretrained models, CLIP-L/14 and DINOv2 approach but do not exceed the coarse-trained model. Supervised CNNs (AlexNet, VGG, ResNet) cluster well below the coarse reference line. The coarse model trained from scratch on 64 classes competes with billion-parameter pretrained models.
+**(A)** Schematic (no data).
 
 **(B) Coarseness log plot.** The headline result of the paper. All coarse models sit well above the 1000-way baseline. CLIP labels (dark blue) are strongest: ρ ≈ 0.55–0.57. AlexNet (medium blue): ρ ≈ 0.44–0.48. Pixels (brown) starts low at ρ ≈ 0.10 (2-class), rises to ρ ≈ 0.23 at 64-class but never reaches 1000-way (ρ ≈ 0.39). The untrained baseline is at ρ ≈ 0.20.
 
-**(C) Per-concept scatter + histogram.** Left: scatter of per-concept ρ (CLIP 4-class y-axis vs. 1000-way x-axis). 1,207 of 1,854 concepts (~70%) fall above the diagonal, confirming the advantage is broad. Green-colored clusters (plants, animals) are consistently above the diagonal; orange clusters (body parts, tools) are below. Right: histogram of Δρ (CLIP 4-class minus 1000-way) is right-shifted with median ≈ +0.088. The distribution spans approximately −0.50 to +0.75, with the positive tail substantially longer.
+**(C) Model comparison.** Best coarse bar (ρ ≈ 0.57) substantially exceeds 1000-way bar (ρ ≈ 0.39). Among pretrained models, CLIP-L/14 and DINOv2 approach but do not exceed the coarse-trained model. Supervised CNNs cluster well below the coarse reference line.
 
-**(D) Category-annotated RDMs.** Three 1,854 × 1,854 RDMs sorted by 27 semantic categories. The human behavioral RDM (ρ = 0.538) shows clear block-diagonal structure with strong between-category boundaries. The CLIP 4-class RDM (ρ = 0.538) captures this block structure remarkably well — the category boundaries are sharp and the within-category regions show graded similarity. The 1000-way RDM (ρ = 0.392) has weaker block boundaries and more uniform off-diagonal values — it over-differentiates within categories, producing a flatter similarity landscape that mismatches human judgments.
+**(D) Category-annotated RDMs.** Three 1,854 × 1,854 RDMs sorted by 27 semantic categories. The human behavioral RDM (ρ = 0.538) shows clear block-diagonal structure. The CLIP 8-class RDM (ρ = 0.538) captures this block structure remarkably well. The 1000-way RDM (ρ = 0.392) has weaker block boundaries — it over-differentiates within categories.
 
 ---
 
-## ~~Figure 5~~ (REMOVED)
+## Figure 5: Per-Concept Alignment Analysis
 
-**Removed from main figures.** Summary bar plots (pretrained vs. coarse vs. 1000-way across all benchmarks) are in Supplementary S2. Neural reconstruction controls are in Supplementary S4. The THINGS reconstruction control is incorporated into Figure 4A.
+**Directory:** `manuscript/figures/fig5/`
+
+**Narrative role:** Dig deeper into *which* concepts drive the coarse advantage on THINGS behavioral alignment. The scatter plot and histogram from the original Figure 4 are expanded here as standalone panels, with room for additional analyses.
+
+### Layout — 1 row × 2 columns
+
+```
+┌─────────────────────┬──────────────────────┐
+│ Per-concept         │ Per-concept           │
+│ scatter             │ advantage histogram   │
+│ (CLIP 8-class       │                       │
+│  vs. 1000-way)      │                       │
+└─────────────────────┴──────────────────────┘
+```
+
+### Panel A — Per-concept scatter plot (CLIP model)
+
+Scatter plot of per-concept RSA contribution: **CLIP 8-class** (y-axis) vs. 1000-way (x-axis). Identity line for reference. Points color-coded by THINGS semantic category.
+
+- *Key pattern:* ~70% of concepts fall above the diagonal (coarse model wins). Plants, animals, clothing accessories strongly favor coarse. Body parts, drinks favor 1000-way.
+- *Key message:* The coarse model advantage is pervasive across most concept categories, not a niche effect.
+
+### Panel B — Per-concept advantage histogram
+
+Histogram of per-concept advantage: `(coarse_score - 1000way_score)` for each eval concept. Positive = coarse wins, negative = 1000-way wins.
+
+- *Key visual:* Distribution clearly shifted right. Vertical line at zero divides coarse-advantage (green) from 1K-advantage (orange) bins.
+- *Key message:* Quantifies that the advantage is broad — not driven by outlier concepts.
+
+### Observed results
+
+**(A) Per-concept scatter.** 1,207 of 1,854 concepts (~70%) fall above the diagonal. Green-colored clusters (plants, animals) are consistently above; orange clusters (body parts, tools) are below.
+
+**(B) Histogram.** Δρ distribution is right-shifted with median ≈ +0.088. Spans approximately −0.50 to +0.75, with the positive tail substantially longer.
+
+---
+
+## Figure 6: Data Efficiency
+
+**Directory:** `manuscript/figures/fig6/`
+
+**Narrative role:** Introduce a new analysis paradigm — varying the number of training images per class while holding granularity constant. Shows that coarse-trained models are more data-efficient than fine-grained models on behavioral alignment.
+
+### Layout — 1 row × 2 columns
+
+```
+┌─────────────────────┬──────────────────────┐
+│ Schematic           │ Data-efficiency       │
+│ (paradigm)          │ bars                  │
+│                     │ (8-class vs 1000-     │
+│                     │  class at 4 scales)   │
+└─────────────────────┴──────────────────────┘
+```
+
+### Panel A — Data-efficiency paradigm schematic
+
+Schematic showing the experimental paradigm: same model architecture trained with coarse (8-class) vs fine (1000-class) labels, but varying the number of training images per class (5, 10, 50, ~1300).
+
+- *Key message:* Introduces the data-efficiency question: does the coarse advantage persist when data is limited?
+
+### Panel B — Data-efficiency paired bars
+
+Paired bars at 4 data scales: 5, 10, 50, ~1300 images per class. Each pair compares coarse 8-class (dark blue) vs fine 1000-class (amber) on THINGS behavioral alignment.
+
+- *Key visual:* The coarse advantage is present at all data scales and grows larger with less data.
+- *Key message:* Coarse training is not only better at full scale — it is also more data-efficient.
+
+### Observed results
+
+**(A)** Schematic (no data).
+
+**(B) Data-efficiency bars.** At all 4 data scales, coarse 8-class exceeds 1000-class. The gap is largest at small scales (5–10 images/class) where the 1000-way model struggles but the coarse model maintains strong alignment.
 
 ---
 
@@ -321,20 +373,24 @@ All scripts live in `manuscript/figures/supplementary/` and are run from the pro
 manuscript/figures/
 ├── paper.md              # This file
 ├── fig_utils.py                # Shared constants, style, helpers
+├── things_utils.py             # Shared THINGS plotting utilities
 ├── fig1/                       # Method overview (schematic only)
 │   └── (schematics — coarse-graining, training, RSA, evaluation domains)
 ├── fig2/                       # Representations are different
-│   ├── figure2.py              # RDMs + cross-model RSA + PC scatter w/ image insets
+│   ├── figure2.py              # RDMs + PC scatter w/ image insets
 │   └── figure2.png
 ├── fig3/                       # Combined neural data (TVSD + NSD)
 │   ├── figure3.py              # Combined TVSD + NSD figure
 │   └── figure3.png
-├── fig4/                       # THINGS behavioral results
-│   ├── figure4.py              # THINGS figure
+├── fig4/                       # THINGS behavioral — headline result + RDMs
+│   ├── figure4.py              # Schematic + coarseness + model comparison + RDMs
 │   └── figure4.png
-├── fig5/                       # Summary overview with pretrained comparisons
-│   ├── figure5.py              # Summary bars + reconstruction
+├── fig5/                       # Per-concept alignment analysis
+│   ├── figure5.py              # Scatter + histogram
 │   └── figure5.png
+├── fig6/                       # Data efficiency
+│   ├── figure6.py              # Schematic + data-efficiency bars
+│   └── figure6.png
 └── supplementary/              # 16 supplementary figures (S1–S16)
     ├── README.md               # Index, run commands, data sources
     ├── supp_s1_training_summary.py
@@ -361,8 +417,9 @@ manuscript/figures/
 - **Log-scale x-axis** for all coarseness plots (Figures 3 and 4).
 - **Schematics should be simple** — the reader should grasp each dataset in 5–10 seconds.
 - **Reconstruction controls in supplementary** — not in main figures. This keeps Figures 3–5 focused on results.
-- **Figure 4 is the climax** — the behavioral result is the most surprising and needs the most explanation (RDMs, per-concept analysis).
-- **Figure 5 is the at-a-glance summary** — one figure that tells the whole story with comparisons to pretrained models.
+- **Figure 4 is the climax** — the behavioral result is the most surprising, shown via coarseness + model comparison + RDMs.
+- **Figure 5 is the deep dive** — per-concept analysis showing which semantic categories drive the coarse advantage.
+- **Figure 6 is the practical implication** — data efficiency shows coarse training is not only better but also more sample-efficient.
 - **No DINO or ViT PCA in main figures** — supplementary only. Main figures show AlexNet, CLIP, and Pixels PCA sources.
 - **No NSD-Synthetic in main figures** — supplementary only.
 - **V4 (TVSD) in supplementary only** — V1 and IT represent the extremes of the visual hierarchy.
