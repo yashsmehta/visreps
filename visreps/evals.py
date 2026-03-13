@@ -157,7 +157,7 @@ def eval(cfg):
             with torch.no_grad():
                 for imgs, keys in dl:
                     feats = model(imgs.to(dev))
-                    out = feats[layer].view(feats[layer].size(0), -1).cpu().float()
+                    out = feats[layer].reshape(feats[layer].size(0), -1).cpu().float()
                     if cfg.get("reconstruct_from_pcs"):
                         out = reconstruct_from_pcs({layer: out}, cfg.pca_k)[layer]
                     for i, key in enumerate(keys):
