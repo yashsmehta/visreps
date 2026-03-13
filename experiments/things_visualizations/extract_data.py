@@ -6,6 +6,7 @@ Models (AlexNet architecture, seed 1):
   - 2-class (AlexNet PCA): /data/ymehta3/alexnet_pca/cfg2a/checkpoint_epoch_20.pth
   - 1000-class:            /data/ymehta3/default/cfg1000a/checkpoint_epoch_20.pth
   - CLIP 4-class:          /data/ymehta3/clip_pca/cfg4a/checkpoint_epoch_20.pth
+  - CLIP 8-class:          /data/ymehta3/clip_pca/cfg8a/checkpoint_epoch_20.pth
 
 Outputs: experiments/things_visualizations/data/things_viz_data.npz
 """
@@ -37,6 +38,7 @@ CHECKPOINTS = {
     "2-class": "/data/ymehta3/alexnet_pca/cfg2a/checkpoint_epoch_20.pth",
     "1000-class": "/data/ymehta3/default/cfg1000a/checkpoint_epoch_20.pth",
     "clip-4": "/data/ymehta3/clip_pca/cfg4a/checkpoint_epoch_20.pth",
+    "clip-8": "/data/ymehta3/clip_pca/cfg8a/checkpoint_epoch_20.pth",
 }
 
 # Best layers from results.db (seed 1, spearman, things-behavior)
@@ -44,6 +46,7 @@ BEST_LAYERS = {
     "2-class": "conv5_post",
     "1000-class": "fc1_pre",
     "clip-4": "fc2_pre",
+    "clip-8": "fc2_post",
 }
 
 ALL_LAYERS = ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2"]
@@ -188,6 +191,7 @@ def main():
         twoclass_acts=results["2-class"],
         thousand_acts=results["1000-class"],
         clip4_acts=results["clip-4"],
+        clip8_acts=results["clip-8"],
         embeddings=emb_matrix,
         dimension_labels=np.array(dimension_labels),
         concept_names=np.array(concept_names),
@@ -197,6 +201,7 @@ def main():
             f"2-class:{BEST_LAYERS['2-class']}",
             f"1000-class:{BEST_LAYERS['1000-class']}",
             f"clip-4:{BEST_LAYERS['clip-4']}",
+            f"clip-8:{BEST_LAYERS['clip-8']}",
         ]),
     )
 

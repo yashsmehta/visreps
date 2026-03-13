@@ -1,12 +1,16 @@
 """
-Evaluate data-efficiency trained models on THINGS behavioral alignment.
-Compares 8-class (CLIP) vs 1000-class models trained on imagenet-mini subsets.
-Results are saved directly to data_efficiency/data_efficiency.csv (no results.db).
+Evaluate data-efficiency trained models on THINGS behavioral alignment and
+NSD ventral visual stream. Uses the standard two-phase RSA pipeline (layer
+selection on train, re-extract best layer on test).
+
+Results are saved to a single combined CSV: data_efficiency_results.csv
 
 Usage (from project root):
-    python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py --dataset imagenet-mini-50
-    python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py --dataset imagenet-mini-10 --epoch 200
-    python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py --dataset imagenet-mini-50 --print_only
+    python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py
+    python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py --datasets imagenet-mini-50
+    python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py --conditions 16 32
+    python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py --benchmarks things
+    python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py --print_only
 """
 
 import os
@@ -25,69 +29,32 @@ import visreps.evals as evals
 from visreps.utils import load_config, validate_config
 
 SEED = 1
-CSV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        "data_efficiency.csv")
-CSV_COLUMNS = ["dataset", "condition", "epoch", "score", "ci_low", "ci_high", "layer"]
+DATASETS = ["imagenet-mini-5", "imagenet-mini-10", "imagenet-mini-50"]
+CONDITIONS = {
+    8:    {"pca_labels": True, "pca_n_classes": 8,  "pca_labels_folder": "pca_labels_clip"},
+    16:   {"pca_labels": True, "pca_n_classes": 16, "pca_labels_folder": "pca_labels_clip"},
+    32:   {"pca_labels": True, "pca_n_classes": 32, "pca_labels_folder": "pca_labels_clip"},
+    64:   {"pca_labels": True, "pca_n_classes": 64, "pca_labels_folder": "pca_labels_clip"},
+    1000: {"pca_labels": False, "pca_n_classes": 1000},
+}
+EPOCHS = [100, 200]
 
-CONDITIONS = [
-    {"label": "8-class (CLIP)", "cfg_id": 8, "pca_labels": True,
-     "pca_n_classes": 8, "pca_labels_folder": "pca_labels_clip"},
-    {"label": "1000-class", "cfg_id": 1000, "pca_labels": False,
-     "pca_n_classes": 1000},
-]
-
-
-def get_checkpoint_dir(dataset):
-    return f"model_checkpoints/data_efficiency_{dataset}"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+CSV_PATH = os.path.join(SCRIPT_DIR, "data_efficiency_results.csv")
 
 
-def save_to_csv(dataset, condition_cfg_id, epoch, result_df):
-    """Upsert a result row into the CSV, keyed on (dataset, condition, epoch)."""
-    row = result_df.iloc[0]
-    new_row = pd.DataFrame([{
-        "dataset": dataset,
-        "condition": condition_cfg_id,
-        "epoch": epoch,
-        "score": round(row["score"], 4),
-        "ci_low": round(row["ci_low"], 4),
-        "ci_high": round(row["ci_high"], 4),
-        "layer": row["layer"],
-    }])
-
-    if os.path.exists(CSV_PATH):
-        existing = pd.read_csv(CSV_PATH)
-        # Drop any existing row with the same key
-        mask = (
-            (existing["dataset"] == dataset) &
-            (existing["condition"] == condition_cfg_id) &
-            (existing["epoch"] == epoch)
-        )
-        existing = existing[~mask]
-        combined = pd.concat([existing, new_row], ignore_index=True)
-    else:
-        combined = new_row
-
-    combined = combined.sort_values(["dataset", "condition", "epoch"]).reset_index(drop=True)
-    combined.to_csv(CSV_PATH, index=False)
-    print(f"  Saved to {CSV_PATH}")
-
-
-def eval_condition(condition, epoch, dataset):
-    """Evaluate a single condition on THINGS and save to CSV."""
-    checkpoint_dir = get_checkpoint_dir(dataset)
-    label = f"{condition['label']} ({dataset})"
-    print(f"\n{'='*60}")
-    print(f"Evaluating: {label} (epoch {epoch})")
-    print(f"{'='*60}\n")
+def build_overrides(dataset, condition_id, epoch, benchmark):
+    """Build config overrides for a single eval run."""
+    cond = CONDITIONS[condition_id]
+    checkpoint_dir = f"model_checkpoints/data_efficiency_{dataset}"
 
     overrides = [
         f"seed={SEED}",
-        f"cfg_id={condition['cfg_id']}",
+        f"cfg_id={condition_id}",
         f"checkpoint_dir={checkpoint_dir}",
         f"checkpoint_model=checkpoint_epoch_{epoch}.pth",
-        f"pca_labels={condition['pca_labels']}",
-        f"pca_n_classes={condition['pca_n_classes']}",
-        "neural_dataset=things-behavior",
+        f"pca_labels={cond['pca_labels']}",
+        f"pca_n_classes={cond['pca_n_classes']}",
         "analysis=rsa",
         "compare_method=spearman",
         "bootstrap=true",
@@ -95,73 +62,217 @@ def eval_condition(condition, epoch, dataset):
         "log_expdata=false",
         "batchsize=256",
     ]
-    if "pca_labels_folder" in condition:
-        overrides.append(f"pca_labels_folder={condition['pca_labels_folder']}")
+    if "pca_labels_folder" in cond:
+        overrides.append(f"pca_labels_folder={cond['pca_labels_folder']}")
 
+    if benchmark == "things":
+        overrides.append("neural_dataset=things-behavior")
+    elif benchmark == "nsd":
+        overrides.append("neural_dataset=nsd")
+        overrides.append("region=ventral visual stream")
+        overrides.append("subject_idx=[0,1,2,3,4,5,6,7]")
+
+    return overrides
+
+
+def result_exists(dataset, condition_id, epoch, benchmark):
+    """Check if result already exists in CSV."""
+    if not os.path.exists(CSV_PATH):
+        return False
+    df = pd.read_csv(CSV_PATH)
+    mask = (
+        (df["dataset"] == dataset) &
+        (df["condition"] == condition_id) &
+        (df["epoch"] == epoch) &
+        (df["benchmark"] == benchmark)
+    )
+    return mask.any()
+
+
+def checkpoint_exists(dataset, condition_id, epoch):
+    """Check if the checkpoint file exists."""
+    checkpoint_dir = f"model_checkpoints/data_efficiency_{dataset}"
+    seed_letter = "a"  # seed=1
+    path = os.path.join(checkpoint_dir, f"cfg{condition_id}{seed_letter}",
+                        f"checkpoint_epoch_{epoch}.pth")
+    return os.path.exists(path)
+
+
+def save_results(rows):
+    """Append result rows to the combined CSV, deduplicating."""
+    new_df = pd.DataFrame(rows)
+    if os.path.exists(CSV_PATH):
+        existing = pd.read_csv(CSV_PATH)
+        for _, row in new_df.iterrows():
+            mask = (
+                (existing["dataset"] == row["dataset"]) &
+                (existing["condition"] == row["condition"]) &
+                (existing["epoch"] == row["epoch"]) &
+                (existing["benchmark"] == row["benchmark"]) &
+                (existing["subject_idx"] == row["subject_idx"])
+            )
+            existing = existing[~mask]
+        combined = pd.concat([existing, new_df], ignore_index=True)
+    else:
+        combined = new_df
+
+    combined = combined.sort_values(
+        ["benchmark", "dataset", "condition", "epoch", "subject_idx"]
+    ).reset_index(drop=True)
+    combined.to_csv(CSV_PATH, index=False)
+    print(f"  Saved to {CSV_PATH}")
+
+
+def eval_run(dataset, condition_id, epoch, benchmark):
+    """Run a single evaluation and return result rows."""
+    print(f"\n{'='*60}")
+    print(f"Evaluating: {condition_id}-class | {dataset} | epoch {epoch} | {benchmark}")
+    print(f"{'='*60}")
+
+    overrides = build_overrides(dataset, condition_id, epoch, benchmark)
     cfg = load_config("configs/eval/base.json", overrides)
     cfg = validate_config(cfg)
     result_df = evals.eval(cfg)
 
-    save_to_csv(dataset, condition["cfg_id"], epoch, result_df)
-    print(f"\n{label} evaluation complete.")
+    rows = []
+    for _, r in result_df.iterrows():
+        row = {
+            "dataset": dataset,
+            "condition": condition_id,
+            "epoch": epoch,
+            "benchmark": benchmark,
+            "subject_idx": "N/A" if benchmark == "things" else r.get("subject_idx", "N/A"),
+            "layer": r["layer"],
+            "score": round(r["score"], 4),
+            "ci_low": round(r["ci_low"], 4) if r.get("ci_low") is not None else None,
+            "ci_high": round(r["ci_high"], 4) if r.get("ci_high") is not None else None,
+        }
+        rows.append(row)
+
+    return rows
 
 
-def print_comparison(dataset, skip_baselines=False):
-    """Print results comparison table from CSV."""
+def eval_nsd(dataset, condition_id, epoch):
+    """Run NSD eval — returns per-subject rows with subject_idx populated."""
+    print(f"\n{'='*60}")
+    print(f"Evaluating: {condition_id}-class | {dataset} | epoch {epoch} | nsd")
+    print(f"{'='*60}")
+
+    overrides = build_overrides(dataset, condition_id, epoch, "nsd")
+    cfg = load_config("configs/eval/base.json", overrides)
+    cfg = validate_config(cfg)
+    result_df = evals.eval(cfg)
+
+    # The eval returns one row per (subject, region) pair.
+    # We need to figure out subject_idx from the order (0-7).
+    rows = []
+    for i, (_, r) in enumerate(result_df.iterrows()):
+        rows.append({
+            "dataset": dataset,
+            "condition": condition_id,
+            "epoch": epoch,
+            "benchmark": "nsd",
+            "subject_idx": i,
+            "layer": r["layer"],
+            "score": round(r["score"], 4),
+            "ci_low": round(r["ci_low"], 4) if r.get("ci_low") is not None else None,
+            "ci_high": round(r["ci_high"], 4) if r.get("ci_high") is not None else None,
+        })
+
+    return rows
+
+
+def print_summary(datasets, conditions, benchmarks):
+    """Print results summary table."""
     if not os.path.exists(CSV_PATH):
-        print("No data_efficiency.csv found.")
+        print("No results CSV found.")
         return
 
     df = pd.read_csv(CSV_PATH)
-    mini_df = df[df["dataset"] == dataset].sort_values(["condition", "epoch"])
 
-    if len(mini_df) == 0:
-        print(f"No {dataset} results found in CSV.")
-        return
+    for bench in benchmarks:
+        bdf = df[df["benchmark"] == bench]
+        if len(bdf) == 0:
+            continue
 
-    print(f"\n{'='*70}")
-    print(f"THINGS Alignment — {dataset}")
-    print(f"{'='*70}")
-    print(f"{'Condition':<25} {'Epoch':>6} {'Score':>8} {'CI':>22} {'Layer':>10}")
-    print(f"{'-'*70}")
+        print(f"\n{'='*70}")
+        if bench == "things":
+            print(f"THINGS Behavioral Alignment — Data Efficiency")
+        else:
+            print(f"NSD Ventral Stream Alignment — Data Efficiency (mean across subjects)")
+        print(f"{'='*70}")
+        print(f"{'Dataset':<22} {'Condition':>10} {'Epoch':>6} {'Score':>8}")
+        print(f"{'-'*70}")
 
-    for _, row in mini_df.iterrows():
-        label = f"{int(row['condition'])}-class"
-        ci = f"[{row['ci_low']:.4f}, {row['ci_high']:.4f}]"
-        print(f"{label:<25} {int(row['epoch']):>6} {row['score']:>8.4f} {ci:>22} {row['layer']:>10}")
+        for ds in datasets:
+            ds_df = bdf[bdf["dataset"] == ds]
+            if len(ds_df) == 0:
+                continue
+            for cond in conditions:
+                cond_df = ds_df[ds_df["condition"] == cond]
+                for epoch in EPOCHS:
+                    edf = cond_df[cond_df["epoch"] == epoch]
+                    if len(edf) == 0:
+                        continue
+                    score = edf["score"].mean()
+                    print(f"{ds:<22} {cond:>10} {epoch:>6} {score:>8.4f}")
 
-    if not skip_baselines:
-        baselines = df[df["dataset"] == "imagenet-full"].sort_values(["condition", "epoch"])
-        if len(baselines) > 0 and dataset != "imagenet-full":
-            print(f"{'-'*70}")
-            print("Full ImageNet baselines:")
-            for _, row in baselines.iterrows():
-                label = f"{int(row['condition'])}-class (full)"
-                ci = f"[{row['ci_low']:.4f}, {row['ci_high']:.4f}]"
-                print(f"{label:<25} {int(row['epoch']):>6} {row['score']:>8.4f} {ci:>22} {row['layer']:>10}")
-
-    print(f"{'='*70}")
+        print(f"{'='*70}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Evaluate data efficiency models on THINGS")
-    parser.add_argument("--dataset", type=str, default="imagenet-mini-50",
-                        choices=["imagenet-mini-1", "imagenet-mini-5", "imagenet-mini-10", "imagenet-mini-50", "imagenet-mini-200"])
-    parser.add_argument("--epoch", type=int, default=None, help="Checkpoint epoch to evaluate (default: 300 for mini-1, 200 otherwise)")
-    parser.add_argument("--conditions", type=int, nargs="+", default=[8, 1000],
-                        choices=[8, 1000], help="Which conditions to evaluate")
-    parser.add_argument("--skip_baselines", action="store_true", help="Skip baseline comparison")
-    parser.add_argument("--print_only", action="store_true", help="Only print results, don't run eval")
+    parser = argparse.ArgumentParser(
+        description="Evaluate data efficiency models on THINGS and NSD")
+    parser.add_argument("--datasets", type=str, nargs="+", default=DATASETS,
+                        choices=DATASETS)
+    parser.add_argument("--conditions", type=int, nargs="+",
+                        default=list(CONDITIONS.keys()),
+                        choices=list(CONDITIONS.keys()))
+    parser.add_argument("--epochs", type=int, nargs="+", default=EPOCHS)
+    parser.add_argument("--benchmarks", type=str, nargs="+",
+                        default=["things", "nsd"],
+                        choices=["things", "nsd"])
+    parser.add_argument("--force", action="store_true",
+                        help="Re-evaluate even if result exists in CSV")
+    parser.add_argument("--no_bootstrap", action="store_true")
+    parser.add_argument("--print_only", action="store_true")
     args = parser.parse_args()
-    if args.epoch is None:
-        args.epoch = 300 if args.dataset == "imagenet-mini-1" else 200
 
-    if not args.print_only:
-        for cond in CONDITIONS:
-            if cond["cfg_id"] in args.conditions:
-                eval_condition(cond, args.epoch, args.dataset)
+    if args.print_only:
+        print_summary(args.datasets, args.conditions, args.benchmarks)
+        return
 
-    print_comparison(args.dataset, skip_baselines=args.skip_baselines)
+    total = len(args.datasets) * len(args.conditions) * len(args.epochs) * len(args.benchmarks)
+    completed, skipped = 0, 0
+
+    for dataset in args.datasets:
+        for condition_id in args.conditions:
+            for epoch in args.epochs:
+                for benchmark in args.benchmarks:
+                    # Skip if checkpoint doesn't exist
+                    if not checkpoint_exists(dataset, condition_id, epoch):
+                        print(f"[SKIP] {condition_id}-class {dataset} epoch {epoch} "
+                              f"— checkpoint not found")
+                        skipped += 1
+                        continue
+
+                    # Skip if result already in CSV
+                    if not args.force and result_exists(dataset, condition_id, epoch, benchmark):
+                        print(f"[SKIP] {condition_id}-class {dataset} epoch {epoch} "
+                              f"{benchmark} — already evaluated")
+                        skipped += 1
+                        continue
+
+                    if benchmark == "things":
+                        rows = eval_run(dataset, condition_id, epoch, benchmark)
+                    else:
+                        rows = eval_nsd(dataset, condition_id, epoch)
+
+                    save_results(rows)
+                    completed += 1
+
+    print(f"\nEvaluation complete. {completed}/{total} runs executed, {skipped} skipped.")
+    print_summary(args.datasets, args.conditions, args.benchmarks)
 
 
 if __name__ == "__main__":
