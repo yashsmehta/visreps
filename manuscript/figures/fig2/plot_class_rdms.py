@@ -13,7 +13,6 @@ Usage (from project root):
 
 import os
 import sys
-import json
 import argparse
 
 import numpy as np
@@ -21,8 +20,6 @@ import pandas as pd
 import torch
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
-import matplotlib.gridspec as gridspec
-import matplotlib.ticker as mticker
 import seaborn as sns
 from scipy.cluster.hierarchy import linkage, leaves_list
 from scipy.spatial.distance import squareform
@@ -31,7 +28,7 @@ from scipy.stats import rankdata
 sys.path.insert(0, ".")
 sys.path.insert(0, "experiments/coarse_grain_benefits")
 
-from visreps.analysis.rsa import compute_rdm, compute_rdm_correlation
+from visreps.analysis.rsa import compute_rdm
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CACHE_PATH = os.path.join(SCRIPT_DIR, "class_rdm_data.npz")
@@ -44,28 +41,75 @@ CHECKPOINT_DIR_CLIP = "/data/ymehta3/clip_pca"
 COARSE_CFG_IDS = [4, 8, 16, 32, 64]
 SEED = 1
 
-SEMANTIC_LABELS_PATH = "experiments/wordnet/semantic_categories.csv"
-SEMANTIC_MAPPING_PATH = "experiments/wordnet/semantic_categories_mapping.txt"
-
+# WordNet-derived adaptive-depth categories (11 groups, all >= 35 classes).
+# Uses depth 6 for living_thing and instrumentality, depth 5 for other
+# artifacts, depth 4 for everything else. Small synsets merged into the
+# nearest semantic neighbor so every category has >= 10 classes.
 CATEGORY_NAMES = [
-    "Animals", "Natural World", "Food & Produce",
-    "Structures & Architecture", "Domestic & Apparel",
-    "Vehicles & Transport", "Tools & Electronics", "General Objects",
+    "Animals",              # 0  (222 classes)
+    "Plants & Fungi",       # 1  (171 classes)
+    "Devices",              # 2  (104 classes)
+    "Tools & Equipment",    # 3  (90 classes)
+    "Commodities",          # 4  (82 classes)
+    "Domestic & Coverings", # 5  (75 classes)
+    "Natural Objects",      # 6  (67 classes)
+    "Vehicles",             # 7  (63 classes)
+    "Structures",           # 8  (55 classes)
+    "Food",                 # 9  (37 classes)
+    "Containers",           # 10 (35 classes)
 ]
 
-# Saturated palette for 8 categories (chosen for contrast on dark background)
+# 11-color palette (Paired colorbrewer + supplements, high-contrast on magma)
 CATEGORY_COLORS = [
     "#e31a1c",  # Animals — red
-    "#33a02c",  # Natural World — green
-    "#ff7f00",  # Food & Produce — orange
-    "#1f78b4",  # Structures — blue
-    "#6a3d9a",  # Domestic — purple
-    "#b15928",  # Vehicles — brown
-    "#e377c2",  # Tools & Electronics — pink
-    "#999999",  # General Objects — gray
+    "#33a02c",  # Plants & Fungi — green
+    "#1f78b4",  # Devices — blue
+    "#a6cee3",  # Tools & Equipment — light blue
+    "#ff7f00",  # Commodities — orange
+    "#cab2d6",  # Domestic & Coverings — light purple
+    "#b15928",  # Natural Objects — brown
+    "#6a3d9a",  # Vehicles — purple
+    "#fdbf6f",  # Structures — light orange
+    "#e377c2",  # Food — pink
+    "#999999",  # Containers — gray
 ]
 
-sns.set_theme(style="ticks", context="paper", font_scale=1.0)
+# Mapping from WordNet synset names to category indices.
+# Synsets that fall outside the main 11 groups are merged here.
+_SYNSET_TO_CATEGORY = {
+    # Living things (depth 6 of living_thing.n.01)
+    'animal.n.01': 0,
+    'plant.n.02': 1,
+    'fungus.n.01': 1,
+    # Instrumentality sub-groups (depth 6 of instrumentality.n.03)
+    'device.n.01': 2,
+    'system.n.01': 2,       # radio, TV, maze → Devices
+    'implement.n.01': 3,
+    'equipment.n.01': 3,
+    'conveyance.n.03': 7,
+    'container.n.01': 10,
+    'furnishing.n.02': 5,
+    'toiletry.n.01': 5,
+    'medium.n.01': 4,       # newspaper, magazine → Commodities
+    'ceramic.n.01': 8,      # brick → Structures
+    'decoration.n.01': 8,   # totem pole → Structures
+    # Other artifact sub-groups (depth 5)
+    'commodity.n.01': 4,
+    'structure.n.01': 8,
+    'covering.n.02': 5,
+    'fabric.n.01': 5,
+    'creation.n.02': 4,     # magazine → Commodities
+    # Non-artifact depth-4 categories
+    'natural_object.n.01': 6,
+    'natural_elevation.n.01': 6,
+    'natural_depression.n.01': 6,
+    'shore.n.01': 6,
+    'cliff.n.01': 6,
+    'spring.n.03': 6,
+    'food.n.01': 9,
+    'food.n.02': 9,
+    'organization.n.01': 8,  # 1 class → Structures
+}
 
 
 # ── Data loading ──────────────────────────────────────────────────────────
@@ -83,23 +127,62 @@ def _load_imagenet_dataset():
 
 
 def get_class_to_category(dataset):
-    """Map ImageNet class_idx (0-999) → super-category label (0-7).
+    """Map ImageNet class_idx (0-999) → category label using adaptive WordNet depth.
 
-    Uses the semantic_categories.csv which maps image_id → pca_label (0-7).
-    Since all images of the same class share the same category, we just
-    need one image per class.
+    Uses depth 6 for living_thing and instrumentality sub-groups, depth 5
+    for other artifacts, depth 4 for everything else. Rare synsets are merged
+    via _SYNSET_TO_CATEGORY so every final category has >= 10 classes.
     """
-    # Load semantic labels
-    sem_df = pd.read_csv(SEMANTIC_LABELS_PATH)
-    sem_map = dict(zip(sem_df["image"], sem_df["pca_label"]))
+    from nltk.corpus import wordnet as wn
+    import nltk
+    try:
+        wn.ensure_loaded()
+    except LookupError:
+        nltk.download('wordnet')
+        nltk.download('omw-1.4')
 
-    # Build class → category mapping
     class_to_cat = {}
-    for img_path, class_idx, img_id in dataset.samples:
-        if class_idx not in class_to_cat and img_id in sem_map:
-            class_to_cat[class_idx] = sem_map[img_id]
-        if len(class_to_cat) == 1000:
-            break
+    unmapped = []
+    for class_idx in range(1000):
+        synset = dataset.get_wordnet_synset(class_idx)
+        if not synset:
+            continue
+        paths = synset.hypernym_paths()
+        path = max(paths, key=len)
+        path_names = [p.name() for p in path]
+
+        d4 = path_names[min(4, len(path_names) - 1)]
+        d5 = path_names[min(5, len(path_names) - 1)]
+        d6 = path_names[min(6, len(path_names) - 1)]
+
+        # Determine the raw synset key for this class
+        if d4 == 'living_thing.n.01':
+            raw = d6  # animal, plant, or fungus
+        elif d4 == 'artifact.n.01':
+            if d5 == 'instrumentality.n.03':
+                raw = d6  # device, conveyance, container, etc.
+            else:
+                raw = d5  # commodity, structure, covering, fabric
+        else:
+            raw = d4  # natural_object, food, etc.
+
+        if raw in _SYNSET_TO_CATEGORY:
+            class_to_cat[class_idx] = _SYNSET_TO_CATEGORY[raw]
+        else:
+            unmapped.append((class_idx, raw))
+            class_to_cat[class_idx] = -1
+
+    if unmapped:
+        print(f"  WARNING: {len(unmapped)} unmapped synsets:")
+        for ci, raw in unmapped:
+            print(f"    class {ci}: {raw}")
+
+    # Print summary
+    from collections import Counter
+    counts = Counter(class_to_cat.values())
+    print(f"  WordNet adaptive-depth: {len(CATEGORY_NAMES)} categories")
+    for i, name in enumerate(CATEGORY_NAMES):
+        print(f"    {i}: {name} ({counts.get(i, 0)} classes)")
 
     return class_to_cat
 
@@ -303,17 +386,12 @@ def draw_boundaries(ax, block_boundaries, n, color="white", lw=0.3, alpha=0.5):
             ax.axvline(start - 0.5, color=color, lw=lw, alpha=alpha)
 
 
-def plot_rdm_panel(ax, rdm, block_boundaries, n, title, rsa_score=None):
+def plot_rdm_panel(ax, rdm, block_boundaries, n, title):
     """Draw a single RDM panel with category annotations (raw dissimilarity)."""
     im = ax.imshow(rdm, cmap="magma", interpolation="nearest",
                    aspect="equal", rasterized=True, vmin=0, vmax=2)
 
     ax.set_title(title, fontsize=10, fontweight="bold", pad=10)
-    if rsa_score is not None:
-        ax.text(0.5, 1.01, f"Cross-model $\\rho_s$ = {rsa_score:.3f}",
-                transform=ax.transAxes, ha="center", va="bottom",
-                fontsize=7, color="#555555")
-
     ax.set_xticks([])
     ax.set_yticks([])
     for spine in ax.spines.values():
@@ -328,6 +406,7 @@ def plot_rdm_panel(ax, rdm, block_boundaries, n, title, rsa_score=None):
 
 def plot_figure(centroids_1k, coarse_centroids, categories):
     """Create the 2x3 RDM grid figure (standalone, not used by figure2.py)."""
+    sns.set_theme(style="ticks", context="paper", font_scale=1.0)
     valid = categories >= 0
     centroids_1k = centroids_1k[valid]
     categories = categories[valid]
