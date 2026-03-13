@@ -29,8 +29,9 @@ plt.rcParams.update({
     "ytick.major.size": 3.5,
 })
 
-DATASET_ORDER = ["imagenet-mini-10", "imagenet-mini-50", "imagenet-full"]
-DATASET_LABELS = {"imagenet-mini-10": "10", "imagenet-mini-50": "50",
+DATASET_ORDER = ["imagenet-mini-1", "imagenet-mini-5", "imagenet-mini-10", "imagenet-mini-50", "imagenet-full"]
+DATASET_LABELS = {"imagenet-mini-1": "1", "imagenet-mini-5": "5",
+                  "imagenet-mini-10": "10", "imagenet-mini-50": "50",
                   "imagenet-full": "~1300"}
 CONDITION_LABELS = {8: "Coarse (8-class)", 1000: "Fine (1000-class)"}
 COLORS = {8: "#08519c", 1000: "#d4822e"}
@@ -79,7 +80,7 @@ def main():
     # Take max score across epochs for each (dataset, condition)
     best = df.loc[df.groupby(["dataset", "condition"])["score"].idxmax()].reset_index(drop=True)
 
-    fig, ax = plt.subplots(figsize=(3.8, 3.2))
+    fig, ax = plt.subplots(figsize=(5.0, 3.2))
 
     x = np.arange(len(DATASET_ORDER))
     conditions = [8, 1000]

@@ -55,6 +55,8 @@ def train_condition(n_classes, dataset):
     overrides = []
     params = {**TRAINING_PARAMS, **condition, "seed": SEED,
               "dataset": dataset, "checkpoint_dir": checkpoint_dir}
+    if dataset == "imagenet-mini-1":
+        params["num_epochs"] = 300
     for k, v in params.items():
         overrides.append(f"{k}={v}")
 
@@ -67,7 +69,7 @@ def train_condition(n_classes, dataset):
 def main():
     parser = argparse.ArgumentParser(description="Train models for data efficiency experiment")
     parser.add_argument("--dataset", type=str, default="imagenet-mini-50",
-                        choices=["imagenet-mini-10", "imagenet-mini-50", "imagenet-mini-200"],
+                        choices=["imagenet-mini-1", "imagenet-mini-5", "imagenet-mini-10", "imagenet-mini-50", "imagenet-mini-200"],
                         help="Dataset to train on")
     parser.add_argument("--conditions", type=int, nargs="+", default=[8, 1000],
                         choices=[8, 1000], help="Which conditions to train (default: both)")

@@ -146,13 +146,15 @@ def print_comparison(dataset, skip_baselines=False):
 def main():
     parser = argparse.ArgumentParser(description="Evaluate data efficiency models on THINGS")
     parser.add_argument("--dataset", type=str, default="imagenet-mini-50",
-                        choices=["imagenet-mini-10", "imagenet-mini-50", "imagenet-mini-200"])
-    parser.add_argument("--epoch", type=int, default=200, help="Checkpoint epoch to evaluate")
+                        choices=["imagenet-mini-1", "imagenet-mini-5", "imagenet-mini-10", "imagenet-mini-50", "imagenet-mini-200"])
+    parser.add_argument("--epoch", type=int, default=None, help="Checkpoint epoch to evaluate (default: 300 for mini-1, 200 otherwise)")
     parser.add_argument("--conditions", type=int, nargs="+", default=[8, 1000],
                         choices=[8, 1000], help="Which conditions to evaluate")
     parser.add_argument("--skip_baselines", action="store_true", help="Skip baseline comparison")
     parser.add_argument("--print_only", action="store_true", help="Only print results, don't run eval")
     args = parser.parse_args()
+    if args.epoch is None:
+        args.epoch = 300 if args.dataset == "imagenet-mini-1" else 200
 
     if not args.print_only:
         for cond in CONDITIONS:

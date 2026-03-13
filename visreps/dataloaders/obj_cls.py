@@ -155,6 +155,9 @@ class ImageNetDataset(Dataset):
         if split in ["train", "test"]:
             if total_found == 0:
                  self.samples = []
+            elif total_found <= self.num_classes:
+                 # Too few images per class to split meaningfully — use all for both
+                 print(f"⚠️ Only {total_found} images for {self.num_classes} classes — using all for both train and test")
             else:
                  g = torch.Generator().manual_seed(42)
                  indices = torch.randperm(total_found, generator=g).tolist()
