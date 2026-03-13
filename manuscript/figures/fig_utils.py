@@ -9,7 +9,7 @@ import sqlite3
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from matplotlib.ticker import AutoMinorLocator, ScalarFormatter
+from matplotlib.ticker import AutoMinorLocator, ScalarFormatter, FixedLocator, FuncFormatter, NullLocator
 from matplotlib.lines import Line2D
 import seaborn as sns
 
@@ -18,6 +18,7 @@ DB_PATH = "results.db"
 # ── Data config ───────────────────────────────────────────────────────────
 COARSE_CFGS = [2, 4, 8, 16, 32, 64]
 GRAN_CFGS = COARSE_CFGS + [1000]
+PERLAYER_CFGS = [4, 16, 64]  # Reduced set for main-figure per-layer plots
 
 # ── Architecture definitions ──────────────────────────────────────────────
 # (key, pca_labels_folder, display_name)
@@ -31,16 +32,19 @@ ARCHITECTURES_NO_PIXELS = [a for a in ARCHITECTURES_ALL if a[0] != "pixels"]
 
 # ── Style ─────────────────────────────────────────────────────────────────
 ARCH_STYLE = {
-    "alexnet": {"color": "#2166AC", "marker": "o"},
-    "clip":    {"color": "#1B7837", "marker": "s"},
-    "vit":     {"color": "#C51B7D", "marker": "^"},
-    "pixels":  {"color": "#E08214", "marker": "v"},
+    "alexnet": {"color": "#1a9e76", "marker": "o"},   # teal green
+    "clip":    {"color": "#7b3294", "marker": "s"},    # purple
+    "vit":     {"color": "#d62728", "marker": "^"},    # crimson red
+    "pixels":  {"color": "#8c564b", "marker": "v"},    # brown
 }
-BASELINE_1K_COLOR = "#404040"
-UNTRAINED_LINE_STYLE = {"color": "#AAAAAA", "linestyle": (0, (6, 3)), "linewidth": 1.4}
-MARKER_SIZE = 6
-EDGE_COLOR = "#333333"
-EDGE_WIDTH = 0.5
+BASELINE_1K_COLOR = "#e6550d"  # orange-red — matches per-layer 1000-way
+UNTRAINED_LINE_STYLE = {"color": "#AAAAAA", "linestyle": "--", "linewidth": 1.1, "alpha": 0.7}
+MARKER_SIZE = 7
+EDGE_COLOR = "white"
+EDGE_WIDTH = 0.6
+
+# Broken-axis position: 1000-class plotted here (log2 ≈ 7.3, near 64=2^6)
+BREAK_1K_POS = 160
 
 # Granularity color palette for per-layer plots — blue gradient (light → dark)
 GRAN_COLORS = {
@@ -75,29 +79,201 @@ def compute_jitter(arch_idx, n_arch):
     return 2 ** (spread[arch_idx] * 0.09)
 
 
-def format_coarseness_axes(ax, region_label, show_ylabel=True, show_xlabel=True):
-    """Shared axis formatting for coarseness log-scale panels."""
+def normalize_to_baseline(mean, ci_low, ci_high, baseline_mean):
+    """Normalize score and CIs to percentage of a baseline (baseline = 100%).
+
+    Returns (norm_mean, norm_ci_low, norm_ci_high) as percentages.
+    Returns (nan, nan, nan) if baseline_mean is nan or zero.
+    """
+    if np.isnan(baseline_mean) or baseline_mean == 0:
+        return np.nan, np.nan, np.nan
+    scale = 100.0 / baseline_mean
+    norm_mean = mean * scale
+    norm_ci_low = ci_low * scale if not np.isnan(ci_low) else np.nan
+    norm_ci_high = ci_high * scale if not np.isnan(ci_high) else np.nan
+    return norm_mean, norm_ci_low, norm_ci_high
+
+
+def draw_schematic_placeholder(ax, text):
+    """Draw a light gray placeholder box for dataset schematics."""
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.add_patch(plt.Rectangle((0.05, 0.05), 0.9, 0.9, fill=True,
+                                facecolor="#f5f5f5", edgecolor="#cccccc",
+                                linewidth=1.0, zorder=1))
+    ax.text(0.5, 0.5, text, ha="center", va="center", fontsize=10,
+            color="#777777", fontstyle="italic", zorder=2)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+
+def draw_no_data_bar(ax, x, width=0.6, color="#e0e0e0", height=None):
+    """Draw a hatched placeholder bar for missing data.
+
+    If height is None, draws a short bar at ~30% of current y-axis range.
+    """
+    ylim = ax.get_ylim()
+    if height is None:
+        height = ylim[0] + (ylim[1] - ylim[0]) * 0.15
+    ax.bar(x, height, width=width, facecolor="white", edgecolor="#BBBBBB",
+           linewidth=0.6, hatch="///", zorder=2, alpha=0.7)
+    ax.text(x, height / 2, "N/A", ha="center", va="center", fontsize=5.5,
+            color="#999999", fontstyle="italic")
+
+
+def get_pretrained_summary(neural_dataset, region, model_name,
+                           compare_method="spearman"):
+    """Get point estimate + bootstrap CI for a pretrained model.
+
+    Queries results where model_name matches (e.g. 'ViTBase', 'CLIP_ViT_L14')
+    and cfg_id='pretrained'. Aggregates across subjects via bootstrap distributions.
+
+    Returns dict with keys: mean, ci_low, ci_high.
+    """
+    from plotters.plotter_utils import get_bootstrap_ci
+
+    conn = sqlite3.connect(DB_PATH)
+    df = pd.read_sql("""
+        SELECT run_id, score
+        FROM results
+        WHERE neural_dataset = ? AND region = ? AND model_name = ?
+          AND cfg_id = 'pretrained' AND compare_method = ?
+    """, conn, params=[neural_dataset, region, model_name, compare_method])
+    conn.close()
+
+    if df.empty:
+        return {"mean": np.nan, "ci_low": np.nan, "ci_high": np.nan}
+
+    mean_score = df["score"].mean()
+    run_ids = df["run_id"].tolist()
+    _, ci_low, ci_high = get_bootstrap_ci(run_ids, compare_method)
+
+    # SEM fallback if bootstrap CIs are missing or invalid
+    if np.isnan(ci_low) or ci_low > mean_score or ci_high < mean_score:
+        if len(df) > 1:
+            sem = df["score"].std() / np.sqrt(len(df))
+            ci_low = mean_score - 1.96 * sem
+            ci_high = mean_score + 1.96 * sem
+        else:
+            ci_low, ci_high = np.nan, np.nan
+
+    return {"mean": mean_score, "ci_low": ci_low, "ci_high": ci_high}
+
+
+def find_best_coarse_model(neural_dataset, region):
+    """Find the single best coarse model across all PCA sources and granularities.
+
+    Returns dict with keys: mean, ci_low, ci_high, cfg_id, pca_labels_folder,
+    display_label (e.g. "CLIP 16-way").
+    """
+    from plotters.plotter_utils import get_condition_summary
+
+    best = {"mean": -np.inf}
+    for arch_key, folder, display in ARCHITECTURES_ALL:
+        for cfg in COARSE_CFGS:
+            s = get_condition_summary(neural_dataset, region, folder, cfg,
+                                      "spearman", epoch=20, analysis="rsa")
+            if not np.isnan(s["mean"]) and s["mean"] > best["mean"]:
+                best = {
+                    "mean": s["mean"],
+                    "ci_low": s["ci_low"],
+                    "ci_high": s["ci_high"],
+                    "cfg_id": cfg,
+                    "pca_labels_folder": folder,
+                    "display_label": f"{display} {cfg}-way",
+                }
+    if best["mean"] == -np.inf:
+        return {"mean": np.nan, "ci_low": np.nan, "ci_high": np.nan,
+                "cfg_id": None, "pca_labels_folder": None, "display_label": "N/A"}
+    return best
+
+
+def format_normalized_coarseness_axes(ax, region_label="", show_ylabel=True,
+                                       show_xlabel=True):
+    """Shared axis formatting for normalized (% of 1000-way) coarseness panels."""
     ax.set_xscale("log", base=2)
     all_x = COARSE_CFGS + [1000]
-    ax.set_xticks(all_x)
-    ax.xaxis.set_major_formatter(ScalarFormatter())
-    ax.xaxis.set_minor_formatter(plt.NullFormatter())
+    all_x_set = set(all_x)
+    ax.xaxis.set_major_locator(FixedLocator(all_x))
+    ax.xaxis.set_major_formatter(FuncFormatter(
+        lambda val, pos: str(int(val)) if int(round(val)) in all_x_set else ""))
+    ax.xaxis.set_minor_locator(NullLocator())
     ax.tick_params(axis="x", which="minor", bottom=False)
-    if not show_xlabel:
-        ax.set_xticklabels([])
+    ax.axhline(100, color=BASELINE_1K_COLOR, linestyle="-", linewidth=0.6,
+               alpha=0.25, zorder=1)
     ax.tick_params(axis="y", which="major", direction="out", length=4, width=1.0)
     ax.yaxis.set_minor_locator(AutoMinorLocator(2))
     ax.tick_params(axis="y", which="minor", direction="out", length=2.5, width=0.6)
     ax.yaxis.grid(True, which="major", color="#EBEBEB", linewidth=0.4, zorder=0)
     ax.margins(x=0.04)
     if show_xlabel:
-        ax.set_xlabel("Number of Classes", fontsize=9, labelpad=4)
+        ax.set_xlabel("Classes", fontsize=9, labelpad=4)
+    if show_ylabel:
+        ax.set_ylabel("% of 1000-way", fontsize=9, labelpad=4)
+    else:
+        ax.set_ylabel("")
+    if region_label:
+        ax.set_title(region_label, fontsize=10, fontweight="semibold", pad=6)
+    sns.despine(ax=ax, right=True, top=True, offset=4)
+
+
+def draw_xaxis_break(ax):
+    """Draw // break marks on the x-axis between 64 and BREAK_1K_POS.
+
+    Places a white rectangle over the spine to create a visual gap, then
+    draws two diagonal slash marks through it.
+    """
+    import matplotlib.patches as mpatches
+    from matplotlib.transforms import blended_transform_factory
+    trans = blended_transform_factory(ax.transData, ax.transAxes)
+    # Geometric midpoint in log space between 64 and BREAK_1K_POS
+    mid = np.exp((np.log(64) + np.log(BREAK_1K_POS)) / 2)
+    # White rectangle to mask the spine at the break point
+    rect_hw = mid * 0.18  # half-width in data coords (multiplicative)
+    rect = mpatches.FancyBboxPatch(
+        (mid / (1 + 0.18), -0.045), width=rect_hw * 1.6, height=0.09,
+        boxstyle="square,pad=0", facecolor="white", edgecolor="none",
+        transform=trans, clip_on=False, zorder=9)
+    ax.add_patch(rect)
+    # Two parallel diagonal lines
+    d_y = 0.035  # vertical extent in axes fraction
+    for x_shift in [0.91, 1.09]:
+        x_c = mid * x_shift
+        ax.plot([x_c / 1.06, x_c * 1.06], [-d_y, d_y],
+                transform=trans, color='#333333', linewidth=0.9,
+                clip_on=False, zorder=11)
+
+
+def format_coarseness_axes(ax, region_label, show_ylabel=True, show_xlabel=True):
+    """Shared axis formatting for coarseness log-scale panels with broken axis."""
+    ax.set_xscale("log", base=2)
+    all_x = COARSE_CFGS + [BREAK_1K_POS]
+    # Label mapping: show "1000" at the break position
+    label_map = {v: str(v) for v in COARSE_CFGS}
+    label_map[BREAK_1K_POS] = "1000"
+    ax.xaxis.set_major_locator(FixedLocator(all_x))
+    ax.xaxis.set_major_formatter(FuncFormatter(
+        lambda val, pos: label_map.get(int(round(val)), "")))
+    ax.xaxis.set_minor_locator(NullLocator())
+    ax.tick_params(axis="x", which="minor", bottom=False)
+    if not show_xlabel:
+        ax.set_xticklabels([""] * len(all_x))
+    ax.set_xlim(1.5, BREAK_1K_POS * 1.5)
+    ax.tick_params(axis="y", which="major", direction="out", length=4, width=1.0)
+    ax.yaxis.set_minor_locator(AutoMinorLocator(2))
+    ax.tick_params(axis="y", which="minor", direction="out", length=2.5, width=0.6)
+    ax.yaxis.grid(True, which="major", color="#EBEBEB", linewidth=0.4, zorder=0)
+    if show_xlabel:
+        ax.set_xlabel("Classes", fontsize=9, labelpad=4)
     if show_ylabel:
         ax.set_ylabel(r"Spearman $\rho$", fontsize=9, labelpad=4)
     else:
         ax.set_ylabel("")
     ax.set_title(region_label, fontsize=10, fontweight="semibold", pad=6)
     sns.despine(ax=ax, right=True, top=True, offset=4)
+    draw_xaxis_break(ax)
 
 
 def build_coarseness_legend(architectures):
@@ -115,8 +291,7 @@ def build_coarseness_legend(architectures):
                           markeredgecolor=EDGE_COLOR,
                           markeredgewidth=EDGE_WIDTH,
                           markersize=MARKER_SIZE, label="1K (ImageNet)"))
-    handles.append(Line2D([], [], linestyle=(0, (6, 3)),
-                          color="#AAAAAA", linewidth=1.4,
+    handles.append(Line2D([], [], **UNTRAINED_LINE_STYLE,
                           label="Untrained"))
     return handles
 
@@ -134,17 +309,19 @@ def plot_reconstruction_panels(axes, neural_dataset, regions, coarse_config):
 
 
 def plot_reconstruction_panel(ax, neural_dataset, region, region_label,
-                              coarse_config, show_ylabel=True):
+                              coarse_config, show_ylabel=True,
+                              coarse_color_override=None):
     """Draw a single dual reconstruction curve panel.
 
-    The coarse model curve uses the GRAN_COLORS blue shade matching its cfg_id.
+    The coarse model curve uses GRAN_COLORS blue shade by default,
+    or coarse_color_override if provided (e.g. green for THINGS).
     """
     from experiments.reconstruction_analysis.plot_utils import (
         query_reconstruction_curve, query_untrained_baseline,
         aggregate_curve,
     )
 
-    FINE_COLOR = "#e6a200"       # golden amber — 1000-way
+    FINE_COLOR = "#FFA500"       # orange — 1000-way (matches bar plots)
     UNTRAINED_COLOR = "#969696"  # grey
 
     fine_df = query_reconstruction_curve(neural_dataset, region)
@@ -156,8 +333,8 @@ def plot_reconstruction_panel(ax, neural_dataset, region, region_label,
     coarse_agg = aggregate_curve(coarse_df)
     untrained = query_untrained_baseline(neural_dataset, region)
 
-    # Look up the blue shade for this cfg_id
-    coarse_color = GRAN_COLORS.get(cfg_id, "#2166ac")
+    # Use override color if provided, else look up the blue shade for this cfg_id
+    coarse_color = coarse_color_override or GRAN_COLORS.get(cfg_id, "#2166ac")
 
     if fine_agg.empty and coarse_agg.empty:
         ax.text(0.5, 0.5, "No data", ha="center", va="center",
@@ -180,7 +357,7 @@ def plot_reconstruction_panel(ax, neural_dataset, region, region_label,
                         color=FINE_COLOR, alpha=0.15, zorder=2)
         ax.plot(k, fine_agg["mean"].values, "-o", color=FINE_COLOR, markersize=3,
                 linewidth=1.5, markeredgecolor="white", markeredgewidth=0.5,
-                label="1000-way (top-$k$ PCs)", zorder=3)
+                label="1000-way (top-$k$)", zorder=3)
 
     # Coarse curve — uses the matching blue shade
     if not coarse_agg.empty:
@@ -189,27 +366,29 @@ def plot_reconstruction_panel(ax, neural_dataset, region, region_label,
                         color=coarse_color, alpha=0.15, zorder=2)
         ax.plot(k_c, coarse_agg["mean"].values, "-s", color=coarse_color, markersize=3,
                 linewidth=1.5, markeredgecolor="white", markeredgewidth=0.5,
-                label=f"{cfg_id}-way model (top-$k$ PCs)", zorder=3)
+                label=f"{cfg_id}-way (top-$k$)", zorder=3)
 
     # Axis formatting
     if not fine_agg.empty:
         k_all = fine_agg["pca_k"].values
     else:
         k_all = coarse_agg["pca_k"].values
-    ax.set_xlabel("Number of PCs ($k$)", fontsize=9, labelpad=4)
+    ax.set_xlabel("Number of PCs ($k$)", fontsize=8, labelpad=3)
     if show_ylabel:
-        ax.set_ylabel(r"Spearman $\rho$", fontsize=9, labelpad=4)
-    ax.set_title(region_label, fontsize=10, fontweight="semibold", pad=6)
+        ax.set_ylabel(r"Spearman $\rho$", fontsize=8, labelpad=3)
+    if region_label:
+        ax.set_title(region_label, fontsize=9, fontweight="semibold", pad=5)
     ax.set_xticks(k_all)
     labeled = {1, 5, 10, 20, 30, 40, 50} | {int(k_all[0]), int(k_all[-1])}
     ax.set_xticklabels(
-        [str(int(v)) if int(v) in labeled else "" for v in k_all], fontsize=7.5)
-    ax.tick_params(axis="both", which="major", length=4, width=0.8, direction="out")
+        [str(int(v)) if int(v) in labeled else "" for v in k_all], fontsize=6.5)
+    ax.tick_params(axis="both", which="major", length=3.5, width=0.6, direction="out")
+    ax.tick_params(axis="both", which="major", labelsize=6.5)
     ax.yaxis.set_minor_locator(AutoMinorLocator(2))
-    ax.tick_params(axis="y", which="minor", length=2.5, width=0.6, direction="out")
-    ax.yaxis.grid(True, linestyle="-", alpha=0.15, linewidth=0.5, zorder=0)
+    ax.tick_params(axis="y", which="minor", length=2, width=0.4, direction="out")
+    ax.yaxis.grid(True, linestyle="-", alpha=0.15, linewidth=0.4, zorder=0)
     ax.set_axisbelow(True)
-    sns.despine(ax=ax, right=True, top=True, offset=4)
+    sns.despine(ax=ax, right=True, top=True, offset=3)
 
 
 # ── Per-layer helpers ─────────────────────────────────────────────────────
@@ -248,11 +427,11 @@ def get_layer_folder_from_coarse_config(coarse_config, region):
 
 # Architecture folder → display name mapping
 _ARCH_DISPLAY = {
-    "pca_labels_alexnet": "Classes from AlexNet repr.",
-    "pca_labels_clip": "Classes from CLIP repr.",
-    "pca_labels_vit": "Classes from ViT repr.",
-    "pca_labels_pixels": "Classes from Pixel repr.",
-    "pca_labels_dino": "Classes from DINO repr.",
+    "pca_labels_alexnet": "AlexNet labels",
+    "pca_labels_clip": "CLIP labels",
+    "pca_labels_vit": "ViT labels",
+    "pca_labels_pixels": "Pixel labels",
+    "pca_labels_dino": "DINO labels",
 }
 
 
@@ -322,12 +501,17 @@ def fetch_layer_scores(neural_dataset, region, pca_labels_folder):
 
 
 def plot_per_layer_panel(ax, neural_dataset, region, pca_folder=None, title=None,
-                         show_ylabel=True, show_xlabel=True):
+                         show_ylabel=True, show_xlabel=True, gran_levels=None):
     """Plot per-layer RSA scores averaged across all subjects/seeds.
 
     If pca_folder is None, auto-selects the best architecture for this region.
+    gran_levels: list of cfg_ids to plot (default: GRAN_CFGS = all 7).
+        Use PERLAYER_CFGS + [1000] for reduced main-figure set.
     Plots all 14 layers (pre + post ReLU) with labels at post-ReLU positions.
     """
+    if gran_levels is None:
+        gran_levels = GRAN_CFGS
+
     if pca_folder is None:
         pca_folder, arch_display = find_best_architecture(neural_dataset, region)
         print(f"  Per-layer [{region}]: auto-selected {arch_display} ({pca_folder})")
@@ -336,7 +520,7 @@ def plot_per_layer_panel(ax, neural_dataset, region, pca_folder=None, title=None
 
     all_scores = fetch_layer_scores(neural_dataset, region, pca_folder)
 
-    for cfg_id in GRAN_CFGS:
+    for cfg_id in gran_levels:
         scores = all_scores.get(cfg_id, {})
         layers = [l for l in LAYER_ORDER_FULL if l in scores]
         if not layers:
@@ -353,20 +537,16 @@ def plot_per_layer_panel(ax, neural_dataset, region, pca_folder=None, title=None
         layers = [l for l in LAYER_ORDER_FULL if l in un_scores]
         means = [un_scores[l] for l in layers]
         x = [LAYER_ORDER_FULL.index(l) for l in layers]
-        ax.plot(x, means, color="#AAAAAA", linewidth=1.1, linestyle="--",
-                label="Untrained", zorder=2, alpha=0.7)
+        ax.plot(x, means, **UNTRAINED_LINE_STYLE,
+                label="Untrained", zorder=2)
 
     # X-axis: ticks at all 14 positions, labels only at post-ReLU (every other)
+    # Always show layer tick labels; show_xlabel only controls axis label text
     ax.set_xticks(range(len(LAYER_ORDER_FULL)))
-    if show_xlabel:
-        tick_labels = [""] * len(LAYER_ORDER_FULL)
-        for pos, label in zip(LAYER_LABEL_POSITIONS, LAYER_LABELS_SHORT):
-            tick_labels[pos] = label
-        ax.set_xticklabels(tick_labels, fontsize=7.5, rotation=0)
-        ax.set_xlabel("Layer", fontsize=9, labelpad=4)
-    else:
-        ax.set_xticklabels([])
-    # Minor ticks at pre-ReLU positions for subtle visual grouping
+    tick_labels = [""] * len(LAYER_ORDER_FULL)
+    for pos, label in zip(LAYER_LABEL_POSITIONS, LAYER_LABELS_SHORT):
+        tick_labels[pos] = label
+    ax.set_xticklabels(tick_labels, fontsize=7, rotation=30, ha="right")
     ax.tick_params(axis="x", which="major", length=3, width=0.6)
     ax.set_xlim(-0.5, len(LAYER_ORDER_FULL) - 0.5)
 
@@ -378,15 +558,22 @@ def plot_per_layer_panel(ax, neural_dataset, region, pca_folder=None, title=None
     ax.yaxis.set_minor_locator(AutoMinorLocator(2))
     ax.tick_params(axis="y", which="major", direction="out", length=4, width=1.0)
     ax.tick_params(axis="y", which="minor", direction="out", length=2.5, width=0.6)
+    # Clean y-axis: drop trailing zeros
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.2f}".rstrip("0").rstrip(".")))
     sns.despine(ax=ax, right=True, top=True, offset=4)
 
     return pca_folder, arch_display
 
 
-def build_per_layer_legend():
-    """Build legend handles for per-layer panels."""
+def build_per_layer_legend(gran_levels=None):
+    """Build legend handles for per-layer panels.
+
+    gran_levels: list of cfg_ids to include (default: GRAN_CFGS = all 7).
+    """
+    if gran_levels is None:
+        gran_levels = GRAN_CFGS
     handles = []
-    for cfg_id in GRAN_CFGS:
+    for cfg_id in gran_levels:
         h = Line2D([], [], marker=GRAN_MARKERS[cfg_id], color=GRAN_COLORS[cfg_id],
                    markersize=5, linewidth=1.4, markeredgecolor="white",
                    markeredgewidth=0.5, label=str(cfg_id))

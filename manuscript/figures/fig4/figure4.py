@@ -1,10 +1,8 @@
-"""Figure 4: Macaque Electrophysiology Alignment (TVSD).
+"""Figure 4: THINGS Behavioral Alignment.
 
-2×3 grid layout (parallel to Figure 3):
-  Rows:    V1 (top), IT (bottom)
-  Columns: Coarseness (left), Per-Layer (center), Reconstruction (right)
-
-V4 is omitted from the main figure. V4 results in supplementary.
+Layout:
+  Row 0 (top): [Reconstruction | Coarseness | Scatter | Histogram]
+  Row 1 (bottom): [3 RDMs side by side + colorbar] spanning full width
 
 Usage:
     python manuscript/figures/fig4/figure4.py
@@ -14,208 +12,195 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
+from matplotlib.lines import Line2D
 
 sys.path.insert(0, "plotters")
-from plotter_utils import query_best_scores
+from plotter_utils import get_condition_summary
 
 sys.path.insert(0, "manuscript/figures")
 from fig_utils import (
-    COARSE_CFGS, ARCHITECTURES_ALL, ARCH_STYLE,
-    BASELINE_1K_COLOR, UNTRAINED_LINE_STYLE, MARKER_SIZE, EDGE_COLOR, EDGE_WIDTH,
-    setup_style, compute_jitter, format_coarseness_axes,
-    build_coarseness_legend, build_per_layer_legend,
-    plot_per_layer_panel, plot_reconstruction_panel,
-    get_layer_folder_from_coarse_config,
+    COARSE_CFGS, BREAK_1K_POS,
+    UNTRAINED_LINE_STYLE, MARKER_SIZE, EDGE_COLOR, EDGE_WIDTH,
+    setup_style, compute_jitter,
+    format_coarseness_axes,
+    plot_reconstruction_panel,
 )
+from things_utils import compute_things_data, plot_rdm_panels, plot_scatter_panel
 
 # ── Config ────────────────────────────────────────────────────────────────
-REGIONS = [("V1", "V1"), ("IT", "IT")]
-LAYER_PCA_FOLDER = None  # Derived per-region from COARSE_CONFIG below
-COARSE_CONFIG = {
-    "V1": (64, "/data/ymehta3/alexnet_pca"),
-    "IT": (64, "/data/ymehta3/alexnet_pca"),
-}
 OUTPUT_DIR = "manuscript/figures/fig4"
 
+# ── Figure 4 color scheme (same as Figure 3) ──
+ARCHITECTURES = [
+    ("alexnet", "pca_labels_alexnet", "AlexNet"),
+    ("clip",    "pca_labels_clip",    "CLIP"),
+    ("pixels",  "pca_labels_pixels",  "Pixels"),
+]
+ARCH_STYLE = {
+    "alexnet": {"color": "#6baed6", "marker": "o"},   # medium blue
+    "clip":    {"color": "#08519c", "marker": "s"},    # dark blue
+    "pixels":  {"color": "#c0a898", "marker": "v"},    # muted tan
+}
+BASELINE_1K_COLOR = "#e8963e"  # warm amber
 
-# ── Column 1: Coarseness ─────────────────────────────────────────────────
-
-def _sem_summary(df):
-    seed_means = df.groupby("seed")["score"].mean()
-    mean = seed_means.mean()
-    sem = seed_means.std() / np.sqrt(len(seed_means)) if len(seed_means) > 1 else 0
-    return mean, sem
+# THINGS reconstruction config: ViT-PCA 64-way
+THINGS_RECON_CONFIG = {"N/A": (64, "/data/ymehta3/vit_pca")}
+THINGS_RECON_COLOR = "#08519c"  # CLIP dark blue
 
 
-def fetch_arch_data(folder, region):
-    means, sems = [], []
+# ── Coarseness data fetching ─────────────────────────────────────────────
+
+def fetch_things_arch_data(folder):
+    means, ci_lo, ci_hi = [], [], []
     for cfg in COARSE_CFGS:
-        df = query_best_scores("tvsd", region, folder, cfg,
+        s = get_condition_summary("things-behavior", "N/A", folder, cfg,
+                                  "spearman", epoch=20, analysis="rsa")
+        means.append(s["mean"])
+        ci_lo.append(s["ci_low"])
+        ci_hi.append(s["ci_high"])
+    return np.array(means), np.array(ci_lo), np.array(ci_hi)
+
+
+def plot_coarseness_raw(ax):
+    """Plot raw Spearman ρ coarseness for THINGS behavioral."""
+    # 1000-way baseline
+    bl = get_condition_summary("things-behavior", "N/A", "imagenet1k", 1000,
                                "spearman", epoch=20, analysis="rsa")
-        if df.empty:
-            means.append(np.nan)
-            sems.append(0)
-            continue
-        m, s = _sem_summary(df)
-        means.append(m)
-        sems.append(s)
-    return np.array(means), np.array(sems)
+    bl_mean = bl["mean"]
 
-
-def plot_coarseness(ax, region, show_ylabel=True, show_xlabel=True):
-    un_df = query_best_scores("tvsd", region, "imagenet1k", 1000,
+    # Untrained baseline
+    un = get_condition_summary("things-behavior", "N/A", "imagenet1k", 1000,
                                "spearman", epoch=0, analysis="rsa")
-    if not un_df.empty:
-        ax.axhline(un_df.groupby("seed")["score"].mean().mean(),
-                    **UNTRAINED_LINE_STYLE, zorder=1)
+    if not np.isnan(un["mean"]):
+        ax.axhline(un["mean"], **UNTRAINED_LINE_STYLE, zorder=1)
 
-    bl_df = query_best_scores("tvsd", region, "imagenet1k", 1000,
-                               "spearman", epoch=20, analysis="rsa")
-    if not bl_df.empty:
-        bl_mean, bl_sem = _sem_summary(bl_df)
-        ax.errorbar(1000, bl_mean, yerr=1.96 * bl_sem,
-                     fmt="D", color=BASELINE_1K_COLOR, markersize=MARKER_SIZE,
+    # 1000-way horizontal reference line + diamond
+    if not np.isnan(bl_mean):
+        ax.axhline(bl_mean, color=BASELINE_1K_COLOR, linestyle="-",
+                    linewidth=0.6, alpha=0.35, zorder=2)
+        bl_err_lo = max(bl["mean"] - bl["ci_low"], 0) if not np.isnan(bl["ci_low"]) else 0
+        bl_err_hi = max(bl["ci_high"] - bl["mean"], 0) if not np.isnan(bl["ci_high"]) else 0
+        ax.errorbar(BREAK_1K_POS, bl_mean, yerr=[[bl_err_lo], [bl_err_hi]],
+                     fmt="D", color=BASELINE_1K_COLOR, markersize=MARKER_SIZE + 1,
                      markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
-                     capsize=2, capthick=0.7, ecolor=BASELINE_1K_COLOR,
+                     capsize=2.5, capthick=0.8, ecolor=BASELINE_1K_COLOR,
                      elinewidth=1.0, zorder=5)
 
-    for arch_idx, (arch_key, folder, _) in enumerate(ARCHITECTURES_ALL):
+    # Coarse architectures (AlexNet, CLIP, Pixels — no ViT)
+    for arch_idx, (arch_key, folder, _) in enumerate(ARCHITECTURES):
         style = ARCH_STYLE[arch_key]
-        means, sems = fetch_arch_data(folder, region)
-        jitter = compute_jitter(arch_idx, len(ARCHITECTURES_ALL))
+        means, ci_lo, ci_hi = fetch_things_arch_data(folder)
+        jitter = compute_jitter(arch_idx, len(ARCHITECTURES))
         for i, cfg in enumerate(COARSE_CFGS):
             if np.isnan(means[i]):
                 continue
-            ax.errorbar(cfg * jitter, means[i], yerr=1.96 * sems[i],
+            e_lo = max(means[i] - ci_lo[i], 0) if not np.isnan(ci_lo[i]) else 0
+            e_hi = max(ci_hi[i] - means[i], 0) if not np.isnan(ci_hi[i]) else 0
+            ax.errorbar(cfg * jitter, means[i], yerr=[[e_lo], [e_hi]],
                          fmt=style["marker"], color=style["color"],
-                         markersize=MARKER_SIZE,
+                         markersize=MARKER_SIZE + 1,
                          markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
-                         capsize=2, capthick=0.7,
+                         capsize=2.5, capthick=0.8,
                          ecolor=style["color"], elinewidth=1.0, zorder=4)
 
-    format_coarseness_axes(ax, "", show_ylabel=show_ylabel, show_xlabel=show_xlabel)
+    format_coarseness_axes(ax, "", show_ylabel=True, show_xlabel=True)
+    ax.set_title("Alignment vs. Granularity",
+                 fontsize=9.5, fontweight="semibold", pad=8)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────
 
 def main():
     setup_style()
+    plt.rcParams.update({
+        "axes.labelsize": 8.5,
+        "axes.titlesize": 9,
+        "xtick.labelsize": 7.5,
+        "ytick.labelsize": 7.5,
+    })
 
-    fig = plt.figure(figsize=(14.0, 7.8))
-    gs = gridspec.GridSpec(2, 3, figure=fig, hspace=0.42, wspace=0.32,
-                           width_ratios=[1, 1.15, 1],
-                           left=0.08, right=0.97, top=0.92, bottom=0.08)
+    fig = plt.figure(figsize=(13, 9))
 
-    col_headers = ["Alignment vs. Granularity",
-                   "Per-Layer Profile",
-                   "Reconstruction Control"]
+    # Top row: 4 columns; Bottom row: RDMs spanning full width
+    gs = gridspec.GridSpec(2, 1, figure=fig, height_ratios=[1.05, 1.15],
+                           hspace=0.38, left=0.06, right=0.96,
+                           top=0.95, bottom=0.04)
 
-    axes_grid = []
-    layer_arch_names = []
-    for row_idx, (region, region_label) in enumerate(REGIONS):
-        is_bottom = (row_idx == 1)
+    # ── Top row: 4 panels ──
+    gs_top = gridspec.GridSpecFromSubplotSpec(1, 4, subplot_spec=gs[0],
+                                              wspace=0.48,
+                                              width_ratios=[1, 0.85, 1, 0.85])
 
-        ax_c = fig.add_subplot(gs[row_idx, 0])
-        plot_coarseness(ax_c, region, show_ylabel=True, show_xlabel=is_bottom)
+    # Panel A: Coarseness (Alignment vs. Granularity)
+    ax_coarse = fig.add_subplot(gs_top[0, 0])
+    plot_coarseness_raw(ax_coarse)
 
-        ax_l = fig.add_subplot(gs[row_idx, 1])
-        layer_folder = get_layer_folder_from_coarse_config(COARSE_CONFIG, region)
-        pca_folder, arch_display = plot_per_layer_panel(
-            ax_l, "tvsd", region, layer_folder,
-            title=None, show_ylabel=False, show_xlabel=is_bottom)
-        layer_arch_names.append(arch_display)
+    # Coarseness legend — local color scheme
+    legend_handles = []
+    for arch_key, _, display in ARCHITECTURES:
+        style = ARCH_STYLE[arch_key]
+        h = Line2D([], [], marker=style["marker"], color="none",
+                   markerfacecolor=style["color"],
+                   markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
+                   markersize=MARKER_SIZE, label=display)
+        legend_handles.append(h)
+    legend_handles.append(Line2D([], [], marker="D", color="none",
+                                  markerfacecolor=BASELINE_1K_COLOR,
+                                  markeredgecolor=EDGE_COLOR,
+                                  markeredgewidth=EDGE_WIDTH,
+                                  markersize=MARKER_SIZE, label="1K (ImageNet)"))
+    legend_handles.append(Line2D([], [], **UNTRAINED_LINE_STYLE, label="Untrained"))
 
-        ax_r = fig.add_subplot(gs[row_idx, 2])
-        plot_reconstruction_panel(ax_r, "tvsd", region, "",
-                                  COARSE_CONFIG, show_ylabel=False)
-        ax_r.set_title("")
-        ax_r.set_ylabel("")
-        if not is_bottom:
-            ax_r.set_xlabel("")
-            ax_r.set_xticklabels([])
-
-        axes_grid.append((ax_c, ax_l, ax_r))
-
-    # ── Column headers ──
-    for col_idx, header in enumerate(col_headers):
-        ax = axes_grid[0][col_idx]
-        ax.set_title(header, fontsize=11, fontweight="bold", pad=12,
-                     color="#1a1a1a")
-
-    # ── Row labels ──
-    for row_idx, (_, region_label) in enumerate(REGIONS):
-        ax = axes_grid[row_idx][0]
-        ax.annotate(region_label, xy=(-0.30, 0.5), xycoords="axes fraction",
-                    fontsize=13, fontweight="bold", rotation=90,
-                    ha="center", va="center", color="#222222")
-
-    # ── Per-layer architecture annotations (top-left to avoid data overlap) ──
-    for row_idx, arch_name in enumerate(layer_arch_names):
-        ax = axes_grid[row_idx][1]
-        ax.text(0.03, 0.96, arch_name, transform=ax.transAxes,
-                fontsize=6.5, ha="left", va="top", color="#888888",
-                fontstyle="italic",
-                bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="none",
-                          alpha=0.7))
-
-    # ── Panel labels ──
-    labels = ["A", "B", "C", "D", "E", "F"]
-    for idx, label in enumerate(labels):
-        row, col = divmod(idx, 3)
-        ax = axes_grid[row][col]
-        ax.text(-0.10, 1.08, label, transform=ax.transAxes,
-                fontsize=14, fontweight="bold", va="top", ha="left",
-                color="#000000")
-
-    # ── Remove per-axes legends from col 1 & 2, keep col 3 per-panel ──
-    for row in axes_grid:
-        for col_idx, ax in enumerate(row):
-            legend = ax.get_legend()
-            if legend and col_idx != 2:
-                legend.remove()
-
-    # ── Reconstruction legends — per-panel (different coarse models per row) ──
-    for row_idx in range(len(REGIONS)):
-        ax_r = axes_grid[row_idx][2]
-        handles, leg_labels = ax_r.get_legend_handles_labels()
-        if handles:
-            short = [lbl.replace(" (top-$k$ PCs)", "").replace("-way model", "-way")
-                     for lbl in leg_labels]
-            leg = ax_r.legend(handles, short, fontsize=5.5,
-                              loc="lower right", frameon=True,
-                              edgecolor="#dddddd", fancybox=False,
-                              framealpha=0.95, handletextpad=0.3,
-                              borderpad=0.4)
-            leg.get_frame().set_linewidth(0.5)
-
-    # ── Shared legends (in gap between rows) ──
-    top_bottom = axes_grid[0][0].get_position().y0
-    bot_top = axes_grid[1][0].get_position().y1
-    mid_y = (top_bottom + bot_top) / 2
-
-    def _col_center(col_idx):
-        pos = axes_grid[0][col_idx].get_position()
-        return (pos.x0 + pos.x1) / 2
-
-    # Coarseness legend — between rows, aligned with column 1
-    leg_c = fig.legend(
-        handles=build_coarseness_legend(ARCHITECTURES_ALL),
-        loc="center", fontsize=6.5, frameon=True,
+    leg_c = ax_coarse.legend(
+        handles=legend_handles,
+        fontsize=6, frameon=True, loc="lower left",
         edgecolor="#dddddd", fancybox=False, framealpha=0.95,
-        handletextpad=0.3, columnspacing=0.6, ncol=3,
-        borderpad=0.5,
-        bbox_to_anchor=(_col_center(0), mid_y))
+        handletextpad=0.25, columnspacing=0.5, ncol=2,
+        borderpad=0.3, bbox_to_anchor=(0.0, 0.0))
     leg_c.get_frame().set_linewidth(0.5)
 
-    # Per-layer legend — between rows, aligned with column 2
-    leg_l = fig.legend(
-        handles=build_per_layer_legend(),
-        loc="center", fontsize=6.5, frameon=True,
-        edgecolor="#dddddd", fancybox=False, framealpha=0.95,
-        ncol=4, handletextpad=0.3, columnspacing=0.6,
-        borderpad=0.5,
-        bbox_to_anchor=(_col_center(1), mid_y))
-    leg_l.get_frame().set_linewidth(0.5)
+    # Panel B: Reconstruction (THINGS)
+    ax_recon = fig.add_subplot(gs_top[0, 1])
+    plot_reconstruction_panel(ax_recon, "things-behavior", "N/A",
+                              "Reconstruction", THINGS_RECON_CONFIG,
+                              show_ylabel=True,
+                              coarse_color_override=THINGS_RECON_COLOR)
+    ax_recon.legend(fontsize=5.5, loc="lower right", frameon=True,
+                    edgecolor="#dddddd", fancybox=False, handletextpad=0.4,
+                    borderpad=0.3, labelspacing=0.22, framealpha=0.94)
+
+    # Panels C: Scatter and Histogram
+    ax_scatter = fig.add_subplot(gs_top[0, 2])
+    ax_hist = fig.add_subplot(gs_top[0, 3])
+
+    # Compute THINGS data (RDMs + scatter data)
+    print("Computing THINGS data for scatter and RDMs...")
+    precomputed = compute_things_data()
+
+    plot_scatter_panel(ax_scatter, ax_hist, precomputed)
+
+    # ── Bottom row: 3 RDMs + colorbar ──
+    gs_bot = gridspec.GridSpecFromSubplotSpec(1, 4, subplot_spec=gs[1],
+                                              wspace=0.06,
+                                              width_ratios=[1, 1, 1, 0.05])
+
+    ax_rdm1 = fig.add_subplot(gs_bot[0, 0])
+    ax_rdm2 = fig.add_subplot(gs_bot[0, 1])
+    ax_rdm3 = fig.add_subplot(gs_bot[0, 2])
+    ax_cb = fig.add_subplot(gs_bot[0, 3])
+
+    rdm_axes = [ax_rdm1, ax_rdm2, ax_rdm3]
+    plot_rdm_panels(rdm_axes, precomputed, show_difference=False,
+                    colorbar_axes=(ax_cb, ax_cb))
+
+    # ── Panel labels ──
+    for ax, label, x_off in zip(
+        [ax_coarse, ax_recon, ax_scatter, ax_rdm1],
+        ["A", "B", "C", "D"],
+        [-0.14, -0.12, -0.12, -0.04]):
+        ax.text(x_off, 1.10, label, transform=ax.transAxes,
+                fontsize=13, fontweight="bold", va="top", ha="left",
+                family="sans-serif")
 
     # ── Save ──
     out = f"{OUTPUT_DIR}/figure4.png"

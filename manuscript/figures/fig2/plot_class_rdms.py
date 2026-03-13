@@ -1,11 +1,10 @@
-"""Figure 2A — Class-level RDM comparison: 1000-way vs. 8-way CLIP-PCA.
+"""Figure 2A — Class-level RDM grid: 1000-way + coarse models (2,4,8,16,32).
 
 Extracts fc1 activations from ImageNet, averages per class (10 images each),
-computes 1000×1000 Pearson RDMs, sorts by 7 WordNet super-categories, and
-plots two side-by-side RDMs with colored category sidebars.
+computes 1000×1000 Pearson RDMs for each granularity level.
 
 Usage (from project root):
-    # Compute features + plot (first run, ~2-5 min on 4090)
+    # Compute features + save cache (~5-10 min on 4090)
     python manuscript/figures/fig2/plot_class_rdms.py
 
     # Re-plot from cached data
@@ -42,7 +41,7 @@ LAYER = "fc1"
 N_IMAGES_PER_CLASS = 10
 CHECKPOINT_DIR_1K = "/data/ymehta3/default"
 CHECKPOINT_DIR_CLIP = "/data/ymehta3/clip_pca"
-COARSE_CFG_ID = 8
+COARSE_CFG_IDS = [4, 8, 16, 32, 64]
 SEED = 1
 
 SEMANTIC_LABELS_PATH = "experiments/wordnet/semantic_categories.csv"
@@ -180,7 +179,7 @@ def extract_class_centroids(model, dataset, class_image_indices, layer, device):
 
 
 def compute_data(layer, n_per_class):
-    """Compute class centroids for both models and save to cache."""
+    """Compute class centroids for 1000-way + all coarse models, save to cache."""
     from utils import load_model_by_config
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -210,27 +209,32 @@ def compute_data(layer, n_per_class):
     torch.cuda.empty_cache()
     print(f"  Extracted centroids: {centroids_1k.shape}")
 
-    # Extract centroids: coarse model
-    print(f"\n--- {COARSE_CFG_ID}-way CLIP-PCA model (seed {SEED}) ---")
-    model_coarse = load_model_by_config(COARSE_CFG_ID, SEED,
-                                         checkpoint_dir=CHECKPOINT_DIR_CLIP,
-                                         device=device)
-    centroids_coarse, valid_coarse = extract_class_centroids(
-        model_coarse, dataset, class_image_indices, layer, device)
-    del model_coarse
-    torch.cuda.empty_cache()
-    print(f"  Extracted centroids: {centroids_coarse.shape}")
+    # Extract centroids: each coarse model
+    coarse_centroids = {}
+    for cfg_id in COARSE_CFG_IDS:
+        print(f"\n--- {cfg_id}-way CLIP-PCA model (seed {SEED}) ---")
+        model = load_model_by_config(cfg_id, SEED,
+                                     checkpoint_dir=CHECKPOINT_DIR_CLIP,
+                                     device=device)
+        centroids, _ = extract_class_centroids(
+            model, dataset, class_image_indices, layer, device)
+        coarse_centroids[cfg_id] = centroids
+        del model
+        torch.cuda.empty_cache()
+        print(f"  Extracted centroids: {centroids.shape}")
 
-    # Save cache
-    np.savez(CACHE_PATH,
-             centroids_1k=centroids_1k,
-             centroids_coarse=centroids_coarse,
-             categories=categories,
-             valid_1k=valid_1k,
-             valid_coarse=valid_coarse)
+    # Save cache — store coarse centroids keyed by cfg_id
+    save_dict = {
+        "centroids_1k": centroids_1k,
+        "categories": categories,
+        "valid_1k": valid_1k,
+    }
+    for cfg_id, cent in coarse_centroids.items():
+        save_dict[f"centroids_{cfg_id}"] = cent
+    np.savez(CACHE_PATH, **save_dict)
     print(f"\nCached -> {CACHE_PATH}")
 
-    return centroids_1k, centroids_coarse, categories
+    return centroids_1k, coarse_centroids, categories
 
 
 # ── Plotting ──────────────────────────────────────────────────────────────
@@ -299,10 +303,10 @@ def draw_boundaries(ax, block_boundaries, n, color="white", lw=0.3, alpha=0.5):
             ax.axvline(start - 0.5, color=color, lw=lw, alpha=alpha)
 
 
-def plot_rdm_panel(ax, rdm_ranked, block_boundaries, n, title, rsa_score=None):
-    """Draw a single RDM panel with category annotations."""
-    im = ax.imshow(rdm_ranked, cmap="magma", interpolation="nearest",
-                   aspect="equal", rasterized=True, vmin=0, vmax=1)
+def plot_rdm_panel(ax, rdm, block_boundaries, n, title, rsa_score=None):
+    """Draw a single RDM panel with category annotations (raw dissimilarity)."""
+    im = ax.imshow(rdm, cmap="magma", interpolation="nearest",
+                   aspect="equal", rasterized=True, vmin=0, vmax=2)
 
     ax.set_title(title, fontsize=10, fontweight="bold", pad=10)
     if rsa_score is not None:
@@ -322,90 +326,47 @@ def plot_rdm_panel(ax, rdm_ranked, block_boundaries, n, title, rsa_score=None):
     return im
 
 
-def plot_figure(centroids_1k, centroids_coarse, categories):
-    """Create the two-panel class-level RDM figure."""
-    # Filter to valid classes (present in both models and have a category)
+def plot_figure(centroids_1k, coarse_centroids, categories):
+    """Create the 2x3 RDM grid figure (standalone, not used by figure2.py)."""
     valid = categories >= 0
     centroids_1k = centroids_1k[valid]
-    centroids_coarse = centroids_coarse[valid]
     categories = categories[valid]
-
     n_classes = len(categories)
     print(f"Plotting RDMs for {n_classes} valid classes")
 
-    # Compute Pearson RDMs
-    print("Computing RDMs...")
+    # Compute 1000-way RDM
     rdm_1k = compute_rdm(torch.tensor(centroids_1k, dtype=torch.float32)).numpy()
-    rdm_coarse = compute_rdm(torch.tensor(centroids_coarse, dtype=torch.float32)).numpy()
-
-    # Cross-model RSA
-    rsa = compute_rdm_correlation(
-        torch.tensor(rdm_1k), torch.tensor(rdm_coarse),
-        correlation="Spearman",
-    )
-    print(f"Cross-model RSA (Spearman): {rsa:.4f}")
-
-    # Sort by category (use 1K model's RDM for within-block clustering)
     sort_idx, block_boundaries = build_sort_order(categories, rdm_1k)
     rdm_1k_sorted = rdm_1k[np.ix_(sort_idx, sort_idx)]
-    rdm_coarse_sorted = rdm_coarse[np.ix_(sort_idx, sort_idx)]
 
-    # Rank-transform for display
-    rdm_1k_ranked = rank_transform(rdm_1k_sorted)
-    rdm_coarse_ranked = rank_transform(rdm_coarse_sorted)
+    # Compute coarse RDMs
+    coarse_rdms = {}
+    for cfg_id, cent in coarse_centroids.items():
+        cent_valid = cent[valid]
+        rdm = compute_rdm(torch.tensor(cent_valid, dtype=torch.float32)).numpy()
+        coarse_rdms[cfg_id] = rdm[np.ix_(sort_idx, sort_idx)]
 
-    # ── Plot ──────────────────────────────────────────────────────────
-    fig = plt.figure(figsize=(10, 5.5))
-    gs = gridspec.GridSpec(
-        2, 3, figure=fig,
-        width_ratios=[1, 1, 0.035],
-        height_ratios=[1, 0.12],
-        wspace=0.08, hspace=0.08,
-    )
+    # ── Plot 2×3 grid ──
+    all_cfg_ids = [1000] + COARSE_CFG_IDS
+    fig, axes = plt.subplots(2, 3, figsize=(12, 8.5))
+    axes = axes.flatten()
 
-    ax_1k = fig.add_subplot(gs[0, 0])
-    ax_coarse = fig.add_subplot(gs[0, 1])
-    ax_cb = fig.add_subplot(gs[0, 2])
-    ax_legend = fig.add_subplot(gs[1, :])
-    ax_legend.axis("off")
+    for i, cfg_id in enumerate(all_cfg_ids):
+        ax = axes[i]
+        rdm = rdm_1k_sorted if cfg_id == 1000 else coarse_rdms[cfg_id]
+        title = "1000-way" if cfg_id == 1000 else f"{cfg_id}-way"
+        im = plot_rdm_panel(ax, rdm, block_boundaries, n_classes, title)
 
-    im1 = plot_rdm_panel(ax_1k, rdm_1k_ranked, block_boundaries, n_classes,
-                          "1000-way Model")
-    im2 = plot_rdm_panel(ax_coarse, rdm_coarse_ranked, block_boundaries, n_classes,
-                          f"{COARSE_CFG_ID}-way CLIP-PCA Model")
+    # Hide 6th subplot if only 5 coarse + 1000 = 6
+    if len(all_cfg_ids) < 6:
+        axes[len(all_cfg_ids)].axis("off")
 
-    # Shared colorbar
-    cb = fig.colorbar(im1, cax=ax_cb)
-    cb.ax.tick_params(labelsize=7, length=2, width=0.4, pad=2)
+    fig.subplots_adjust(right=0.92, wspace=0.08, hspace=0.15)
+    cax = fig.add_axes([0.93, 0.25, 0.015, 0.5])
+    cb = fig.colorbar(im, cax=cax)
+    cb.ax.tick_params(labelsize=7, length=2, width=0.4)
     cb.outline.set_linewidth(0.4)
-    cb.ax.yaxis.set_major_locator(mticker.FixedLocator([0, 0.5, 1.0]))
-    cb.set_label("Rank-transformed dissimilarity", fontsize=7, labelpad=4)
-
-    # RSA annotation between panels
-    fig.text(0.5, 0.52, f"Cross-model RSA: $\\rho_s$ = {rsa:.3f}",
-             ha="center", va="center", fontsize=9, color="#333333",
-             fontweight="semibold",
-             bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="#cccccc",
-                       alpha=0.9))
-
-    # Panel labels
-    ax_1k.text(-0.08, 1.06, "a", transform=ax_1k.transAxes,
-               fontsize=13, fontweight="bold", va="top")
-    ax_coarse.text(-0.08, 1.06, "b", transform=ax_coarse.transAxes,
-                   fontsize=13, fontweight="bold", va="top")
-
-    # Category legend
-    legend_handles = []
-    for i, name in enumerate(CATEGORY_NAMES):
-        legend_handles.append(
-            mpatches.Patch(facecolor=CATEGORY_COLORS[i], edgecolor="#bbbbbb",
-                           linewidth=0.4, label=name)
-        )
-    ax_legend.legend(handles=legend_handles, loc="center", fontsize=7,
-                      frameon=False, ncol=4, columnspacing=1.2,
-                      handlelength=1.2, handleheight=0.8,
-                      title="WordNet Super-Categories",
-                      title_fontproperties={"size": 8, "weight": "bold"})
+    cb.set_label("Pearson dissimilarity (1 - r)", fontsize=7, labelpad=4)
 
     out = os.path.join(SCRIPT_DIR, "class_rdm_comparison.png")
     fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white",
@@ -430,13 +391,17 @@ def main():
         print(f"Loading cached data from {CACHE_PATH}")
         data = np.load(CACHE_PATH)
         centroids_1k = data["centroids_1k"]
-        centroids_coarse = data["centroids_coarse"]
         categories = data["categories"]
+        coarse_centroids = {}
+        for cfg_id in COARSE_CFG_IDS:
+            key = f"centroids_{cfg_id}"
+            if key in data:
+                coarse_centroids[cfg_id] = data[key]
     else:
-        centroids_1k, centroids_coarse, categories = compute_data(
+        centroids_1k, coarse_centroids, categories = compute_data(
             LAYER, args.n_per_class)
 
-    plot_figure(centroids_1k, centroids_coarse, categories)
+    plot_figure(centroids_1k, coarse_centroids, categories)
 
 
 if __name__ == "__main__":

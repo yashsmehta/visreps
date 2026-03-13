@@ -1,16 +1,12 @@
 """Figure 2: Coarse Representations Are Fundamentally Different.
 
-Composite figure with two panel groups:
-  A — Class-level RDM comparison (1000-way vs. 8-way CLIP-PCA)
-  B — Cross-model RSA bars (1K vs coarse, projected-1K vs coarse)
-
-Layout (single row):
-  Left:  [A1: 1000-way RDM] [A2: 8-way RDM] [colorbar] + category legend below
-  Right: [B: projected-1K vs coarse RSA bars]
+Composite figure:
+  A — 2×3 grid of class-level RDMs (4,8,16,32,64,1000-way CLIP-PCA)
+  B — Cross-model RSA: 1K vs coarse (top), projection vs inter-seed coarse (bottom)
 
 Usage:
     python manuscript/figures/fig2/figure2.py
-    python manuscript/figures/fig2/figure2.py --recompute-rdms   # recompute RDM data
+    python manuscript/figures/fig2/figure2.py --recompute-rdms
 """
 
 import os
@@ -23,8 +19,8 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import matplotlib.gridspec as gridspec
 import matplotlib.ticker as mticker
-from matplotlib.ticker import AutoMinorLocator
-from matplotlib.patches import FancyBboxPatch
+from matplotlib.ticker import AutoMinorLocator, FuncFormatter
+from matplotlib.lines import Line2D
 import seaborn as sns
 from scipy.cluster.hierarchy import linkage, leaves_list
 from scipy.spatial.distance import squareform
@@ -33,55 +29,49 @@ from scipy.stats import rankdata
 import torch
 
 sys.path.insert(0, ".")
-from visreps.analysis.rsa import compute_rdm, compute_rdm_correlation
+from visreps.analysis.rsa import compute_rdm
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 RDM_CACHE = os.path.join(SCRIPT_DIR, "class_rdm_data.npz")
 RSA_CACHE = os.path.join(SCRIPT_DIR, "cross_model_rsa_data.json")
 OUTPUT_DIR = SCRIPT_DIR
 
-# ── Shared config ────────────────────────────────────────────────────────
-COARSE_CFG_ID = 8
-
+# ── Config ───────────────────────────────────────────────────────────────
+COARSE_CFG_IDS = [4, 8, 16, 32, 64]
 CATEGORY_NAMES = [
     "Animals", "Natural World", "Food & Produce",
     "Structures & Architecture", "Domestic & Apparel",
     "Vehicles & Transport", "Tools & Electronics", "General Objects",
 ]
 CATEGORY_COLORS = [
-    "#D84315", "#2E7D32", "#F57C00", "#1565C0",
-    "#7B1FA2", "#8D6E63", "#E91E90", "#78909C",
+    "#c0392b", "#27ae60", "#e67e22", "#2980b9",
+    "#8e44ad", "#7f8c8d", "#d4527a", "#95a5a6",
 ]
-
-COLOR_INTERSEED = "#9E9E9E"
-COLOR_CROSS = "#1565C0"
-COLOR_PROJECTED = "#E8890C"
-
+COLOR_INTERSEED_1K = "#555555"
+COLOR_INTERSEED_COARSE = "#66a61e"   # muted green (colorbrewer Dark2)
 COARSE_CFGS = [2, 4, 8, 16, 32, 64]
+BAR_COLORS = {
+    2: "#bdd7e7", 4: "#9ecae1", 8: "#6baed6",
+    16: "#4292c6", 32: "#2171b5", 64: "#084594",
+}
 
 
-# ── Rounded bar helper ───────────────────────────────────────────────────
+# ── Rounded bar ──────────────────────────────────────────────────────────
 
-def draw_rounded_bars(ax, x_positions, heights, width, color, label,
-                      edgecolor="none", linewidth=0.5, radius=0.06, zorder=3):
-    """Draw bars with rounded top corners using FancyBboxPatch."""
-    for i, (xp, h) in enumerate(zip(x_positions, heights)):
-        if np.isnan(h) or h <= 0:
-            continue
-        box = FancyBboxPatch(
-            (xp - width / 2, 0), width, h,
-            boxstyle=f"round,pad=0,rounding_size={radius}",
-            facecolor=color, edgecolor=edgecolor, linewidth=linewidth,
-            zorder=zorder,
-            label=label if i == 0 else None,
-        )
-        ax.add_patch(box)
+def _draw_rounded_bar(ax, x, height, width, color, hatch="", zorder=3,
+                      edgecolor="#333333", alpha=1.0, linewidth=0.6):
+    rect = mpatches.FancyBboxPatch(
+        (x - width / 2, 0), width, height,
+        boxstyle=mpatches.BoxStyle("Round", pad=0.012, rounding_size=0.05),
+        facecolor=color, edgecolor=edgecolor, alpha=alpha,
+        linewidth=linewidth, hatch=hatch, mutation_aspect=0.04, zorder=zorder,
+    )
+    ax.add_patch(rect)
 
 
-# ── Panel A helpers (class-level RDMs) ───────────────────────────────────
+# ── RDM helpers ──────────────────────────────────────────────────────────
 
 def rank_transform(rdm):
-    """Rank upper triangle, mirror to lower, scale to [0, 1]."""
     n = rdm.shape[0]
     triu = np.triu_indices(n, k=1)
     ranks = rankdata(rdm[triu]) / rdm[triu].size
@@ -92,10 +82,8 @@ def rank_transform(rdm):
 
 
 def build_sort_order(categories, rdm):
-    """Sort classes by category, then hierarchical clustering within each."""
     unique_cats = sorted(set(categories))
-    sorted_indices = []
-    block_boundaries = []
+    sorted_indices, block_boundaries = [], []
     offset = 0
     for cat in unique_cats:
         member_idx = np.where(categories == cat)[0]
@@ -115,38 +103,34 @@ def build_sort_order(categories, rdm):
 
 
 def draw_sidebar(ax, block_boundaries, n, side="left",
-                 width_frac=0.02, gap_frac=0.006):
-    """Draw colored sidebar along RDM edge."""
+                 width_frac=0.022, gap_frac=0.006):
     w = n * width_frac
     gap = n * gap_frac
     for start, cat, size, _ in block_boundaries:
         color = CATEGORY_COLORS[cat] if cat < len(CATEGORY_COLORS) else "#888888"
         if side == "left":
-            rect = mpatches.Rectangle(
+            ax.add_patch(mpatches.Rectangle(
                 (-w - gap, start - 0.5), w, size,
-                facecolor=color, edgecolor="none", clip_on=False)
+                facecolor=color, edgecolor="none", clip_on=False))
         else:
-            rect = mpatches.Rectangle(
+            ax.add_patch(mpatches.Rectangle(
                 (start - 0.5, n - 0.5 + gap), size, w,
-                facecolor=color, edgecolor="none", clip_on=False)
-        ax.add_patch(rect)
+                facecolor=color, edgecolor="none", clip_on=False))
 
 
-def draw_boundaries(ax, block_boundaries, n, color="white", lw=0.4, alpha=0.6):
-    """Draw thin lines at category boundaries."""
-    for start, _, size, _ in block_boundaries:
+def draw_boundaries(ax, block_boundaries, n):
+    for start, _, _, _ in block_boundaries:
         if start > 0:
-            ax.axhline(start - 0.5, color=color, lw=lw, alpha=alpha)
-            ax.axvline(start - 0.5, color=color, lw=lw, alpha=alpha)
+            ax.axhline(start - 0.5, color="white", lw=0.6, alpha=0.75)
+            ax.axvline(start - 0.5, color="white", lw=0.6, alpha=0.75)
 
 
-def plot_rdm_panel(ax, rdm_ranked, block_boundaries, n, title):
-    """Draw a single RDM panel with category annotations."""
+def plot_rdm_panel(ax, rdm, block_boundaries, n, title):
+    rdm_ranked = rank_transform(rdm)
     im = ax.imshow(rdm_ranked, cmap="magma", interpolation="nearest",
                    aspect="equal", rasterized=True, vmin=0, vmax=1)
-    ax.set_title(title, fontsize=9, fontweight="bold", pad=6)
-    ax.set_xticks([])
-    ax.set_yticks([])
+    ax.set_title(title, fontsize=9.5, fontweight="bold", pad=6, color="#1a1a1a")
+    ax.set_xticks([]); ax.set_yticks([])
     for spine in ax.spines.values():
         spine.set_visible(False)
     draw_boundaries(ax, block_boundaries, n)
@@ -155,211 +139,281 @@ def plot_rdm_panel(ax, rdm_ranked, block_boundaries, n, title):
     return im
 
 
-def plot_panel_a(axes_rdm, ax_cb, ax_legend):
-    """Plot Panel A: class-level RDM comparison."""
-    data = np.load(RDM_CACHE)
-    centroids_1k = data["centroids_1k"]
-    centroids_coarse = data["centroids_coarse"]
-    categories = data["categories"]
+# ── Panel B — bar plot formatting ────────────────────────────────────────
 
-    valid = categories >= 0
-    centroids_1k = centroids_1k[valid]
-    centroids_coarse = centroids_coarse[valid]
-    categories = categories[valid]
-    n_classes = len(categories)
-
-    # Compute RDMs
-    rdm_1k = compute_rdm(torch.tensor(centroids_1k, dtype=torch.float32)).numpy()
-    rdm_coarse = compute_rdm(torch.tensor(centroids_coarse, dtype=torch.float32)).numpy()
-
-    # Cross-model RSA
-    rsa = compute_rdm_correlation(
-        torch.tensor(rdm_1k), torch.tensor(rdm_coarse), correlation="Spearman")
-
-    # Sort by category
-    sort_idx, block_boundaries = build_sort_order(categories, rdm_1k)
-    rdm_1k_sorted = rdm_1k[np.ix_(sort_idx, sort_idx)]
-    rdm_coarse_sorted = rdm_coarse[np.ix_(sort_idx, sort_idx)]
-
-    rdm_1k_ranked = rank_transform(rdm_1k_sorted)
-    rdm_coarse_ranked = rank_transform(rdm_coarse_sorted)
-
-    # Plot RDMs
-    im1 = plot_rdm_panel(axes_rdm[0], rdm_1k_ranked, block_boundaries,
-                          n_classes, "1000-way Model")
-    plot_rdm_panel(axes_rdm[1], rdm_coarse_ranked, block_boundaries,
-                   n_classes, f"{COARSE_CFG_ID}-way CLIP-PCA Model")
-
-    # Colorbar
-    cb = plt.colorbar(im1, cax=ax_cb)
-    cb.ax.tick_params(labelsize=6.5, length=2, width=0.5, pad=1.5)
-    cb.outline.set_linewidth(0.5)
-    cb.ax.yaxis.set_major_locator(mticker.FixedLocator([0, 0.5, 1.0]))
-    cb.set_label("Dissimilarity (rank)", fontsize=7, labelpad=3)
-
-    # Category legend
-    legend_handles = [
-        mpatches.Patch(facecolor=CATEGORY_COLORS[i], edgecolor="none",
-                       label=name)
-        for i, name in enumerate(CATEGORY_NAMES)
-    ]
-    ax_legend.legend(handles=legend_handles, loc="center", fontsize=7,
-                     frameon=False, ncol=4, columnspacing=1.2,
-                     handlelength=1.1, handleheight=0.8,
-                     title="WordNet Super-Categories",
-                     title_fontproperties={"size": 8, "weight": "bold"})
-
-    return rsa
+def _format_bar_axes(ax, valid_cfgs, y_max, ylabel=True, xlabel=True):
+    """Shared axis formatting for bar sub-panels."""
+    n = len(valid_cfgs)
+    x = np.arange(n, dtype=float)
+    ax.set_xticks(x)
+    if xlabel:
+        ax.set_xticklabels([str(c) for c in valid_cfgs], fontsize=8)
+        ax.set_xlabel("Number of coarse classes", fontsize=9, labelpad=5)
+    else:
+        ax.set_xticklabels([])
+    if ylabel:
+        ax.set_ylabel(r"Spearman $\rho$", fontsize=9, labelpad=4)
+    ax.set_ylim(0, y_max)
+    ax.set_xlim(-0.55, n - 0.45)
+    ax.yaxis.set_major_formatter(FuncFormatter(
+        lambda v, pos: "" if np.isclose(v, 0) else f"{v:.2f}"))
+    ax.yaxis.set_minor_locator(AutoMinorLocator(2))
+    ax.tick_params(axis="y", which="major", direction="out", length=3.5,
+                   width=0.6, labelsize=7.5)
+    ax.tick_params(axis="y", which="minor", direction="out", length=2, width=0.4)
+    ax.tick_params(axis="x", direction="out", bottom=False, length=0, pad=3)
+    ax.yaxis.grid(True, which="major", color="#EBEBEB", linewidth=0.4, zorder=0)
+    ax.set_axisbelow(True)
+    sns.despine(ax=ax, right=True, top=True, offset=4)
+    ax.spines["bottom"].set_linewidth(0.7)
+    ax.spines["left"].set_linewidth(0.7)
 
 
-# ── Panel B helpers (cross-model RSA bars) ───────────────────────────────
-
-def plot_panel_b(ax):
-    """Plot Panel B: projected-1K vs coarse RSA bars.
-
-    Shows how well a low-rank projection of the 1K model (onto k = log2(n_classes)
-    PCs) matches the coarse model. Inter-seed 1K baseline as dashed reference.
-    """
+def plot_panel_b_rsa(ax):
+    """Top sub-panel: cross-model RSA (1000-way vs coarse)."""
     with open(RSA_CACHE) as f:
         results = json.load(f)
 
     comparisons = results["comparisons"]
-    method = results.get("method", "spearman")
+    valid_cfgs = [c for c in COARSE_CFGS if str(c) in comparisons
+                  and "error" not in comparisons[str(c)]]
+    x = np.arange(len(valid_cfgs), dtype=float)
+    bar_width = 0.56
 
+    interseed_1k = results.get("interseed_1k", np.nan)
+    if not np.isnan(interseed_1k):
+        ax.axhline(interseed_1k, color=COLOR_INTERSEED_1K, linestyle="--",
+                    linewidth=1.0, zorder=1, alpha=0.55)
+
+    rsa_vals = []
+    for cfg_id in valid_cfgs:
+        comp = comparisons[str(cfg_id)]
+        rsa_vals.append(comp.get("cross_1k_coarse", np.nan))
+
+    for i, (xp, val, cfg_id) in enumerate(zip(x, rsa_vals, valid_cfgs)):
+        if np.isnan(val) or val <= 0:
+            continue
+        _draw_rounded_bar(ax, xp, val, bar_width, BAR_COLORS.get(cfg_id, "#3182bd"))
+
+    ax.set_title("1000-way vs. coarse", fontsize=10, fontweight="bold",
+                 pad=7, color="#1a1a1a")
+    y_max = interseed_1k * 1.10 if not np.isnan(interseed_1k) else 0.8
+    _format_bar_axes(ax, valid_cfgs, y_max, xlabel=False)
+
+    legend_handles = [
+        Line2D([], [], color=COLOR_INTERSEED_1K, linestyle="--", linewidth=1.0,
+               alpha=0.55, label=f"Inter-seed 1K ({interseed_1k:.2f})"),
+    ]
+    ax.legend(handles=legend_handles, fontsize=7, loc="upper left",
+              frameon=True, edgecolor="#dddddd", fancybox=False,
+              handletextpad=0.4, borderpad=0.35, labelspacing=0.3,
+              framealpha=0.92)
+    ax.get_legend().get_frame().set_linewidth(0.5)
+
+
+def plot_panel_b_projection(ax):
+    """Bottom sub-panel: projected-1K vs coarse AND inter-seed coarse similarity."""
+    with open(RSA_CACHE) as f:
+        results = json.load(f)
+
+    comparisons = results["comparisons"]
     valid_cfgs = [c for c in COARSE_CFGS if str(c) in comparisons
                   and "error" not in comparisons[str(c)]]
     n = len(valid_cfgs)
     x = np.arange(n, dtype=float)
-    bar_width = 0.45
+    bar_width = 0.28
+    offset = 0.155
 
-    # Inter-seed baseline
-    interseed_1k = results.get("interseed_1k", np.nan)
-    if not np.isnan(interseed_1k):
-        ax.axhline(interseed_1k, color=COLOR_INTERSEED, linestyle="--",
-                    linewidth=1.2, zorder=1,
-                    label=f"Inter-seed 1K baseline ({interseed_1k:.2f})")
-
-    # Single bars: projected-1K vs coarse only
-    proj_vals, n_pcs_labels = [], []
+    # Gather data
+    proj_vals, interseed_vals, n_pcs_labels = [], [], []
     for cfg_id in valid_cfgs:
         comp = comparisons[str(cfg_id)]
         proj_vals.append(comp.get("projected_1k_coarse", np.nan))
+        interseed_vals.append(comp.get("interseed_coarse", np.nan))
         n_pcs_labels.append(comp.get("n_pcs_used", int(np.log2(cfg_id))))
 
-    draw_rounded_bars(ax, x, proj_vals, bar_width,
-                      COLOR_PROJECTED, "Projected-1K vs. Coarse", radius=0.05)
+    # Projected-1K vs coarse bars (hatched, left position)
+    original_hatch_color = plt.rcParams.get("hatch.color")
+    plt.rcParams["hatch.color"] = "#555555"
 
-    # Annotate number of PCs above each bar
+    for i, (xp, val, cfg_id) in enumerate(zip(x, proj_vals, valid_cfgs)):
+        if np.isnan(val) or val <= 0:
+            continue
+        _draw_rounded_bar(ax, xp - offset, val, bar_width,
+                          BAR_COLORS.get(cfg_id, "#3182bd"),
+                          hatch="///", edgecolor="#333333")
+
+    if original_hatch_color is not None:
+        plt.rcParams["hatch.color"] = original_hatch_color
+
+    # Inter-seed coarse bars (solid, right position)
+    for i, (xp, val, cfg_id) in enumerate(zip(x, interseed_vals, valid_cfgs)):
+        if np.isnan(val) or val <= 0:
+            continue
+        _draw_rounded_bar(ax, xp + offset, val, bar_width,
+                          COLOR_INTERSEED_COARSE, edgecolor="#333333")
+
+    # k= annotations above projection bars (skip if bar is too short to label cleanly)
     for i, (val, k) in enumerate(zip(proj_vals, n_pcs_labels)):
-        if not np.isnan(val):
-            ax.text(i, val + 0.012, f"k={k}", ha="center", va="bottom",
-                    fontsize=7, color="#555555", fontstyle="italic")
+        if not np.isnan(val) and val > 0.05:
+            ax.text(i - offset, val + 0.012, f"k={k}", ha="center", va="bottom",
+                    fontsize=5.5, color="#444444", fontstyle="italic")
 
-    ax.set_xticks(x)
-    ax.set_xticklabels([str(c) for c in valid_cfgs], fontsize=8)
-    ax.set_xlabel("Number of Classes", fontsize=8.5, labelpad=5)
-    method_label = method.capitalize()
-    ax.set_ylabel(f"RSA ({method_label} " + r"$\rho$)", fontsize=8.5, labelpad=5)
-    ax.set_title("Cross-Model RSA (FC1)", fontsize=9, fontweight="semibold", pad=6)
+    ax.set_title("Projection vs. inter-seed coarse", fontsize=10,
+                 fontweight="bold", pad=7, color="#1a1a1a")
 
-    ax.set_ylim(0, max(interseed_1k + 0.1, 0.9) if not np.isnan(interseed_1k) else 0.5)
-    ax.set_xlim(-0.6, n - 0.4)
-    ax.yaxis.set_minor_locator(AutoMinorLocator(2))
-    ax.tick_params(axis="both", labelsize=8, length=4, width=0.8)
-    ax.tick_params(axis="y", which="minor", length=2.5, width=0.5)
-    ax.yaxis.grid(True, which="major", color="#E8E8E8", linewidth=0.5, zorder=0)
-    ax.yaxis.grid(True, which="minor", color="#F2F2F2", linewidth=0.3, zorder=0)
+    y_max = max(v for v in interseed_vals if not np.isnan(v)) * 1.10
+    _format_bar_axes(ax, valid_cfgs, y_max)
 
-    ax.legend(loc="upper left", fontsize=6.5, frameon=True,
-              edgecolor="#DDDDDD", fancybox=False, handletextpad=0.4,
-              framealpha=0.95, borderpad=0.5, labelspacing=0.35)
-    sns.despine(ax=ax, offset=5)
+    # Legend — hatched patch matches the actual projection bars
+    proj_patch = mpatches.Patch(facecolor="#4292c6", edgecolor="#333333",
+                                linewidth=0.5, hatch="///",
+                                label="Projected-1K vs. coarse")
+    interseed_patch = mpatches.Patch(facecolor=COLOR_INTERSEED_COARSE,
+                                      edgecolor="#333333", linewidth=0.5,
+                                      label="Inter-seed coarse")
+    ax.legend(handles=[proj_patch, interseed_patch], fontsize=6.5,
+              loc="lower left", frameon=True, edgecolor="#dddddd",
+              fancybox=False, handletextpad=0.4, borderpad=0.35,
+              labelspacing=0.3, framealpha=0.92,
+              bbox_to_anchor=(0.0, 0.0))
+    ax.get_legend().get_frame().set_linewidth(0.5)
 
 
-# ── Main figure assembly ─────────────────────────────────────────────────
+# ── Main ─────────────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--recompute-rdms", action="store_true",
-                        help="Recompute class RDM data (run plot_class_rdms.py first)")
+    parser.add_argument("--recompute-rdms", action="store_true")
     args = parser.parse_args()
 
     if args.recompute_rdms or not os.path.exists(RDM_CACHE):
-        print("RDM cache not found. Run plot_class_rdms.py first:")
-        print("  python manuscript/figures/fig2/plot_class_rdms.py")
+        print("RDM cache not found. Run plot_class_rdms.py first.")
         return
-
     if not os.path.exists(RSA_CACHE):
-        print("RSA cache not found. Run plot_cross_model_rsa.py first:")
-        print("  python manuscript/figures/fig2/plot_cross_model_rsa.py")
+        print("RSA cache not found. Run plot_cross_model_rsa.py first.")
         return
 
-    sns.set_theme(style="ticks", context="paper", font_scale=1.0)
+    sns.set_theme(style="ticks", context="paper", font_scale=1.05)
     plt.rcParams.update({
         "font.family": "sans-serif",
         "font.sans-serif": ["Helvetica", "Arial", "DejaVu Sans"],
-        "axes.linewidth": 0.8,
-        "xtick.major.width": 0.8,
-        "ytick.major.width": 0.8,
+        "axes.linewidth": 0.7,
+        "xtick.major.width": 0.6,
+        "ytick.major.width": 0.6,
+        "pdf.fonttype": 42,
+        "ps.fonttype": 42,
     })
 
-    # Layout: single row — [RDMs + legend | bar chart]
-    fig = plt.figure(figsize=(12.5, 5.5))
+    # ── Load RDM data ──
+    data = np.load(RDM_CACHE)
+    centroids_1k = data["centroids_1k"]
+    categories = data["categories"]
+    valid = categories >= 0
+    centroids_1k = centroids_1k[valid]
+    categories = categories[valid]
+    n_classes = len(categories)
 
-    # Outer grid: left (RDMs) and right (bar chart)
+    # Compute 1000-way RDM and sort order
+    rdm_1k = compute_rdm(torch.tensor(centroids_1k, dtype=torch.float32)).numpy()
+    sort_idx, block_boundaries = build_sort_order(categories, rdm_1k)
+    rdm_1k_sorted = rdm_1k[np.ix_(sort_idx, sort_idx)]
+
+    # Load coarse centroids and compute sorted RDMs
+    coarse_rdms = {}
+    for cfg_id in COARSE_CFG_IDS:
+        key = f"centroids_{cfg_id}"
+        if key in data:
+            cent = data[key][valid]
+            rdm = compute_rdm(torch.tensor(cent, dtype=torch.float32)).numpy()
+            coarse_rdms[cfg_id] = rdm[np.ix_(sort_idx, sort_idx)]
+
+    # ── Figure layout ──
+    fig = plt.figure(figsize=(14, 8))
+
     gs_outer = gridspec.GridSpec(
         1, 2, figure=fig,
-        width_ratios=[1.3, 0.7],
+        width_ratios=[1.35, 0.65],
         wspace=0.22,
+        left=0.02, right=0.97, top=0.94, bottom=0.02,
     )
 
-    # Left: 2 rows (RDMs + category legend), 3 cols (RDM1, RDM2, colorbar)
+    # ── Panel A: 2×3 RDM grid with category legend below ──
     gs_left = gridspec.GridSpecFromSubplotSpec(
-        2, 3, subplot_spec=gs_outer[0, 0],
-        width_ratios=[1, 1, 0.035],
-        height_ratios=[1.0, 0.12],
-        hspace=0.10, wspace=0.14,
+        2, 1, subplot_spec=gs_outer[0, 0],
+        height_ratios=[1.0, 0.055],
+        hspace=0.06,
+    )
+    gs_rdms = gridspec.GridSpecFromSubplotSpec(
+        2, 3, subplot_spec=gs_left[0, 0],
+        wspace=0.10, hspace=0.16,
     )
 
-    ax_rdm1 = fig.add_subplot(gs_left[0, 0])
-    ax_rdm2 = fig.add_subplot(gs_left[0, 1])
-    ax_cb = fig.add_subplot(gs_left[0, 2])
-    ax_legend = fig.add_subplot(gs_left[1, :])
+    rdm_order = COARSE_CFG_IDS + [1000]  # 4, 8, 16, 32, 64, 1000
+    rdm_titles = [f"{c}-way" for c in COARSE_CFG_IDS] + ["1000-way"]
+    rdm_axes = []
+    im = None
+
+    for i, (cfg_id, title) in enumerate(zip(rdm_order, rdm_titles)):
+        row, col = divmod(i, 3)
+        ax = fig.add_subplot(gs_rdms[row, col])
+        rdm_axes.append(ax)
+        rdm = rdm_1k_sorted if cfg_id == 1000 else coarse_rdms.get(cfg_id)
+        if rdm is not None:
+            im = plot_rdm_panel(ax, rdm, block_boundaries, n_classes, title)
+        else:
+            ax.set_title(title, fontsize=9.5, fontweight="bold", pad=6,
+                         color="#1a1a1a")
+            ax.text(0.5, 0.5, "No data", ha="center", va="center",
+                    transform=ax.transAxes, fontsize=9, color="#999")
+            ax.set_xticks([]); ax.set_yticks([])
+
+    # Colorbar — inset next to last RDM in top row
+    from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+    ax_last_top = rdm_axes[2]  # top-right RDM
+    ax_cb = inset_axes(ax_last_top, width="3.5%", height="100%",
+                       loc="center right",
+                       bbox_to_anchor=(0.09, 0, 1, 1),
+                       bbox_transform=ax_last_top.transAxes, borderpad=0)
+    cb = plt.colorbar(im, cax=ax_cb)
+    cb.ax.tick_params(labelsize=6.5, length=2.5, width=0.5, pad=2)
+    cb.outline.set_linewidth(0.4)
+    cb.ax.yaxis.set_major_locator(mticker.FixedLocator([0, 0.5, 1.0]))
+    cb.ax.set_ylabel("Dissimilarity (rank)", fontsize=7, labelpad=6,
+                      rotation=270, va="bottom")
+
+    # Category legend (compact, below RDM grid)
+    ax_legend = fig.add_subplot(gs_left[1, 0])
     ax_legend.axis("off")
+    legend_handles = [
+        mpatches.Patch(facecolor=CATEGORY_COLORS[i], edgecolor="none", label=name)
+        for i, name in enumerate(CATEGORY_NAMES)
+    ]
+    ax_legend.legend(handles=legend_handles, loc="center", fontsize=7,
+                     frameon=False, ncol=4, columnspacing=0.9,
+                     handlelength=1.2, handleheight=0.9, labelspacing=0.35,
+                     bbox_to_anchor=(0.48, 0.5))
 
-    rsa_score = plot_panel_a([ax_rdm1, ax_rdm2], ax_cb, ax_legend)
-
-    # RSA annotation in the gap between the two RDMs
-    pos1 = ax_rdm1.get_position()
-    pos2 = ax_rdm2.get_position()
-    gap_x = (pos1.x1 + pos2.x0) / 2
-    gap_y = (pos1.y0 + pos1.y1) / 2
-    fig.text(gap_x, gap_y,
-             f"$\\rho_s$ = {rsa_score:.3f}",
-             ha="center", va="center", fontsize=8, color="#333333",
-             fontweight="semibold", rotation=90,
-             bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="#BBBBBB",
-                       alpha=0.95, linewidth=0.6))
-
-    # Right: bar chart aligned with RDMs (same 2-row split)
+    # ── Panel B: two stacked bar plots ──
     gs_right = gridspec.GridSpecFromSubplotSpec(
         2, 1, subplot_spec=gs_outer[0, 1],
-        height_ratios=[1.0, 0.12],
-        hspace=0.10,
+        height_ratios=[1.0, 1.0],
+        hspace=0.38,
     )
-    ax_bars = fig.add_subplot(gs_right[0, 0])
-    plot_panel_b(ax_bars)
-    # Hide bottom-right to match legend row
-    ax_blank = fig.add_subplot(gs_right[1, 0])
-    ax_blank.set_visible(False)
+    ax_rsa = fig.add_subplot(gs_right[0, 0])
+    ax_proj = fig.add_subplot(gs_right[1, 0])
+    plot_panel_b_rsa(ax_rsa)
+    plot_panel_b_projection(ax_proj)
 
-    # Panel labels
-    ax_rdm1.text(-0.10, 1.06, "A", transform=ax_rdm1.transAxes,
-                 fontsize=14, fontweight="bold", va="top")
-    ax_bars.text(-0.16, 1.06, "B", transform=ax_bars.transAxes,
-                 fontsize=14, fontweight="bold", va="top")
+    # ── Panel labels ──
+    rdm_axes[0].text(-0.06, 1.10, "A", transform=rdm_axes[0].transAxes,
+                     fontsize=15, fontweight="bold", va="top", ha="left",
+                     fontfamily="sans-serif")
+    ax_rsa.text(-0.12, 1.12, "B", transform=ax_rsa.transAxes,
+                fontsize=15, fontweight="bold", va="top", ha="left",
+                fontfamily="sans-serif")
 
-    # Save
+    # ── Save ──
     out = os.path.join(OUTPUT_DIR, "figure2.png")
     fig.savefig(out, dpi=600, bbox_inches="tight", facecolor="white",
                 edgecolor="none")
