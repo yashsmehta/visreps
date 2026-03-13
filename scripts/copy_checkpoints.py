@@ -7,8 +7,8 @@ import os, subprocess
 # so we only need it for the default (1000-way) network.
 jobs = [
     {
-        "folder": "pixels_pca",
-        "subdirs": [f"cfg{n}{s}" for n in [2, 4, 8, 16, 32, 64] for s in "abc"],
+        "folder": "wordnet_pca",
+        "subdirs": [f"cfg{n}{s}" for n in [2, 3, 4, 10, 20, 57] for s in "a"],
         "files": ["checkpoint_epoch_20.pth", "config.json"],
     },
 ]
@@ -42,11 +42,15 @@ for job in jobs:
     folder = job["folder"]
     remote_folder = f"{remote_base}/{folder}"
     ls_targets = " ".join(f"{remote_folder}/{s}" for s in job["subdirs"])
-    subdirs = subprocess.check_output(
+    result = subprocess.run(
         ["ssh", "-o", f"ControlPath={control_path}", ssh_target,
          f"ls -d {ls_targets} 2>/dev/null"],
-        text=True
-    ).split()
+        capture_output=True, text=True
+    )
+    if not result.stdout.strip():
+        print(f"⚠ No matching directories found for {folder} on remote. Skipping.")
+        continue
+    subdirs = result.stdout.split()
 
     for subdir in subdirs:
         cfg = os.path.basename(subdir)
