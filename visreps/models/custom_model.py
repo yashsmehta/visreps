@@ -18,7 +18,7 @@ class BaseCNN(nn.Module):
         trainable_layers=None,
         dropout=0.5,
         pooling_type="max",
-        norm_type="group",
+        norm_type="batch",
     ):
         super().__init__()
         self.num_classes = num_classes
@@ -43,6 +43,8 @@ class BaseCNN(nn.Module):
 
     def _norm(self, channels, spatial=True):
         """Normalization layer. Use spatial=True for conv, False for FC."""
+        if self.norm_type == "layer":
+            return nn.GroupNorm(1, channels)
         if self.norm_type == "group":
             return nn.GroupNorm(GN_NUM_GROUPS, channels)
         if self.norm_type == "batch":
@@ -118,7 +120,7 @@ class TinyCustomCNN(BaseCNN):
     """CNN for Tiny ImageNet (64x64 inputs)."""
 
     def __init__(self, num_classes=200, trainable_layers=None, dropout=0.3,
-                 pooling_type="max", norm_type="group"):
+                 pooling_type="max", norm_type="batch"):
         super().__init__(num_classes, trainable_layers, dropout, pooling_type, norm_type)
 
     def _build_architecture(self):
@@ -166,7 +168,7 @@ class CustomCNN(BaseCNN):
     """AlexNet-style CNN for ImageNet (224x224 inputs)."""
 
     def __init__(self, num_classes=1000, trainable_layers=None, dropout=0.5,
-                 pooling_type="max", norm_type="group"):
+                 pooling_type="max", norm_type="batch"):
         super().__init__(num_classes, trainable_layers, dropout, pooling_type, norm_type)
 
     def _build_architecture(self):

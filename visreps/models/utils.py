@@ -491,7 +491,7 @@ def load_model(cfg, device, num_classes=None, verbose=False):
             },
             'dropout': getattr(custom_cfg, 'dropout', 0.5),
             'pooling_type': getattr(custom_cfg, 'pooling_type', 'max'),
-            'norm_type': getattr(custom_cfg, 'norm_type', 'group'),
+            'norm_type': getattr(custom_cfg, 'norm_type', 'batch'),
         }
         if 'tiny' in model_name.lower():
             model = TinyCustomCNN(**model_params)
