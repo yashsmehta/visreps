@@ -39,7 +39,7 @@ N_IMAGES_PER_CLASS = 10
 CHECKPOINT_DIR_1K = "/data/ymehta3/default"
 CHECKPOINT_DIR_CLIP = "/data/ymehta3/clip_pca"
 COARSE_CFG_IDS = [4, 8, 16, 32, 64]
-SEED = 1
+SEED = 3
 
 # WordNet-derived adaptive-depth categories (11 groups, all >= 35 classes).
 # Uses depth 6 for living_thing and instrumentality, depth 5 for other
@@ -282,6 +282,15 @@ def compute_data(layer, n_per_class):
     class_to_cat = get_class_to_category(dataset)
     categories = np.array([class_to_cat.get(i, -1) for i in range(1000)])
 
+    # Extract centroids: pretrained AlexNet (for PC1-based sort order)
+    print(f"\n--- Pretrained AlexNet ---")
+    model_pre = load_model_by_config('pretrained', None, device=device)
+    centroids_pre, valid_pre = extract_class_centroids(
+        model_pre, dataset, class_image_indices, layer, device)
+    del model_pre
+    torch.cuda.empty_cache()
+    print(f"  Extracted centroids: {centroids_pre.shape}")
+
     # Extract centroids: 1000-way model
     print(f"\n--- 1000-way model (seed {SEED}) ---")
     model_1k = load_model_by_config(1000, SEED, checkpoint_dir=CHECKPOINT_DIR_1K,
@@ -309,6 +318,7 @@ def compute_data(layer, n_per_class):
     # Save cache — store coarse centroids keyed by cfg_id
     save_dict = {
         "centroids_1k": centroids_1k,
+        "centroids_pretrained": centroids_pre,
         "categories": categories,
         "valid_1k": valid_1k,
     }

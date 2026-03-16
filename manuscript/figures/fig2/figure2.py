@@ -15,7 +15,6 @@ import argparse
 
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 import matplotlib.gridspec as gridspec
 import matplotlib.ticker as mticker
 from matplotlib.lines import Line2D
@@ -30,11 +29,10 @@ import torch
 sys.path.insert(0, ".")
 from visreps.analysis.rsa import compute_rdm
 
-# Import shared RDM helpers and category definitions from plot_class_rdms
+# Import shared RDM helpers from plot_class_rdms
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from plot_class_rdms import (
-    CATEGORY_NAMES, CATEGORY_COLORS, COARSE_CFG_IDS,
-    rank_transform, build_sort_order, draw_sidebar, draw_boundaries,
+    COARSE_CFG_IDS, rank_transform,
 )
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -47,7 +45,7 @@ OUTPUT_DIR = SCRIPT_DIR
 
 # ── RDM panel (rank-transformed for composite figure) ───────────────────
 
-def plot_rdm_panel(ax, rdm, block_boundaries, n, title):
+def plot_rdm_panel(ax, rdm, title):
     """Draw a single RDM panel with rank-transformed dissimilarity."""
     rdm_ranked = rank_transform(rdm)
     im = ax.imshow(rdm_ranked, cmap="magma", interpolation="nearest",
@@ -56,11 +54,6 @@ def plot_rdm_panel(ax, rdm, block_boundaries, n, title):
     ax.set_xticks([]); ax.set_yticks([])
     for spine in ax.spines.values():
         spine.set_visible(False)
-    draw_boundaries(ax, block_boundaries, n, lw=0.6, alpha=0.75)
-    draw_sidebar(ax, block_boundaries, n, side="left",
-                 width_frac=0.022, gap_frac=0.006)
-    draw_sidebar(ax, block_boundaries, n, side="bottom",
-                 width_frac=0.022, gap_frac=0.006)
     return im
 
 
@@ -276,23 +269,23 @@ def main():
     # ── Load RDM data ──
     data = np.load(RDM_CACHE)
     centroids_1k = data["centroids_1k"]
-    categories = data["categories"]
-    valid = categories >= 0
-    centroids_1k = centroids_1k[valid]
-    categories = categories[valid]
-    n_classes = len(categories)
+    centroids_pre = data["centroids_pretrained"]
+    n_classes = centroids_1k.shape[0]
 
-    # Compute 1000-way RDM and sort order
+    # Sort order: PC1 of pretrained AlexNet centroids
+    from sklearn.decomposition import PCA
+    pc1_scores = PCA(n_components=1).fit_transform(centroids_pre).ravel()
+    sort_idx = np.argsort(pc1_scores)
+
+    # Compute sorted RDMs
     rdm_1k = compute_rdm(torch.tensor(centroids_1k, dtype=torch.float32)).numpy()
-    sort_idx, block_boundaries = build_sort_order(categories, rdm_1k)
     rdm_1k_sorted = rdm_1k[np.ix_(sort_idx, sort_idx)]
 
-    # Load coarse centroids and compute sorted RDMs
     coarse_rdms = {}
     for cfg_id in COARSE_CFG_IDS:
         key = f"centroids_{cfg_id}"
         if key in data:
-            cent = data[key][valid]
+            cent = data[key]
             rdm = compute_rdm(torch.tensor(cent, dtype=torch.float32)).numpy()
             coarse_rdms[cfg_id] = rdm[np.ix_(sort_idx, sort_idx)]
 
@@ -323,14 +316,9 @@ def main():
         left=0.02, right=0.97, top=0.93, bottom=0.04,
     )
 
-    # ── Panel A: 2×3 RDM grid with category legend below ──
-    gs_left = gridspec.GridSpecFromSubplotSpec(
-        2, 1, subplot_spec=gs_outer[0, 0],
-        height_ratios=[1.0, 0.055],
-        hspace=0.06,
-    )
+    # ── Panel A: 2×3 RDM grid ──
     gs_rdms = gridspec.GridSpecFromSubplotSpec(
-        2, 3, subplot_spec=gs_left[0, 0],
+        2, 3, subplot_spec=gs_outer[0, 0],
         wspace=0.10, hspace=0.14,
     )
 
@@ -345,7 +333,7 @@ def main():
         rdm_axes.append(ax)
         rdm = rdm_1k_sorted if cfg_id == 1000 else coarse_rdms.get(cfg_id)
         if rdm is not None:
-            im = plot_rdm_panel(ax, rdm, block_boundaries, n_classes, title)
+            im = plot_rdm_panel(ax, rdm, title)
         else:
             ax.set_title(title, fontsize=9.5, fontweight="bold", pad=6,
                          color="#1a1a1a")
@@ -365,18 +353,6 @@ def main():
     cb.ax.yaxis.set_major_locator(mticker.FixedLocator([0, 0.5, 1.0]))
     cb.ax.set_ylabel("Dissimilarity (rank)", fontsize=7.5, labelpad=7,
                       rotation=270, va="bottom")
-
-    # Category legend (compact, below RDM grid)
-    ax_legend = fig.add_subplot(gs_left[1, 0])
-    ax_legend.axis("off")
-    legend_handles = [
-        mpatches.Patch(facecolor=CATEGORY_COLORS[i], edgecolor="none", label=name)
-        for i, name in enumerate(CATEGORY_NAMES)
-    ]
-    ax_legend.legend(handles=legend_handles, loc="center", fontsize=7.5,
-                     frameon=False, ncol=4, columnspacing=1.1,
-                     handlelength=1.3, handleheight=0.9, labelspacing=0.4,
-                     bbox_to_anchor=(0.48, 0.5))
 
     # ── Panel B: PC scatter with image insets ──
     if has_pc_data:
