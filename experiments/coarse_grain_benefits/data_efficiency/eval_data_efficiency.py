@@ -1,7 +1,7 @@
 """
-Evaluate data-efficiency trained models on THINGS behavioral alignment and
-NSD ventral visual stream. Uses the standard two-phase RSA pipeline (layer
-selection on train, re-extract best layer on test).
+Evaluate data-efficiency trained models on THINGS behavioral alignment,
+NSD ventral visual stream, and TVSD IT. Uses the standard two-phase RSA
+pipeline (layer selection on train, re-extract best layer on test).
 
 Results are saved to a single combined CSV: data_efficiency_results.csv
 
@@ -10,9 +10,11 @@ Usage (from project root):
     python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py --datasets imagenet-mini-50
     python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py --conditions 16 32
     python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py --benchmarks things
+    python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py --benchmarks tvsd
     python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py --print_only
 """
 
+import gc
 import os
 import sys
 import argparse
@@ -24,6 +26,7 @@ os.chdir(PROJECT_ROOT)
 from dotenv import load_dotenv
 load_dotenv(os.path.join(PROJECT_ROOT, '.env'))
 
+import torch
 import pandas as pd
 import visreps.evals as evals
 from visreps.utils import load_config, validate_config
@@ -61,6 +64,7 @@ def build_overrides(dataset, condition_id, epoch, benchmark):
         "load_model_from=checkpoint",
         "log_expdata=false",
         "batchsize=256",
+        "num_workers=0",
     ]
     if "pca_labels_folder" in cond:
         overrides.append(f"pca_labels_folder={cond['pca_labels_folder']}")
@@ -71,22 +75,25 @@ def build_overrides(dataset, condition_id, epoch, benchmark):
         overrides.append("neural_dataset=nsd")
         overrides.append("region=ventral visual stream")
         overrides.append("subject_idx=[0,1,2,3,4,5,6,7]")
+    elif benchmark == "tvsd":
+        overrides.append("neural_dataset=tvsd")
+        overrides.append("region=IT")
+        overrides.append("subject_idx=[0,1]")
 
     return overrides
 
 
-def result_exists(dataset, condition_id, epoch, benchmark):
-    """Check if result already exists in CSV."""
+def load_existing_results():
+    """Load existing CSV once and return set of completed (dataset, condition, epoch, benchmark) tuples."""
     if not os.path.exists(CSV_PATH):
-        return False
+        return set()
     df = pd.read_csv(CSV_PATH)
-    mask = (
-        (df["dataset"] == dataset) &
-        (df["condition"] == condition_id) &
-        (df["epoch"] == epoch) &
-        (df["benchmark"] == benchmark)
-    )
-    return mask.any()
+    return set(zip(df["dataset"], df["condition"], df["epoch"], df["benchmark"]))
+
+
+def result_exists(completed, dataset, condition_id, epoch, benchmark):
+    """Check if result already exists using pre-loaded set."""
+    return (dataset, condition_id, epoch, benchmark) in completed
 
 
 def checkpoint_exists(dataset, condition_id, epoch):
@@ -182,6 +189,34 @@ def eval_nsd(dataset, condition_id, epoch):
     return rows
 
 
+def eval_tvsd(dataset, condition_id, epoch):
+    """Run TVSD IT eval — returns per-subject rows (2 monkeys)."""
+    print(f"\n{'='*60}")
+    print(f"Evaluating: {condition_id}-class | {dataset} | epoch {epoch} | tvsd")
+    print(f"{'='*60}")
+
+    overrides = build_overrides(dataset, condition_id, epoch, "tvsd")
+    cfg = load_config("configs/eval/base.json", overrides)
+    cfg = validate_config(cfg)
+    result_df = evals.eval(cfg)
+
+    rows = []
+    for i, (_, r) in enumerate(result_df.iterrows()):
+        rows.append({
+            "dataset": dataset,
+            "condition": condition_id,
+            "epoch": epoch,
+            "benchmark": "tvsd",
+            "subject_idx": i,
+            "layer": r["layer"],
+            "score": round(r["score"], 4),
+            "ci_low": round(r["ci_low"], 4) if r.get("ci_low") is not None else None,
+            "ci_high": round(r["ci_high"], 4) if r.get("ci_high") is not None else None,
+        })
+
+    return rows
+
+
 def print_summary(datasets, conditions, benchmarks):
     """Print results summary table."""
     if not os.path.exists(CSV_PATH):
@@ -197,9 +232,11 @@ def print_summary(datasets, conditions, benchmarks):
 
         print(f"\n{'='*70}")
         if bench == "things":
-            print(f"THINGS Behavioral Alignment — Data Efficiency")
-        else:
-            print(f"NSD Ventral Stream Alignment — Data Efficiency (mean across subjects)")
+            print("THINGS Behavioral Alignment — Data Efficiency")
+        elif bench == "nsd":
+            print("NSD Ventral Stream Alignment — Data Efficiency (mean across subjects)")
+        elif bench == "tvsd":
+            print("TVSD IT Alignment — Data Efficiency (mean across subjects)")
         print(f"{'='*70}")
         print(f"{'Dataset':<22} {'Condition':>10} {'Epoch':>6} {'Score':>8}")
         print(f"{'-'*70}")
@@ -222,7 +259,7 @@ def print_summary(datasets, conditions, benchmarks):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Evaluate data efficiency models on THINGS and NSD")
+        description="Evaluate data efficiency models on THINGS, NSD, and TVSD")
     parser.add_argument("--datasets", type=str, nargs="+", default=DATASETS,
                         choices=DATASETS)
     parser.add_argument("--conditions", type=int, nargs="+",
@@ -230,8 +267,8 @@ def main():
                         choices=list(CONDITIONS.keys()))
     parser.add_argument("--epochs", type=int, nargs="+", default=EPOCHS)
     parser.add_argument("--benchmarks", type=str, nargs="+",
-                        default=["things", "nsd"],
-                        choices=["things", "nsd"])
+                        default=["things", "nsd", "tvsd"],
+                        choices=["things", "nsd", "tvsd"])
     parser.add_argument("--force", action="store_true",
                         help="Re-evaluate even if result exists in CSV")
     parser.add_argument("--no_bootstrap", action="store_true")
@@ -244,6 +281,7 @@ def main():
 
     total = len(args.datasets) * len(args.conditions) * len(args.epochs) * len(args.benchmarks)
     completed, skipped = 0, 0
+    existing = load_existing_results()
 
     for dataset in args.datasets:
         for condition_id in args.conditions:
@@ -257,7 +295,7 @@ def main():
                         continue
 
                     # Skip if result already in CSV
-                    if not args.force and result_exists(dataset, condition_id, epoch, benchmark):
+                    if not args.force and result_exists(existing, dataset, condition_id, epoch, benchmark):
                         print(f"[SKIP] {condition_id}-class {dataset} epoch {epoch} "
                               f"{benchmark} — already evaluated")
                         skipped += 1
@@ -265,11 +303,17 @@ def main():
 
                     if benchmark == "things":
                         rows = eval_run(dataset, condition_id, epoch, benchmark)
-                    else:
+                    elif benchmark == "nsd":
                         rows = eval_nsd(dataset, condition_id, epoch)
+                    elif benchmark == "tvsd":
+                        rows = eval_tvsd(dataset, condition_id, epoch)
 
                     save_results(rows)
                     completed += 1
+
+                    # Release file handles between runs to avoid "Too many open files"
+                    gc.collect()
+                    torch.cuda.empty_cache()
 
     print(f"\nEvaluation complete. {completed}/{total} runs executed, {skipped} skipped.")
     print_summary(args.datasets, args.conditions, args.benchmarks)

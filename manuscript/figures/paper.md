@@ -37,7 +37,7 @@ The six main figures follow a progression: **method overview → representation 
 2. **Figure 2** establishes that coarse-trained representations are genuinely different from 1000-way representations — via class-level RDMs, cross-model RSA, projection controls, and PC-space visualizations with image insets showing the geometric reorganization.
 3. **Figure 3** presents neural alignment across species: macaque electrophysiology (TVSD) and human fMRI (NSD) side by side, with coarseness curves (raw Spearman ρ). Per-layer profiles in supplementary.
 4. **Figure 4** presents behavioral alignment (THINGS): coarseness results, model comparison with pretrained baselines, and RDM visualizations explaining *why* coarse models win.
-5. **Figure 5** digs into per-concept alignment: which semantic categories drive the coarse advantage, and how broad is the effect?
+5. **Figure 5** digs into per-concept alignment: which semantic categories drive the coarse advantage, how broad is the effect, and which behavioral dimensions explain the pattern?
 6. **Figure 6** introduces the data-efficiency paradigm: coarse vs fine-grained training at varying data scales.
 
 ---
@@ -244,15 +244,15 @@ Concepts sorted by the 27 THINGS semantic categories with boundary lines overlai
 
 **Narrative role:** Dig deeper into *which* concepts drive the coarse advantage on THINGS behavioral alignment. The scatter plot and histogram from the original Figure 4 are expanded here as standalone panels, with room for additional analyses.
 
-### Layout — 1 row × 2 columns
+### Layout — 1 row × 3 columns
 
 ```
-┌─────────────────────┬──────────────────────┐
-│ Per-concept         │ Per-concept           │
-│ scatter             │ advantage histogram   │
-│ (CLIP 8-class       │                       │
-│  vs. 1000-way)      │                       │
-└─────────────────────┴──────────────────────┘
+┌─────────────────────┬──────────────────────┬──────────────────────┐
+│ Per-concept         │ Per-concept           │ Dimension            │
+│ scatter             │ advantage histogram   │ profiling            │
+│ (CLIP 8-class       │                       │ (barh: top 25        │
+│  vs. 1000-way)      │                       │  THINGS dims)        │
+└─────────────────────┴──────────────────────┴──────────────────────┘
 ```
 
 ### Panel A — Per-concept scatter plot (CLIP model)
@@ -269,11 +269,21 @@ Histogram of per-concept advantage: `(coarse_score - 1000way_score)` for each ev
 - *Key visual:* Distribution clearly shifted right. Vertical line at zero divides coarse-advantage (green) from 1K-advantage (orange) bins.
 - *Key message:* Quantifies that the advantage is broad — not driven by outlier concepts.
 
+### Panel C — Semantic dimension profiling
+
+Horizontal bar chart showing Spearman ρ between per-concept advantage (CLIP 8-class − 1000-way) and each of the 66 THINGS behavioral dimensions. Top 25 dimensions by |ρ| displayed. Bars sorted descending (most positive at top, most negative at bottom) with symmetric x-axis. Green = dimension loading favors 8-class model; red = favors 1000-class.
+
+- *Key visual:* Animal-related, plant-related dimensions strongly favor coarse models; home/furnishing, metallic/artificial dimensions favor 1000-way.
+- *Key message:* The coarse advantage is driven by high-level categorical dimensions (animate, natural), while fine-grained training excels on lower-level material/functional properties.
+- *Script:* `manuscript/figures/fig5/dimension_profiling.py`
+
 ### Observed results
 
 **(A) Per-concept scatter.** 1,207 of 1,854 concepts (~70%) fall above the diagonal. Green-colored clusters (plants, animals) are consistently above; orange clusters (body parts, tools) are below.
 
 **(B) Histogram.** Δρ distribution is right-shifted with median ≈ +0.088. Spans approximately −0.50 to +0.75, with the positive tail substantially longer.
+
+**(C) Dimension profiling.** Animal-related (ρ ≈ +0.19) and plant-related (ρ ≈ +0.17) dimensions most strongly favor coarse models. Home/furnishing (ρ ≈ −0.29) and metallic/artificial (ρ ≈ −0.21) most strongly favor 1000-way. All 66 dimensions significant after FDR correction.
 
 ---
 
@@ -283,35 +293,43 @@ Histogram of per-concept advantage: `(coarse_score - 1000way_score)` for each ev
 
 **Narrative role:** Introduce a new analysis paradigm — varying the number of training images per class while holding granularity constant. Shows that coarse-trained models are more data-efficient than fine-grained models on behavioral alignment.
 
-### Layout — 1 row × 2 columns
+### Layout — 1 row × 3 columns
 
 ```
-┌─────────────────────┬──────────────────────┐
-│ Schematic           │ Data-efficiency       │
-│ (paradigm)          │ bars                  │
-│                     │ (8-class vs 1000-     │
-│                     │  class at 4 scales)   │
-└─────────────────────┴──────────────────────┘
+┌─────────────────────┬──────────────────────┬──────────────────────┐
+│ Schematic           │ NSD                  │ THINGS               │
+│ (paradigm)          │ (Ventral Stream)     │ (Behavioral)         │
+│                     │ line plot            │ line plot            │
+└─────────────────────┴──────────────────────┴──────────────────────┘
 ```
 
 ### Panel A — Data-efficiency paradigm schematic
 
-Schematic showing the experimental paradigm: same model architecture trained with coarse (8-class) vs fine (1000-class) labels, but varying the number of training images per class (5, 10, 50, ~1300).
+Schematic showing the experimental paradigm: same model architecture trained with coarse (8, 16, 32-class) vs fine (1000-class) labels, but varying the number of training images (5K, 10K, 50K, 1.2M).
 
 - *Key message:* Introduces the data-efficiency question: does the coarse advantage persist when data is limited?
 
-### Panel B — Data-efficiency paired bars
+### Panel B — NSD Ventral Stream (line plot)
 
-Paired bars at 4 data scales: 5, 10, 50, ~1300 images per class. Each pair compares coarse 8-class (dark blue) vs fine 1000-class (amber) on THINGS behavioral alignment.
+Line plot with 4 conditions (8, 16, 32, 1000-class) across 4 data scales (5K, 10K, 50K, 1.2M training images). Green shades for coarse models, orange for 1000-class.
 
-- *Key visual:* The coarse advantage is present at all data scales and grows larger with less data.
-- *Key message:* Coarse training is not only better at full scale — it is also more data-efficient.
+- *Key visual:* Coarse models consistently outperform 1000-class at all data scales, with the gap narrowing at full scale.
+- *Key message:* Coarse training provides a better inductive bias when data is limited, even for neural alignment.
+
+### Panel C — THINGS Behavioral (line plot)
+
+Same line-plot format as Panel B, showing behavioral alignment (Spearman ρ) across data scales.
+
+- *Key visual:* The coarse advantage is dramatic and persistent — 1000-class never catches up, even at full ImageNet.
+- *Key message:* Coarse training is not only better at full scale — it is vastly more data-efficient for behavioral alignment.
 
 ### Observed results
 
 **(A)** Schematic (no data).
 
-**(B) Data-efficiency bars.** At all 4 data scales, coarse 8-class exceeds 1000-class. The gap is largest at small scales (5–10 images/class) where the 1000-way model struggles but the coarse model maintains strong alignment.
+**(B) NSD Ventral Stream.** All coarse models (8, 16, 32-class) outperform 1000-class across all data scales. At 5K, coarse models achieve ρ ≈ 0.10 while 1000-class is at ρ ≈ 0.05. All models converge toward ρ ≈ 0.25 at full scale (1.2M), but coarse models maintain a slight edge.
+
+**(C) THINGS Behavioral.** The headline data-efficiency result. At 5K, 8-class achieves ρ ≈ 0.45 while 1000-class reaches only ρ ≈ 0.27. The gap persists at all scales. At full ImageNet (1.2M), coarse models reach ρ ≈ 0.57 vs 1000-class at ρ ≈ 0.40.
 
 ---
 
@@ -360,7 +378,7 @@ All scripts live in `manuscript/figures/supplementary/` and are run from the pro
 | Figure | Script | What it shows | Key takeaway |
 |--------|--------|---------------|-------------|
 | **S12** | `supp_s12_representation_summary.py` | Eigenspectrum, participation ratio, TwoNN intrinsic dim, sparsity across granularity (2×2) | Coarse models concentrate variance in fewer dimensions with higher sparsity. |
-| **S13** | `supp_s13_dimension_profiling.py` | Horizontal bar chart: top 25 THINGS behavioral dimensions correlated with per-concept coarse advantage | Animal/plant dimensions drive coarse advantage; home/furnishing dimensions favor 1000-way. |
+| ~~**S13**~~ | *(moved to Figure 5C)* | | |
 | **S14** | `supp_s14_image_collages.py` | Composite of example images where coarse wins vs. 1000-way wins | Visual intuition for which concepts benefit from coarse vs. fine-grained training. |
 | **S15** | `supp_s15_pc_poles.py` | Most/least activating ImageNet images for top PCs of AlexNet + CLIP | PC1 separates natural/man-made; higher PCs capture progressively finer semantic axes. |
 | **S16** | `supp_s16_levels.py` | Levels benchmark (Muttenthaler et al. 2025): 3×3 grid (metrics × triplet types) | Coarse models improve on between-class and class-boundary triplets; within-class converges at moderate granularity. |
@@ -387,6 +405,7 @@ manuscript/figures/
 │   └── figure4.png
 ├── fig5/                       # Per-concept alignment analysis
 │   ├── figure5.py              # Scatter + histogram
+│   ├── dimension_profiling.py  # Semantic dimension profiling (Panel C)
 │   └── figure5.png
 ├── fig6/                       # Data efficiency
 │   ├── figure6.py              # Schematic + data-efficiency bars

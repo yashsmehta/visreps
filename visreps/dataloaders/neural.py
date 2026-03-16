@@ -511,6 +511,8 @@ def custom_collate_fn(
 
 
 def _make_loader(stimuli, transform, batch, workers):
+    mp_kwargs = ({"persistent_workers": True, "prefetch_factor": 2}
+                 if workers > 0 else {})
     return DataLoader(
         _StimuliDataset(stimuli, transform),
         batch_size=batch,
@@ -518,8 +520,7 @@ def _make_loader(stimuli, transform, batch, workers):
         num_workers=workers,
         collate_fn=custom_collate_fn,
         pin_memory=torch.cuda.is_available(),
-        persistent_workers=True,
-        prefetch_factor=2,
+        **mp_kwargs,
     )
 
 

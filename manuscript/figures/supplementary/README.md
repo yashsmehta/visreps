@@ -24,7 +24,7 @@ Figures are organized thematically: validation → extended main results → ana
 | **S10** | Additional PCA Source Models (ViT + DINOv3) | `supp_s10_dinov2.py` | Main findings replicate with ViT and DINOv3 labels — not contingent on any single PCA source. |
 | **S11** | WordNet Hierarchy | `supp_s11_wordnet.py` | Results using WordNet-derived coarse labels as an alternative to PCA-based labels. |
 | **S12** | Internal Representation Analysis | `supp_s12_representation_summary.py` | Eigenspectrum, participation ratio, intrinsic dimensionality, and sparsity across granularity. |
-| **S13** | THINGS Dimension Profiling | `supp_s13_dimension_profiling.py` | Which of the 66 behavioral dimensions drive the coarse model advantage. |
+| ~~**S13**~~ | *(Moved to Figure 5C)* | `manuscript/figures/fig5/dimension_profiling.py` | — |
 | **S14** | Image Collages | `supp_s14_image_collages.py` | Representative images for concepts where coarse wins vs. 1000-way wins. |
 | **S15** | PC Axis Interpretation | `supp_s15_pc_poles.py` | Most/least activating images for the top PCs of each source model. |
 | **S16** | Levels Evaluation | `supp_s16_levels.py` | Results on the hierarchical Levels benchmark (Muttenthaler et al. 2025). |
@@ -50,7 +50,7 @@ python manuscript/figures/supplementary/supp_s9_score_distributions.py
 python manuscript/figures/supplementary/supp_s10_dinov2.py
 python manuscript/figures/supplementary/supp_s11_wordnet.py
 python manuscript/figures/supplementary/supp_s12_representation_summary.py
-python manuscript/figures/supplementary/supp_s13_dimension_profiling.py
+# S13 moved to main Figure 5C: python manuscript/figures/fig5/dimension_profiling.py
 python manuscript/figures/supplementary/supp_s16_levels.py
 
 # Image-loading figures (need ImageNet access)
@@ -68,7 +68,7 @@ python manuscript/figures/supplementary/supp_s15_pc_poles.py
 | Training metrics | `/data/ymehta3/{alexnet_pca,default}/cfg*/training_metrics.csv` | S1 |
 | Stimulus robustness cache | `manuscript/figures/supplementary/supp_s8_data.npz` | S8 |
 | Representation analysis | `experiments/representation_analysis/figs/*.json` | S12 |
-| THINGS viz data | `experiments/things_visualizations/data/things_viz_data.npz` | S13, S14 |
+| THINGS viz data | `experiments/things_visualizations/data/things_viz_data.npz` | Fig 5C, S14 |
 | Levels evaluation | `experiments/levels_evaluation/levels_summary.csv` | S16 |
 | PCA poles | `datasets/obj_cls/imagenet/pca_poles/` | S15 |
 

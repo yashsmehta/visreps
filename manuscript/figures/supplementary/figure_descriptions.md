@@ -108,11 +108,7 @@ Detailed **message** (what we want the reader to take away) and **result** (what
 
 ---
 
-## S14. THINGS Behavioral Dimension Profiling
-
-**Message:** The coarse model advantage is driven by high-level categorical dimensions (animal, plant, natural) while the 1000-way advantage is driven by lower-level material/functional properties (home furnishing, metallic, household). This reveals *what* the coarse model captures better.
-
-**Result:** Horizontal bar chart of top 25 dimensions by |ρ|, all 66/66 significant after FDR correction. Green bars (positive ρ) = high loading favors coarse model: **Animal** (ρ ≈ +0.25), **Plant** (ρ ≈ +0.24), **Bug/non-mammalian** (ρ ≈ +0.19), White, Grid/grating. These are high-variance categorical dimensions that structure similarity at the superordinate level. Red bars (negative ρ) = high loading favors 1000-way: **Home/furnishing** (ρ ≈ −0.30), **Metallic/artificial** (ρ ≈ −0.25), **Household** (ρ ≈ −0.22), Fluid/drink, Bathroom. These are material/functional properties that require within-category discrimination — exactly what 1000-way training emphasizes.
+## ~~S14. THINGS Behavioral Dimension Profiling~~ *Moved to main Figure 5C.*
 
 ---
 
@@ -132,7 +128,15 @@ Detailed **message** (what we want the reader to take away) and **result** (what
 
 ---
 
-## S17. Levels Evaluation (Hierarchical Similarity Benchmark)
+## S17. Seed Variability Across Benchmarks
+
+**Message:** Training stochasticity (random seed) is not a meaningful source of variance in the alignment results — seed-to-seed variability is consistently smaller than within-seed bootstrap uncertainty across all benchmarks.
+
+**Result:** 1×3 grid, ordered from invasive to behavioral. Four conditions per panel: 1000-class and CLIP coarse-grained at 8, 16, 32 classes. Each condition shows 3 individual seed scores (distinct markers) with 95% bootstrap CIs (error bars) and cross-seed mean (black line). (A) **TVSD IT** — widest CIs due to limited test data (2 monkeys, ~100 stimuli); CLIP-16 and CLIP-32 outperform 1000-class. Seed spread is ~0.01–0.02, well within bootstrap CIs. (B) **NSD Ventral** — moderate CIs (8 subjects, ~1K test stimuli); CLIP-16 leads at ~0.26, 1000-class at ~0.24. Seeds cluster within ~0.005. (C) **THINGS Behavioral** — tightest CIs (~1,480 concepts); coarse CLIP models (~0.56) dramatically exceed 1000-class (~0.39). Seed spread ~0.01, much smaller than the ~0.17 effect size. Complements S9 by isolating seed variability from inter-subject variability.
+
+---
+
+## S18. Levels Evaluation (Hierarchical Similarity Benchmark)
 
 **Message:** Coarse models improve on human similarity judgments specifically at the between-category level, where broad categorical structure determines the correct response — consistent with the THINGS findings.
 

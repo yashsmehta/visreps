@@ -6,7 +6,7 @@
 
 ## Overview
 
-This supplement provides additional analyses supporting the main findings. The supplementary figures are organized into six themes: (1) **training validation** (Figure S1), confirming that all models converge; (2) **extended main results** (Figures S2–S5), providing the cross-dataset summary, per-layer profiles, reconstruction controls, and per-architecture breakdowns omitted from main figures for conciseness; (3) **anatomical detail** (Figure S6), showing coarseness effects at finer ROI resolution; (4) **robustness and generalization** (Figures S7–S9), testing whether results hold under out-of-distribution stimuli, stimulus subsampling, and across individual subjects and seeds; (5) **alternative labels** (Figures S10–S11), demonstrating that findings replicate with ViT, DINOv3, and WordNet-derived labels; and (6) **representational and perceptual analysis** (Figures S12–S16), characterizing how coarse training reshapes internal representations, which behavioral dimensions drive the alignment advantage, and how the label space is structured.
+This supplement provides additional analyses supporting the main findings. The supplementary figures are organized into six themes: (1) **training validation** (Figure S1), confirming that all models converge; (2) **extended main results** (Figures S2–S5), providing the cross-dataset summary, per-layer profiles, reconstruction controls, and per-architecture breakdowns omitted from main figures for conciseness; (3) **anatomical detail** (Figure S6), showing coarseness effects at finer ROI resolution; (4) **robustness and generalization** (Figures S7–S9, S17), testing whether results hold under out-of-distribution stimuli, stimulus subsampling, across individual subjects and seeds, and across random training seeds; (5) **alternative labels** (Figures S10–S11), demonstrating that findings replicate with ViT, DINOv3, and WordNet-derived labels; and (6) **representational and perceptual analysis** (Figures S12–S16), characterizing how coarse training reshapes internal representations, which behavioral dimensions drive the alignment advantage, and how the label space is structured.
 
 All alignment scores use Spearman $\rho$ (RSA) unless otherwise noted. Error bars denote 95% bootstrap CIs (NSD, THINGS) or $\pm$1.96 SEM across monkeys $\times$ seeds (TVSD). Code for all figures is available in `manuscript/figures/supplementary/`.
 
@@ -108,11 +108,7 @@ All alignment scores use Spearman $\rho$ (RSA) unless otherwise noted. Error bar
 
 ---
 
-## Figure S13. Correlation of per-concept advantage with THINGS behavioral dimensions
-
-![Figure S13](figures/supplementary/supp_s13_dimension_profiling.png)
-
-**Figure S13. Specific behavioral dimensions drive the coarse model advantage.** For each of the 66 THINGS behavioral dimensions (Hebart et al., 2020), we compute the Spearman correlation between the per-concept alignment advantage (CLIP 4-way minus 1000-way per-concept RSA contribution) and each concept's loading on that dimension. Positive correlations (green) indicate dimensions favoring the coarse model; negative correlations (red) indicate dimensions favoring 1000-way. Asterisks denote FDR-corrected significance ($p < 0.05$). The top 25 dimensions by absolute correlation are shown. Dimensions related to broad visual categories — *animal-related*, *plant-related* — strongly favor the coarse model, while dimensions related to indoor environments and artificial objects — *home/furnishing*, *metallic/artificial* — favor 1000-way. This asymmetry provides a mechanistic explanation for the behavioral results in Figure 4: coarse models allocate representational capacity to the high-variance categorical axes that structure human perception.
+## ~~Figure S13.~~ *Moved to main Figure 5C.*
 
 ---
 
@@ -137,6 +133,14 @@ All alignment scores use Spearman $\rho$ (RSA) unless otherwise noted. Error bar
 ![Figure S16](figures/supplementary/supp_s16_levels.png)
 
 **Figure S16. Coarse models improve on the Levels hierarchical similarity benchmark, particularly for between-class triplets.** Results on the Levels dataset (Muttenthaler et al., 2025), which evaluates model representations against human similarity judgments structured at multiple taxonomic levels. Three metrics are shown (rows): odd-one-out accuracy, uncertainty alignment, and triplet RSA. Three triplet types are shown (columns): within-class, class-boundary, and between-class. Coarse models show clear improvements on between-class and class-boundary triplets, where broad categorical structure determines the correct response. For within-class triplets, performance converges toward the 1000-way baseline at higher granularity levels (32–64 classes). This pattern is consistent with the THINGS results (Figure 4): coarse training enhances the between-category representational structure that dominates human similarity judgments at the superordinate level.
+
+---
+
+## Figure S17. Seed variability across benchmarks
+
+![Figure S17](figures/supplementary/supp_s17_seed_variability.png)
+
+**Figure S17. Alignment scores are highly stable across random training seeds.** Individual seed scores (colored markers: circle = seed 1, square = seed 2, triangle = seed 3) with 95% bootstrap CIs (error bars) for the 1000-class baseline and three CLIP coarse-grained models (8, 16, 32 classes) across three high-level alignment benchmarks: macaque IT electrophysiology **(A)**, human ventral visual stream fMRI **(B)**, and THINGS behavioral similarity **(C)**. Black horizontal lines indicate the cross-seed mean. Across all conditions and benchmarks, seed-to-seed variability is substantially smaller than within-seed bootstrap uncertainty, confirming that training stochasticity is not a dominant source of variance in the alignment results. The largest seed spread occurs for TVSD IT **(A)**, which is expected given the limited test data (2 monkeys, ~100 stimuli). For THINGS **(C)**, both the scores and CIs are tightly clustered, reflecting the large evaluation set (~1,480 concepts). These results complement Figure S9 by isolating the effect of random initialization from inter-subject variability.
 
 ---
 
