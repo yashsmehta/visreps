@@ -189,7 +189,7 @@ class FeatureExtractor(nn.Module):
 
         For Sequential containers (AlexNet/VGG/CustomCNN), searches forward from
         each mapped module to find the next ReLU/GELU/LeakyReLU in the sequence.
-        This gives post-BatchNorm, post-ReLU activations — the actual output that
+        This gives post-normalization, post-ReLU activations — the actual output that
         downstream layers (and, by analogy, downstream brain areas) receive.
         """
         relu_mapping = {}
@@ -229,8 +229,8 @@ class FeatureExtractor(nn.Module):
     def _build_pre_post_mapping(self, base_mapping, post_mapping):
         """Build expanded mapping with _pre and _post entries for each layer.
 
-        _pre  = raw Conv2d/Linear output (before BatchNorm and ReLU)
-        _post = post-BatchNorm, post-ReLU output
+        _pre  = raw Conv2d/Linear output (before normalization and ReLU)
+        _post = post-normalization, post-ReLU output
 
         Layers where no activation function was found (base == post path)
         are kept as a single entry with no suffix.
@@ -490,7 +490,8 @@ def load_model(cfg, device, num_classes=None, verbose=False):
                 'fc': getattr(custom_cfg, 'fc_trainable', '111')
             },
             'dropout': getattr(custom_cfg, 'dropout', 0.5),
-            'pooling_type': getattr(custom_cfg, 'pooling_type', 'max')
+            'pooling_type': getattr(custom_cfg, 'pooling_type', 'max'),
+            'norm_type': getattr(custom_cfg, 'norm_type', 'group'),
         }
         if 'tiny' in model_name.lower():
             model = TinyCustomCNN(**model_params)

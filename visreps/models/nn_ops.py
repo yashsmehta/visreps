@@ -1,6 +1,9 @@
 import torch
 import torch.nn as nn
 
+# Default number of groups for GroupNorm (Wu & He 2018)
+GN_NUM_GROUPS = 32
+
 
 def get_normalization(out_channels, norm_type):
     """
@@ -20,6 +23,8 @@ def get_normalization(out_channels, norm_type):
     match norm_type:
         case "batch":
             return nn.BatchNorm2d(out_channels)
+        case "group":
+            return nn.GroupNorm(GN_NUM_GROUPS, out_channels)
         case "instance":
             return nn.InstanceNorm2d(out_channels)
         case "layer":

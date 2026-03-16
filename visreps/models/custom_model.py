@@ -2,6 +2,12 @@ import torch
 import torch.nn as nn
 import math
 
+# Normalization types recognized by isinstance checks
+_NORM_TYPES = (nn.BatchNorm2d, nn.BatchNorm1d, nn.GroupNorm)
+
+# Default number of groups for GroupNorm (Wu & He 2018)
+from visreps.models.nn_ops import GN_NUM_GROUPS
+
 
 class BaseCNN(nn.Module):
     """Base class for custom CNN architectures."""
@@ -12,11 +18,13 @@ class BaseCNN(nn.Module):
         trainable_layers=None,
         dropout=0.5,
         pooling_type="max",
+        norm_type="group",
     ):
         super().__init__()
         self.num_classes = num_classes
         self.dropout = dropout
         self.pooling_type = pooling_type
+        self.norm_type = norm_type
 
         self._build_architecture()
 
@@ -33,16 +41,24 @@ class BaseCNN(nn.Module):
             return nn.MaxPool2d(kernel_size=kernel_size, stride=stride)
         return nn.AvgPool2d(kernel_size=kernel_size, stride=stride)
 
+    def _norm(self, channels, spatial=True):
+        """Normalization layer. Use spatial=True for conv, False for FC."""
+        if self.norm_type == "group":
+            return nn.GroupNorm(GN_NUM_GROUPS, channels)
+        if self.norm_type == "batch":
+            return nn.BatchNorm2d(channels) if spatial else nn.BatchNorm1d(channels)
+        raise ValueError(f"Unsupported norm_type: {self.norm_type!r}")
+
     def _set_trainable_layers(self, trainable_layers):
         """Set trainable layers. Accepts dict with 'conv' and 'fc' as '11100' strings.
 
-        Also freezes associated BatchNorm layers — both their parameters (gamma/beta)
-        and their running statistics (kept in eval mode via train() override).
+        Also freezes associated normalization layers — both their parameters (gamma/beta)
+        and, for BatchNorm, their running statistics (kept in eval mode via train() override).
         """
         conv_layers = [m for m in self.features.modules() if isinstance(m, nn.Conv2d)]
         fc_layers = [m for m in self.classifier.modules() if isinstance(m, nn.Linear)]
-        conv_bns = [m for m in self.features.modules() if isinstance(m, (nn.BatchNorm2d, nn.BatchNorm1d))]
-        fc_bns = [m for m in self.classifier.modules() if isinstance(m, (nn.BatchNorm2d, nn.BatchNorm1d))]
+        conv_norms = [m for m in self.features.modules() if isinstance(m, _NORM_TYPES)]
+        fc_norms = [m for m in self.classifier.modules() if isinstance(m, _NORM_TYPES)]
 
         conv_mask = [c == "1" for c in trainable_layers.get("conv", "1" * len(conv_layers))]
         fc_mask = [c == "1" for c in trainable_layers.get("fc", "1" * len(fc_layers))]
@@ -52,19 +68,27 @@ class BaseCNN(nn.Module):
             for p in layer.parameters():
                 p.requires_grad = trainable
 
-        # Freeze associated BatchNorm layers (i-th BN corresponds to i-th conv/fc)
-        self._frozen_bns = []
-        for bn, trainable in zip(conv_bns + fc_bns, conv_mask + fc_mask):
+        # Freeze associated normalization layers (i-th norm corresponds to i-th conv/fc)
+        self._frozen_norms = []
+        for norm, trainable in zip(conv_norms + fc_norms, conv_mask + fc_mask):
             if not trainable:
-                for p in bn.parameters():
+                for p in norm.parameters():
                     p.requires_grad = False
-                self._frozen_bns.append(bn)
+                self._frozen_norms.append(norm)
 
     def train(self, mode=True):
-        """Override to keep frozen BatchNorm layers in eval mode."""
+        """Override to keep frozen normalization layers in eval mode.
+
+        GroupNorm has no running statistics, so eval mode is a no-op for it,
+        but this override is still needed for BatchNorm compatibility.
+        """
         super().train(mode)
-        for bn in getattr(self, '_frozen_bns', []):
-            bn.eval()
+        # Check both names: old pickled checkpoints have '_frozen_bns'
+        frozen = getattr(self, '_frozen_norms', None)
+        if frozen is None:
+            frozen = getattr(self, '_frozen_bns', [])
+        for norm in frozen:
+            norm.eval()
         return self
 
     def _initialize_weights(self):
@@ -72,7 +96,7 @@ class BaseCNN(nn.Module):
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight, mode="fan_out", nonlinearity="relu")
-            elif isinstance(m, (nn.BatchNorm2d, nn.BatchNorm1d)):
+            elif isinstance(m, _NORM_TYPES):
                 nn.init.ones_(m.weight)
                 nn.init.zeros_(m.bias)
             elif isinstance(m, nn.Linear):
@@ -93,32 +117,33 @@ class BaseCNN(nn.Module):
 class TinyCustomCNN(BaseCNN):
     """CNN for Tiny ImageNet (64x64 inputs)."""
 
-    def __init__(self, num_classes=200, trainable_layers=None, dropout=0.3, pooling_type="max"):
-        super().__init__(num_classes, trainable_layers, dropout, pooling_type)
+    def __init__(self, num_classes=200, trainable_layers=None, dropout=0.3,
+                 pooling_type="max", norm_type="group"):
+        super().__init__(num_classes, trainable_layers, dropout, pooling_type, norm_type)
 
     def _build_architecture(self):
         self.features = nn.Sequential(
             # conv1: 64 -> 32 -> 16 (after pool)
             nn.Conv2d(3, 64, kernel_size=5, stride=2, padding=2, bias=False),
-            nn.BatchNorm2d(64),
+            self._norm(64),
             nn.ReLU(inplace=True),
             self._pool(kernel_size=2, stride=2),
             # conv2: 16 -> 16
             nn.Conv2d(64, 128, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(128),
+            self._norm(128),
             nn.ReLU(inplace=True),
             # conv3: 16 -> 16 -> 8 (after pool)
             nn.Conv2d(128, 256, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(256),
+            self._norm(256),
             nn.ReLU(inplace=True),
             self._pool(kernel_size=2, stride=2),
             # conv4: 8 -> 8
             nn.Conv2d(256, 512, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(512),
+            self._norm(512),
             nn.ReLU(inplace=True),
             # conv5: 8 -> 8
             nn.Conv2d(512, 512, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(512),
+            self._norm(512),
             nn.ReLU(inplace=True),
         )
 
@@ -127,11 +152,11 @@ class TinyCustomCNN(BaseCNN):
         self.classifier = nn.Sequential(
             nn.Dropout(p=self.dropout),
             nn.Linear(512 * 4 * 4, 2048),
-            nn.BatchNorm1d(2048),
+            self._norm(2048, spatial=False),
             nn.ReLU(inplace=True),
             nn.Dropout(p=self.dropout),
             nn.Linear(2048, 2048),
-            nn.BatchNorm1d(2048),
+            self._norm(2048, spatial=False),
             nn.ReLU(inplace=True),
             nn.Linear(2048, self.num_classes),
         )
@@ -140,32 +165,33 @@ class TinyCustomCNN(BaseCNN):
 class CustomCNN(BaseCNN):
     """AlexNet-style CNN for ImageNet (224x224 inputs)."""
 
-    def __init__(self, num_classes=1000, trainable_layers=None, dropout=0.5, pooling_type="max"):
-        super().__init__(num_classes, trainable_layers, dropout, pooling_type)
+    def __init__(self, num_classes=1000, trainable_layers=None, dropout=0.5,
+                 pooling_type="max", norm_type="group"):
+        super().__init__(num_classes, trainable_layers, dropout, pooling_type, norm_type)
 
     def _build_architecture(self):
         self.features = nn.Sequential(
             # conv1: 224 -> 55 -> 27 (after pool)
             nn.Conv2d(3, 96, kernel_size=11, stride=4, padding=2, bias=False),
-            nn.BatchNorm2d(96),
+            self._norm(96),
             nn.ReLU(inplace=True),
             self._pool(kernel_size=3, stride=2),
             # conv2: 27 -> 27 -> 13 (after pool)
             nn.Conv2d(96, 256, kernel_size=5, padding=2, bias=False),
-            nn.BatchNorm2d(256),
+            self._norm(256),
             nn.ReLU(inplace=True),
             self._pool(kernel_size=3, stride=2),
             # conv3: 13 -> 13
             nn.Conv2d(256, 384, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(384),
+            self._norm(384),
             nn.ReLU(inplace=True),
             # conv4: 13 -> 13
             nn.Conv2d(384, 384, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(384),
+            self._norm(384),
             nn.ReLU(inplace=True),
             # conv5: 13 -> 13 -> 6 (after pool)
             nn.Conv2d(384, 256, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(256),
+            self._norm(256),
             nn.ReLU(inplace=True),
             self._pool(kernel_size=3, stride=2),
         )
@@ -175,11 +201,11 @@ class CustomCNN(BaseCNN):
         self.classifier = nn.Sequential(
             nn.Dropout(p=self.dropout),
             nn.Linear(256 * 3 * 3, 4096),
-            nn.BatchNorm1d(4096),
+            self._norm(4096, spatial=False),
             nn.ReLU(inplace=True),
             nn.Dropout(p=self.dropout),
             nn.Linear(4096, 4096),
-            nn.BatchNorm1d(4096),
+            self._norm(4096, spatial=False),
             nn.ReLU(inplace=True),
             nn.Linear(4096, self.num_classes),
         )
