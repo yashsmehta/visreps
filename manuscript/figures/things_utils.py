@@ -257,7 +257,7 @@ def plot_scatter_panel(ax_scatter, ax_hist, precomputed):
 
     grey_df = df[~df["highlighted"]]
     ax_scatter.scatter(grey_df["corr_clip8"], grey_df["corr_1k"],
-                        c="#c8c8c8", s=14, marker="o",
+                        c="#c8c8c8", s=18, marker="o",
                         alpha=0.35, edgecolors="none", rasterized=True, zorder=1)
 
     for cat in positive_cats + negative_cats:
@@ -269,7 +269,7 @@ def plot_scatter_panel(ax_scatter, ax_hist, precomputed):
             continue
         c, m = cat_style[cat]
         ax_scatter.scatter(subset["corr_clip8"], subset["corr_1k"],
-                            c=c, s=32, marker=m, alpha=0.80,
+                            c=c, s=38, marker=m, alpha=0.85,
                             edgecolors="white", linewidths=0.5,
                             rasterized=True, zorder=2)
 
@@ -286,12 +286,12 @@ def plot_scatter_panel(ax_scatter, ax_hist, precomputed):
     # Subtle region annotations
     ax_scatter.text(0.92, 0.07, "8-class better",
                      transform=ax_scatter.transAxes,
-                     ha="right", va="bottom", fontsize=9, color="#1a7a3a",
-                     fontstyle="italic", alpha=0.50)
+                     ha="right", va="bottom", fontsize=9.5, color="#1a7a3a",
+                     fontstyle="italic", alpha=0.65)
     ax_scatter.text(0.05, 0.52, "1K better",
                      transform=ax_scatter.transAxes,
-                     ha="left", va="top", fontsize=9, color="#c1121f",
-                     fontstyle="italic", alpha=0.50)
+                     ha="left", va="top", fontsize=9.5, color="#c1121f",
+                     fontstyle="italic", alpha=0.65)
 
     # Legend
     legend_elements = []
@@ -314,17 +314,17 @@ def plot_scatter_panel(ax_scatter, ax_hist, precomputed):
                    markeredgecolor="white", markeredgewidth=0.4,
                    label=f"  {short_cat_label(cat)} ({med:+.2f})"))
 
-    leg = ax_scatter.legend(handles=legend_elements, fontsize=7.5, frameon=True,
-                             loc="upper left", handletextpad=0.3,
+    leg = ax_scatter.legend(handles=legend_elements, fontsize=8.5, frameon=True,
+                             loc="upper left", handletextpad=0.4,
                              framealpha=0.95, edgecolor="#bbbbbb", fancybox=False,
-                             borderpad=0.4, labelspacing=0.2,
-                             handlelength=1.4, bbox_to_anchor=(0.0, 1.0))
+                             borderpad=0.5, labelspacing=0.25,
+                             handlelength=1.5, bbox_to_anchor=(0.0, 1.0))
     leg.get_frame().set_linewidth(0.5)
     for text in leg.get_texts():
         label = text.get_text()
         if label in ("8-class advantage", "1K advantage"):
             text.set_fontweight("bold")
-            text.set_fontsize(8.0)
+            text.set_fontsize(9.0)
 
     # ── Histogram (works as standalone or inset) ──
     bins = np.linspace(diff.min() - 0.02, diff.max() + 0.02, 36)

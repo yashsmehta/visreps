@@ -2,12 +2,12 @@
 
 Layout:
   Row 0 (top): [Schematic placeholder | Coarseness | Model Comparison]
-  Row 1 (bottom): [3 RDMs side by side + colorbar] spanning full width
+  Row 1 (bottom): [4 PCA scatter panels] spanning full width
 
 Panel A: Schematic of THINGS behavioral similarity task (placeholder)
 Panel B: Alignment vs. Granularity (raw Spearman rho, log x-axis)
 Panel C: Model comparison — coarse vs 1000-way bars + pretrained scatter
-Panel D: 3 RDMs (human behavioral, CLIP 4-class, 1000-class)
+Panel D: PC scatter — Behavioral, CLIP 8-class, Pretrained AlexNet, Pretrained ViT
 
 Usage:
     python manuscript/figures/fig4/figure4.py
@@ -24,6 +24,8 @@ import matplotlib.gridspec as gridspec
 import matplotlib.patches as mpatches
 from matplotlib.lines import Line2D
 from matplotlib.ticker import AutoMinorLocator, MultipleLocator, FuncFormatter
+from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+from PIL import Image
 import seaborn as sns
 
 sys.path.insert(0, "plotters")
@@ -37,7 +39,12 @@ from fig_utils import (
     setup_style, compute_jitter,
     format_coarseness_axes, draw_schematic_placeholder,
 )
-from things_utils import compute_things_data, plot_rdm_panels
+sys.path.insert(0, "manuscript/figures/fig5")
+from plot_pc_scatter import (
+    load_super_categories, l2_normalize, compute_pca,
+    plot_scatter_panel as plot_pc_panel,
+    SUPER_ORDER, SUPER_COLORS,
+)
 
 # ── Config ────────────────────────────────────────────────────────────────
 OUTPUT_DIR = "manuscript/figures/fig4"
@@ -210,8 +217,6 @@ def plot_comparison_panel(ax):
     best_coarse = _fetch_clip8_score()
     all_points = _fetch_pretrained_data()
 
-    s = 0.78  # scale factor
-
     # ── Layout: 2 bars then pretrained scatter ──
     bar_w = 0.48
     bar_positions = [0.0, 0.6]  # coarse, 1000-way
@@ -230,7 +235,7 @@ def plot_comparison_panel(ax):
         err_lo = max(score - ci_lo, 0) if not np.isnan(ci_lo) else 0
         err_hi = max(ci_hi - score, 0) if not np.isnan(ci_hi) else 0
         ax.errorbar(x, score, yerr=[[err_lo], [err_hi]], fmt="none",
-                    ecolor="#333333", capsize=3.0 * s, capthick=0.7,
+                    ecolor="#333333", capsize=2.3, capthick=0.7,
                     elinewidth=0.7, zorder=4)
 
     # ── Dashed reference line from coarse bar into scatter region ──
@@ -255,9 +260,9 @@ def plot_comparison_panel(ax):
     ax.axvline(sep_x, color="#d0d0d0", linewidth=0.6, linestyle="-",
                ymin=0.0, ymax=1.0, zorder=0)
 
-    # ── Draw pretrained scatter ──
-    pt_size_base = 110 * s * s
-    pt_size_star = 155 * s * s
+    # ── Draw pretrained scatter (1.5× larger) ──
+    pt_size_base = 160
+    pt_size_star = 220
     for pt in all_points:
         gx = group_positions[pt["group"]]
         group_pts = [p for p in all_points if p["group"] == pt["group"]]
@@ -270,16 +275,16 @@ def plot_comparison_panel(ax):
         pt["x_plot"] = x_jit
 
         ax.plot([x_jit, x_jit], [pt["ci_low"], pt["ci_high"]],
-                color=pt["color"], linewidth=1.2, alpha=0.45, zorder=4,
+                color=pt["color"], linewidth=1.4, alpha=0.50, zorder=4,
                 solid_capstyle="round")
         sz = pt_size_star if pt["marker"] == "*" else pt_size_base
         ax.scatter(x_jit, pt["score"], marker=pt["marker"], c=pt["color"],
-                   s=sz, edgecolors="white", linewidths=0.6, zorder=5)
+                   s=sz, edgecolors="white", linewidths=0.7, zorder=5)
 
-    # ── Model name labels ──
-    fs_model = 6.5 * s
-    x_offset = 0.22 * s
-    min_gap = 0.013
+    # ── Model name labels (larger) ──
+    fs_model = 7.0
+    x_offset = 0.24
+    min_gap = 0.022
     for group_name in PRETRAINED_GROUPS:
         group_pts = sorted(
             [p for p in all_points if p["group"] == group_name],
@@ -296,12 +301,12 @@ def plot_comparison_panel(ax):
                     fontstyle="italic")
 
     # ── Axis formatting ──
-    xlim_right = list(group_positions.values())[-1] + 1.4
+    xlim_right = list(group_positions.values())[-1] + 1.8
     ax.set_xlim(-0.55, xlim_right)
-    ax.set_ylim(0.2, 0.66)
-    ax.set_ylabel(r"Spearman $\rho$", fontsize=10 * s, labelpad=5)
+    ax.set_ylim(0.25, 0.601)
+    ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=8.5, labelpad=5)
     ax.set_title("Model Comparison",
-                 fontsize=11 * s, fontweight="semibold", pad=8)
+                 fontsize=9.5, fontweight="semibold", pad=8)
 
     # X-ticks
     bar_xticks = bar_positions
@@ -309,7 +314,7 @@ def plot_comparison_panel(ax):
     scatter_xticks = [group_positions[g] for g in group_positions]
     scatter_xlabels = ["Supervised", "Self-\nsupervised", "Vision-\nlanguage"]
     ax.set_xticks(bar_xticks + scatter_xticks)
-    ax.set_xticklabels(bar_xlabels + scatter_xlabels, fontsize=7.5 * s)
+    ax.set_xticklabels(bar_xlabels + scatter_xlabels, fontsize=6.5)
 
     # Subtle horizontal grid
     ax.yaxis.grid(True, which="major", color="#EBEBEB", linewidth=0.4, zorder=0)
@@ -320,7 +325,7 @@ def plot_comparison_panel(ax):
     ax.yaxis.set_minor_locator(AutoMinorLocator(2))
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.1f}"))
     ax.tick_params(axis="y", which="major", direction="out", length=5,
-                   width=1.2, labelsize=9 * s)
+                   width=1.2, labelsize=7.5)
     ax.tick_params(axis="y", which="minor", direction="out", length=3,
                    width=0.8)
     ax.tick_params(axis="x", which="major", length=4, width=1.0, direction="out")
@@ -329,25 +334,208 @@ def plot_comparison_panel(ax):
     ax.spines["bottom"].set_linewidth(1.2)
     ax.spines["left"].set_linewidth(1.2)
 
-    # ── Legend ──
+    # ── Legend (CNN/ViT markers only — bar labels are self-explanatory) ──
     leg_handles = [
-        mpatches.Patch(facecolor=COARSE_BAR_COLOR, edgecolor="#333333",
-                       linewidth=0.6, label=best_coarse["label"]),
-        mpatches.Patch(facecolor=BASELINE_1K_COLOR, edgecolor="#333333",
-                       linewidth=0.6, label="1000-class"),
         Line2D([], [], marker="p", color="none", markerfacecolor="#777777",
-               markeredgecolor="white", markeredgewidth=0.5,
-               markersize=8, label="CNN"),
+               markeredgecolor="white", markeredgewidth=0.6,
+               markersize=10, label="CNN"),
         Line2D([], [], marker="*", color="none", markerfacecolor="#777777",
-               markeredgecolor="white", markeredgewidth=0.4,
-               markersize=10, label="ViT"),
+               markeredgecolor="white", markeredgewidth=0.5,
+               markersize=12, label="ViT"),
     ]
-    leg = ax.legend(handles=leg_handles, fontsize=6.5 * s, frameon=True,
-                    loc="upper left", edgecolor="#dddddd", fancybox=False,
-                    framealpha=0.95, handletextpad=0.3, borderpad=0.3,
-                    labelspacing=0.2, ncol=2, columnspacing=0.5,
-                    bbox_to_anchor=(-0.01, 1.01))
-    leg.get_frame().set_linewidth(0.3)
+    leg = ax.legend(handles=leg_handles, fontsize=7.5, frameon=True,
+                    loc="lower right", edgecolor="#dddddd", fancybox=False,
+                    framealpha=0.95, handletextpad=0.3, borderpad=0.4,
+                    labelspacing=0.3, ncol=1, columnspacing=0.5,
+                    bbox_to_anchor=(1.0, 0.0))
+    leg.get_frame().set_linewidth(0.4)
+
+
+# ── Panel D — PCA scatter of THINGS concept representations ──────────────
+
+PROJECT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../..")
+
+# Panel order and data config for PCA scatter
+# (title, subtitle, data_key, needs_l2)
+PC_PANELS = [
+    ("Behavioral",  "(ground truth)", None),
+    ("CNN",         "(CLIP 8-class)", "clip8"),
+    ("AlexNet",     "(1K classes)",   "alexnet_pre"),
+    ("ViT-B/16",    "(1K classes)",   "vit_pre"),
+]
+
+
+# ── Image inset config ────────────────────────────────────────────────────
+# Triplet: cabbage (Food), cat (Animal), hubcap (Vehicle)
+# Well-separated in behavioral/CLIP-8, close in AlexNet/ViT
+THINGS_IMAGE_DIR = os.path.expanduser(
+    "~/.cache/bonner-datasets/hebart2019.things/images/object_images")
+INSET_CONCEPTS = ["asparagus", "engine", "gorilla"]
+INSET_BORDER_COLORS = {
+    "asparagus": SUPER_COLORS["Food"],      # orange
+    "engine":    SUPER_COLORS["Vehicle"],    # green
+    "gorilla":   SUPER_COLORS["Animal"],     # red
+}
+
+
+def _load_concept_names():
+    """Load THINGS concept names from behavioral data."""
+    behav_data = np.load(os.path.join(
+        PROJECT_ROOT, "experiments/things_visualizations/data/things_viz_data.npz"),
+        allow_pickle=True)
+    return list(behav_data["concept_names"])
+
+
+def _load_inset_image(concept, size=48):
+    """Load and resize a THINGS concept image."""
+    path = os.path.join(THINGS_IMAGE_DIR, concept, f"{concept}_01b.jpg")
+    img = Image.open(path).convert("RGB").resize((size, size), Image.LANCZOS)
+    return np.array(img)
+
+
+# Fallback offset angles if centroid-based directions are too close.
+INSET_FALLBACK_ANGLES = {
+    "asparagus": np.radians(210),   # lower-left
+    "engine":    np.radians(330),   # lower-right
+    "gorilla":   np.radians(90),    # top
+}
+
+
+
+def _shorten_line_to_circle(p1, p2, radius_frac=0.015):
+    """Shorten a line segment so it stops at the edge of circles at both endpoints.
+
+    radius_frac is the circle radius as a fraction of the axis range.
+    Returns (x1', y1', x2', y2') — the shortened endpoints.
+    """
+    dx = p2[0] - p1[0]
+    dy = p2[1] - p1[1]
+    length = np.sqrt(dx**2 + dy**2)
+    if length < 1e-10:
+        return p1[0], p1[1], p2[0], p2[1]
+    ux, uy = dx / length, dy / length
+    # Pull in from each end by the circle radius
+    return (p1[0] + ux * radius_frac, p1[1] + uy * radius_frac,
+            p2[0] - ux * radius_frac, p2[1] - uy * radius_frac)
+
+
+def draw_image_insets(axes, all_pcs, concept_names):
+    """Draw image insets for the triplet on each scatter panel.
+
+    Places open circles at data positions, connects them with lines
+    that stop at circle edges, and places images adjacent to circles
+    avoiding overlap with the connecting lines.
+    """
+    indices = [concept_names.index(c) for c in INSET_CONCEPTS]
+    images = {c: _load_inset_image(c) for c in INSET_CONCEPTS}
+
+    for ax, pcs in zip(axes, all_pcs):
+        coords = {c: pcs[idx] for c, idx in zip(INSET_CONCEPTS, indices)}
+
+        # Compute circle radius in data units (for line shortening)
+        xlim = ax.get_xlim()
+        ylim = ax.get_ylim()
+        x_range = xlim[1] - xlim[0]
+        y_range = ylim[1] - ylim[0]
+        # Circle visual radius ~ sqrt(s) in points, convert to data units
+        circle_radius = 0.025 * max(x_range, y_range)
+
+        # Draw connecting lines between circles (stop at circle edges)
+        for i in range(len(INSET_CONCEPTS)):
+            c1 = INSET_CONCEPTS[i]
+            c2 = INSET_CONCEPTS[(i + 1) % len(INSET_CONCEPTS)]
+            x1s, y1s, x2s, y2s = _shorten_line_to_circle(
+                coords[c1], coords[c2], circle_radius)
+            ax.plot([x1s, x2s], [y1s, y2s],
+                    color="#222222", linewidth=1.3, linestyle="-",
+                    alpha=0.6, zorder=6, solid_capstyle="round")
+
+        # Draw open circles at data positions (80% of original size)
+        for concept in INSET_CONCEPTS:
+            x, y = coords[concept]
+            ax.scatter(x, y, s=80, facecolors="none", edgecolors="black",
+                       linewidths=1.5, zorder=7)
+
+        # Place images: direction away from centroid, with minimum angular
+        # separation enforced so images never bunch together.
+        centroid = np.mean([coords[c] for c in INSET_CONCEPTS], axis=0)
+        offset_dist = 0.20 * max(x_range, y_range)
+
+        # Compute "away from centroid" angles
+        angles = {}
+        for concept in INSET_CONCEPTS:
+            pt = coords[concept]
+            away = pt - centroid
+            norm = np.sqrt(away[0]**2 + away[1]**2)
+            if norm > 1e-10:
+                angles[concept] = np.arctan2(away[1], away[0])
+            else:
+                angles[concept] = INSET_FALLBACK_ANGLES[concept]
+
+        # Enforce minimum angular separation (80°) between any pair
+        min_sep = np.radians(80)
+        concept_list = list(INSET_CONCEPTS)
+        angle_list = [angles[c] for c in concept_list]
+        for _ in range(20):
+            changed = False
+            for i in range(len(concept_list)):
+                for j in range(i + 1, len(concept_list)):
+                    diff = (angle_list[i] - angle_list[j] + np.pi) % (2 * np.pi) - np.pi
+                    if abs(diff) < min_sep:
+                        push = (min_sep - abs(diff)) * 0.3 * np.sign(diff)
+                        angle_list[i] += push
+                        angle_list[j] -= push
+                        changed = True
+            if not changed:
+                break
+        for i, c in enumerate(concept_list):
+            angles[c] = angle_list[i]
+
+        # Place images
+        margin_x = 0.06 * x_range
+        margin_y = 0.06 * y_range
+        for concept in INSET_CONCEPTS:
+            pt = coords[concept]
+            a = angles[concept]
+            ox = pt[0] + np.cos(a) * offset_dist
+            oy = pt[1] + np.sin(a) * offset_dist
+
+            # Clamp to axis limits
+            ox = np.clip(ox, xlim[0] + margin_x, xlim[1] - margin_x)
+            oy = np.clip(oy, ylim[0] + margin_y, ylim[1] - margin_y)
+
+            im = OffsetImage(images[concept], zoom=0.50)
+            ab = AnnotationBbox(im, (ox, oy), frameon=True, pad=0.08,
+                                bboxprops=dict(
+                                    edgecolor="black",
+                                    linewidth=0.8, facecolor="white",
+                                ),
+                                zorder=8)
+            ax.add_artist(ab)
+
+
+def load_pc_scatter_data():
+    """Load the 4 representations for PCA scatter panels.
+
+    Returns dict of name -> features (n_concepts, n_features).
+    Model activations are L2-normalized before return.
+    """
+    behav_data = np.load(os.path.join(
+        PROJECT_ROOT, "experiments/things_visualizations/data/things_viz_data.npz"),
+        allow_pickle=True)
+    activations = np.load(os.path.join(
+        PROJECT_ROOT, "manuscript/figures/fig5/activations.npz"), allow_pickle=True)
+    pretrained_alexnet = np.load(os.path.join(
+        PROJECT_ROOT, "manuscript/figures/fig5/pretrained_alexnet_fc1.npz"))
+    pretrained_vit = np.load(os.path.join(
+        PROJECT_ROOT, "manuscript/figures/fig4/pretrained_vit_things.npz"))
+
+    return {
+        None:          behav_data["embeddings"],                   # (1854, 66)
+        "clip8":       l2_normalize(activations["clip8_fc1"]),     # (1854, 4096)
+        "alexnet_pre": l2_normalize(pretrained_alexnet["fc1"]),    # (1854, 4096)
+        "vit_pre":     l2_normalize(pretrained_vit["block5"]),     # (1854, 151296)
+    }
 
 
 # ── Main ──────────────────────────────────────────────────────────────────
@@ -361,28 +549,27 @@ def main():
         "ytick.labelsize": 7.5,
     })
 
-    fig = plt.figure(figsize=(14.5, 8.5))
+    fig = plt.figure(figsize=(15.5, 8.8))
     fig.patch.set_facecolor("white")
 
-    # Top row: 3 panels; Bottom row: RDMs spanning full width
-    gs = gridspec.GridSpec(2, 1, figure=fig, height_ratios=[1.05, 1.15],
-                           hspace=0.35, left=0.05, right=0.96,
-                           top=0.95, bottom=0.04)
+    # Unified 2×4 grid — columns align between rows
+    gs = gridspec.GridSpec(2, 4, figure=fig,
+                           height_ratios=[1.05, 0.88],
+                           width_ratios=[1, 1, 1, 1],
+                           hspace=0.38, wspace=0.28,
+                           left=0.05, right=0.96,
+                           top=0.95, bottom=0.07)
 
-    gs_top = gridspec.GridSpecFromSubplotSpec(1, 3, subplot_spec=gs[0],
-                                              wspace=0.38,
-                                              width_ratios=[0.85, 0.85, 1.7])
-
-    # Panel A: Schematic placeholder
-    ax_schematic = fig.add_subplot(gs_top[0, 0])
+    # Panel A: col 0 (aligned with D1)
+    ax_schematic = fig.add_subplot(gs[0, 0])
     draw_schematic_placeholder(ax_schematic,
                                "THINGS\nBehavioral Similarity\n(schematic)")
 
-    # Panel B: Coarseness (Alignment vs. Granularity)
-    ax_coarse = fig.add_subplot(gs_top[0, 1])
+    # Panel B: col 1 (aligned with D2)
+    ax_coarse = fig.add_subplot(gs[0, 1])
     plot_coarseness_raw(ax_coarse)
 
-    # Coarseness legend
+    # Panel B legend — vertical, right side of panel
     legend_handles = []
     for arch_key, _, display in ARCHITECTURES:
         style = ARCH_STYLE[arch_key]
@@ -400,48 +587,65 @@ def main():
 
     leg_c = ax_coarse.legend(
         handles=legend_handles,
-        fontsize=6, frameon=True, loc="lower left",
-        edgecolor="#dddddd", fancybox=False, framealpha=0.95,
-        handletextpad=0.25, columnspacing=0.5, ncol=2,
-        borderpad=0.3, bbox_to_anchor=(0.0, 0.0))
-    leg_c.get_frame().set_linewidth(0.5)
+        fontsize=6.5, frameon=True, loc="center right",
+        edgecolor="#e0e0e0", fancybox=False, framealpha=0.95,
+        handletextpad=0.25, labelspacing=0.35, ncol=1,
+        borderpad=0.4, bbox_to_anchor=(0.99, 0.45))
+    leg_c.get_frame().set_linewidth(0.3)
 
-    # Panel C: Model Comparison
-    ax_compare = fig.add_subplot(gs_top[0, 2])
+    # Panel C: cols 2–3 (aligned with D3 + D4)
+    ax_compare = fig.add_subplot(gs[0, 2:])
     plot_comparison_panel(ax_compare)
 
-    # ── Bottom row: 3 RDMs + colorbar ──
-    gs_bot = gridspec.GridSpecFromSubplotSpec(1, 4, subplot_spec=gs[1],
-                                              wspace=0.06,
-                                              width_ratios=[1, 1, 1, 0.05])
+    # ── Bottom row: 4 PCA scatter panels (one per column) ──
+    pc_axes = [fig.add_subplot(gs[1, i]) for i in range(4)]
 
-    ax_rdm1 = fig.add_subplot(gs_bot[0, 0])
-    ax_rdm2 = fig.add_subplot(gs_bot[0, 1])
-    ax_rdm3 = fig.add_subplot(gs_bot[0, 2])
-    ax_cb = fig.add_subplot(gs_bot[0, 3])
+    print("Loading PCA scatter data...")
+    reps = load_pc_scatter_data()
+    n_concepts = list(reps.values())[0].shape[0]
+    super_labels = load_super_categories(n_concepts)
 
-    rdm_axes = [ax_rdm1, ax_rdm2, ax_rdm3]
-    for rdm_ax in rdm_axes:
-        rdm_ax.set_facecolor("white")
-    ax_cb.set_facecolor("white")
+    all_pcs = []
+    for i, (ax, (title, subtitle, data_key)) in enumerate(zip(pc_axes, PC_PANELS)):
+        feats = reps[data_key]
+        pcs, _ = compute_pca(feats)
+        all_pcs.append(pcs)
+        plot_pc_panel(ax, pcs, super_labels, title, subtitle=subtitle,
+                      point_size=12, alpha=0.62)
+        if i > 0:
+            ax.set_ylabel("")
 
-    print("Computing THINGS data for RDMs...")
-    precomputed = compute_things_data()
-    plot_rdm_panels(rdm_axes, precomputed, show_difference=False,
-                    colorbar_axes=(ax_cb, ax_cb))
+    # Draw image insets on scatter panels
+    concept_names = _load_concept_names()
+    draw_image_insets(pc_axes, all_pcs, concept_names)
+
+    # Shared super-category legend
+    cat_handles = [
+        Line2D([0], [0], marker="o", color="none",
+               markerfacecolor=SUPER_COLORS[name],
+               markeredgecolor="white", markeredgewidth=0.4,
+               markersize=7.5, label=name)
+        for name in SUPER_ORDER
+    ]
+    fig.legend(
+        handles=cat_handles, loc="lower center",
+        ncol=len(SUPER_ORDER), fontsize=8.5, frameon=False,
+        handletextpad=0.4, columnspacing=1.4,
+        bbox_to_anchor=(0.5, -0.015),
+    )
 
     # ── Panel labels ──
     for ax, label, x_off in zip(
-        [ax_schematic, ax_coarse, ax_compare, ax_rdm1],
+        [ax_schematic, ax_coarse, ax_compare, pc_axes[0]],
         ["A", "B", "C", "D"],
-        [-0.08, -0.14, -0.08, -0.04]):
-        ax.text(x_off, 1.10, label, transform=ax.transAxes,
-                fontsize=13, fontweight="bold", va="top", ha="left",
+        [-0.08, -0.14, -0.06, -0.10]):
+        ax.text(x_off, 1.12, label, transform=ax.transAxes,
+                fontsize=14, fontweight="bold", va="top", ha="left",
                 family="sans-serif")
 
     # ── Save ──
     out = f"{OUTPUT_DIR}/figure4.png"
-    fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
+    fig.savefig(out, dpi=600, bbox_inches="tight", facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()
 

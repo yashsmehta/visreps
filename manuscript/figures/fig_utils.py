@@ -268,7 +268,7 @@ def format_coarseness_axes(ax, region_label, show_ylabel=True, show_xlabel=True)
     if show_xlabel:
         ax.set_xlabel("Classes", fontsize=9, labelpad=4)
     if show_ylabel:
-        ax.set_ylabel(r"Spearman $\rho$", fontsize=9, labelpad=4)
+        ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=9, labelpad=4)
     else:
         ax.set_ylabel("")
     ax.set_title(region_label, fontsize=10, fontweight="semibold", pad=6)
@@ -375,7 +375,7 @@ def plot_reconstruction_panel(ax, neural_dataset, region, region_label,
         k_all = coarse_agg["pca_k"].values
     ax.set_xlabel("Number of PCs ($k$)", fontsize=8, labelpad=3)
     if show_ylabel:
-        ax.set_ylabel(r"Spearman $\rho$", fontsize=8, labelpad=3)
+        ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=8, labelpad=3)
     if region_label:
         ax.set_title(region_label, fontsize=9, fontweight="semibold", pad=5)
     ax.set_xticks(k_all)
@@ -551,7 +551,7 @@ def plot_per_layer_panel(ax, neural_dataset, region, pca_folder=None, title=None
     ax.set_xlim(-0.5, len(LAYER_ORDER_FULL) - 0.5)
 
     if show_ylabel:
-        ax.set_ylabel(r"Spearman $\rho$", fontsize=9, labelpad=4)
+        ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=9, labelpad=4)
     if title:
         ax.set_title(title, fontsize=10, fontweight="semibold", pad=6)
     ax.yaxis.grid(True, which="major", color="#EBEBEB", linewidth=0.4, zorder=0)

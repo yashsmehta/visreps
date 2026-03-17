@@ -33,6 +33,8 @@ from visreps.analysis.rsa import compute_rdm
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from plot_class_rdms import (
     COARSE_CFG_IDS, rank_transform,
+    build_sort_order, draw_sidebar, draw_boundaries,
+    CATEGORY_NAMES, CATEGORY_COLORS,
 )
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -45,15 +47,22 @@ OUTPUT_DIR = SCRIPT_DIR
 
 # ── RDM panel (rank-transformed for composite figure) ───────────────────
 
-def plot_rdm_panel(ax, rdm, title):
+def plot_rdm_panel(ax, rdm, title, block_boundaries=None):
     """Draw a single RDM panel with rank-transformed dissimilarity."""
     rdm_ranked = rank_transform(rdm)
+    n = rdm.shape[0]
     im = ax.imshow(rdm_ranked, cmap="magma", interpolation="nearest",
                    aspect="equal", rasterized=True, vmin=0, vmax=1)
     ax.set_title(title, fontsize=10.5, fontweight="bold", pad=7, color="#1a1a1a")
     ax.set_xticks([]); ax.set_yticks([])
     for spine in ax.spines.values():
         spine.set_visible(False)
+
+    if block_boundaries is not None:
+        draw_boundaries(ax, block_boundaries, n)
+        draw_sidebar(ax, block_boundaries, n, side="left")
+        draw_sidebar(ax, block_boundaries, n, side="bottom")
+
     return im
 
 
@@ -272,12 +281,17 @@ def main():
     centroids_pre = data["centroids_pretrained"]
     n_classes = centroids_1k.shape[0]
 
-    # Sort order: PC1 of pretrained AlexNet centroids
-    from sklearn.decomposition import PCA
-    pc1_scores = PCA(n_components=1).fit_transform(centroids_pre).ravel()
-    sort_idx = np.argsort(pc1_scores)
-
-    # Compute sorted RDMs
+    # Sort order: 11-category WordNet scheme, within-category clustering
+    # from seed A (seed=1) 1000-way model (independent from displayed seed C)
+    categories = data["categories"]
+    seed_a_cache = os.path.join(SCRIPT_DIR, "centroids_1k_seedA.npz")
+    if os.path.exists(seed_a_cache):
+        centroids_sort = np.load(seed_a_cache)["centroids"]
+    else:
+        print("Warning: seed A centroids not found, falling back to pretrained.")
+        centroids_sort = centroids_pre
+    rdm_sort = compute_rdm(torch.tensor(centroids_sort, dtype=torch.float32)).numpy()
+    sort_idx, block_boundaries = build_sort_order(categories, rdm_sort)
     rdm_1k = compute_rdm(torch.tensor(centroids_1k, dtype=torch.float32)).numpy()
     rdm_1k_sorted = rdm_1k[np.ix_(sort_idx, sort_idx)]
 
@@ -316,33 +330,35 @@ def main():
         left=0.02, right=0.97, top=0.93, bottom=0.04,
     )
 
-    # ── Panel A: 2×3 RDM grid ──
+    # ── Panel A: 2×2 RDM grid (equal-sized subplots) ──
     gs_rdms = gridspec.GridSpecFromSubplotSpec(
-        2, 3, subplot_spec=gs_outer[0, 0],
-        wspace=0.10, hspace=0.14,
+        2, 2, subplot_spec=gs_outer[0, 0],
+        wspace=0.12, hspace=0.18,
     )
 
-    rdm_order = COARSE_CFG_IDS + [1000]  # 4, 8, 16, 32, 64, 1000
-    rdm_titles = [f"{c}-way" for c in COARSE_CFG_IDS] + ["1000-way"]
+    rdm_order = [4, 16, 64, 1000]
+    rdm_titles = ["4-way", "16-way", "64-way", "1000-way"]
     rdm_axes = []
     im = None
 
     for i, (cfg_id, title) in enumerate(zip(rdm_order, rdm_titles)):
-        row, col = divmod(i, 3)
+        row, col = divmod(i, 2)
         ax = fig.add_subplot(gs_rdms[row, col])
         rdm_axes.append(ax)
         rdm = rdm_1k_sorted if cfg_id == 1000 else coarse_rdms.get(cfg_id)
         if rdm is not None:
-            im = plot_rdm_panel(ax, rdm, title)
+            im = plot_rdm_panel(ax, rdm, title, block_boundaries)
         else:
             ax.set_title(title, fontsize=9.5, fontweight="bold", pad=6,
                          color="#1a1a1a")
             ax.text(0.5, 0.5, "No data", ha="center", va="center",
                     transform=ax.transAxes, fontsize=9, color="#999")
             ax.set_xticks([]); ax.set_yticks([])
+        # Ensure square aspect ratio
+        ax.set_aspect("equal")
 
     # Colorbar — inset next to last RDM in top row
-    ax_last_top = rdm_axes[2]  # top-right RDM
+    ax_last_top = rdm_axes[1]  # top-right RDM
     ax_cb = inset_axes(ax_last_top, width="3.5%", height="100%",
                        loc="center right",
                        bbox_to_anchor=(0.09, 0, 1, 1),
@@ -353,6 +369,21 @@ def main():
     cb.ax.yaxis.set_major_locator(mticker.FixedLocator([0, 0.5, 1.0]))
     cb.ax.set_ylabel("Dissimilarity (rank)", fontsize=7.5, labelpad=7,
                       rotation=270, va="bottom")
+
+    # ── Category legend for RDM sidebars ──
+    from matplotlib.patches import Patch
+    cat_handles = [
+        Patch(facecolor=CATEGORY_COLORS[i], edgecolor="none",
+              label=CATEGORY_NAMES[i])
+        for i in range(len(CATEGORY_NAMES))
+    ]
+    # Place below the bottom-left RDM
+    rdm_axes[2].legend(
+        handles=cat_handles, loc="upper center",
+        bbox_to_anchor=(1.55, -0.08), ncol=6,
+        fontsize=6.5, frameon=False, handletextpad=0.3,
+        columnspacing=0.8, handlelength=1.2,
+    )
 
     # ── Panel B: PC scatter with image insets ──
     if has_pc_data:
