@@ -386,7 +386,7 @@ def _load_concept_names():
     return list(behav_data["concept_names"])
 
 
-def _load_inset_image(concept, size=48):
+def _load_inset_image(concept, size=256):
     """Load and resize a THINGS concept image."""
     path = os.path.join(THINGS_IMAGE_DIR, concept, f"{concept}_01b.jpg")
     img = Image.open(path).convert("RGB").resize((size, size), Image.LANCZOS)
@@ -504,7 +504,7 @@ def draw_image_insets(axes, all_pcs, concept_names):
             ox = np.clip(ox, xlim[0] + margin_x, xlim[1] - margin_x)
             oy = np.clip(oy, ylim[0] + margin_y, ylim[1] - margin_y)
 
-            im = OffsetImage(images[concept], zoom=0.50)
+            im = OffsetImage(images[concept], zoom=0.094)
             ab = AnnotationBbox(im, (ox, oy), frameon=True, pad=0.08,
                                 bboxprops=dict(
                                     edgecolor="black",
