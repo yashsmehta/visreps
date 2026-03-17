@@ -1,5 +1,6 @@
 discussion/
 datasets/
+*.npz
 *.db
 experiments/coarse_grain_benefits/results/*
 .DS_Store
