@@ -196,5 +196,12 @@ def ConvNeXt_Base(pretrained_dataset="imagenet1k", num_classes=None):
         model = models.convnext_base(weights=None)
     else:
         raise ValueError(f"Invalid pretrained dataset: {pretrained_dataset}")
+
+    # Replace classifier head for custom num_classes
+    if num_classes is not None and num_classes != 1000:
+        model.classifier[2] = torch.nn.Linear(1024, num_classes)
+        torch.nn.init.xavier_uniform_(model.classifier[2].weight)
+        torch.nn.init.zeros_(model.classifier[2].bias)
+
     return model
 

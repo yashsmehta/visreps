@@ -11,11 +11,13 @@ from pathlib import Path
 BASE_CONFIG = "configs/train/cluster_base.json"
 
 PARAM_GRID = {
-    "seed": [1, 2, 3],
-    "model_name": ["CustomCNN"],
+    "seed": [1],
+    "model_class": ["standard_model"],
+    "model_name": ["VGG16", "ResNet50", "ViTBase", "ConvNeXt_Base"],
+    "pretrained_dataset": ["none"],
     "pca_labels": [True],
-    "pca_n_classes": [2, 4, 8, 16, 32, 64],
-    "pca_labels_folder": ["pca_labels_vit", "pca_labels_clip", "pca_labels_dino"],
+    "pca_n_classes": [8, 32],
+    "pca_labels_folder": ["pca_labels_clip"],
     "log_checkpoints": [True],
 }
 
@@ -43,12 +45,19 @@ SLURM_CONFIG = {
 def get_checkpoint_dir(params):
     """Derive checkpoint_dir from pca_labels_folder when pca_labels=True.
 
-    "pca_labels_dreamsim" -> "dreamsim_pca"
-    "pca_labels_dino"     -> "dino_pca"
+    CustomCNN (custom_model) keeps the existing convention:
+        "pca_labels_clip" -> "clip_pca"
+
+    Standard architectures prepend the model name:
+        ResNet50 + "pca_labels_clip" -> "resnet50_clip_pca"
     """
     if params.get("pca_labels"):
         folder = params.get("pca_labels_folder", "")
         base = folder.removeprefix("pca_labels_")
+        model_class = params.get("model_class", "custom_model")
+        if model_class == "standard_model":
+            model_name = params.get("model_name", "").lower()
+            return f"{model_name}_{base}_pca"
         return f"{base}_pca"
     return DEFAULT_CHECKPOINT_DIR
 
