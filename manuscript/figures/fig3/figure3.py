@@ -328,8 +328,8 @@ def plot_comparison_panel(ax, ref_ax=None):
                 fontstyle="italic")
 
     # ── Draw pretrained scatter ──
-    pt_size_base = 250
-    pt_size_star = 340
+    pt_size_base = 150
+    pt_size_star = 204
     for pt in all_points:
         gx = group_positions[pt["group"]]
         group_pts = [p for p in all_points if p["group"] == pt["group"]]
@@ -365,7 +365,7 @@ def plot_comparison_panel(ax, ref_ax=None):
             used_y.append(y)
             ax.text(pt["x_plot"] + x_offset, y, pt["display"],
                     ha="left", va="center", fontsize=fs_model, color="#333333",
-                    fontstyle="italic")
+                    fontstyle="italic", zorder=10)
 
     # ── Axis formatting ──
     xlim_right = list(group_positions.values())[-1] + 2.4
