@@ -233,11 +233,6 @@ def plot_coarseness_raw(ax):
 
     _draw_bar_break(ax)
 
-    # "(default)" subtitle below the 1000 tick
-    ax.text(BAR_CENTER, -0.10, "(default)", fontsize=5.5,
-            ha="center", va="top", color="#777777", fontstyle="italic",
-            transform=ax.get_xaxis_transform())
-
     ax.set_title("Alignment vs. Granularity",
                  fontsize=9.5, fontweight="semibold", pad=8)
 
@@ -310,31 +305,31 @@ def plot_comparison_panel(ax, ref_ax=None):
     best_coarse = _fetch_clip8_score()
     all_points = _fetch_pretrained_data()
 
-    # ── Layout: scatter groups only (no bars) ──
-    scatter_start = 0.0
+    # ── Layout: scatter groups evenly spaced across panel ──
     group_positions = {
-        "Supervised":      scatter_start,
-        "Self-supervised": scatter_start + 1.4,
-        "Vision-language": scatter_start + 2.8,
+        "Supervised":      2.0,
+        "Self-supervised": 5.0,
+        "Vision-language": 8.0,
     }
-    jitter_spread = 0.25
+    jitter_spread = 0.30
 
     # ── Dashed reference line for coarse-grain 8-way ──
     if not np.isnan(best_coarse["mean"]):
-        x_ref_start = -0.6
-        x_ref_end = list(group_positions.values())[-1] + 0.6
+        x_ref_start = -0.3
+        x_ref_end = list(group_positions.values())[-1] + 1.2
         ax.plot([x_ref_start, x_ref_end],
                 [best_coarse["mean"], best_coarse["mean"]],
                 color=COARSE_BAR_COLOR, linestyle=(0, (5, 3)),
                 linewidth=1.0, alpha=0.55, zorder=1)
         # Label just above the dashed line
-        ax.text(x_ref_end, best_coarse["mean"] + 0.008, "8 classes (CLIP repr.)",
-                ha="right", va="bottom", fontsize=7, color=COARSE_BAR_COLOR,
+        ax.text(x_ref_start + 0.1, best_coarse["mean"] + 0.008,
+                "8 classes (CLIP repr.)",
+                ha="left", va="bottom", fontsize=8.75, color=COARSE_BAR_COLOR,
                 fontstyle="italic")
 
     # ── Draw pretrained scatter ──
-    pt_size_base = 160
-    pt_size_star = 220
+    pt_size_base = 250
+    pt_size_star = 340
     for pt in all_points:
         gx = group_positions[pt["group"]]
         group_pts = [p for p in all_points if p["group"] == pt["group"]]
@@ -347,16 +342,16 @@ def plot_comparison_panel(ax, ref_ax=None):
         pt["x_plot"] = x_jit
 
         ax.plot([x_jit, x_jit], [pt["ci_low"], pt["ci_high"]],
-                color=pt["color"], linewidth=1.4, alpha=0.50, zorder=4,
+                color=pt["color"], linewidth=1.8, alpha=0.55, zorder=4,
                 solid_capstyle="round")
         sz = pt_size_star if pt["marker"] == "*" else pt_size_base
         ax.scatter(x_jit, pt["score"], marker=pt["marker"], c=pt["color"],
-                   s=sz, edgecolors="white", linewidths=0.7, zorder=5)
+                   s=sz, edgecolors="white", linewidths=1.0, zorder=5)
 
     # ── Model name labels ──
-    fs_model = 7.0
-    x_offset = 0.24
-    min_gap = 0.022
+    fs_model = 8.75
+    x_offset = 0.38
+    min_gap = 0.035
     for group_name in PRETRAINED_GROUPS:
         group_pts = sorted(
             [p for p in all_points if p["group"] == group_name],
@@ -373,17 +368,17 @@ def plot_comparison_panel(ax, ref_ax=None):
                     fontstyle="italic")
 
     # ── Axis formatting ──
-    xlim_right = list(group_positions.values())[-1] + 1.8
-    ax.set_xlim(-0.6, xlim_right)
-    ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=8.5, labelpad=5)
+    xlim_right = list(group_positions.values())[-1] + 2.4
+    ax.set_xlim(-0.5, xlim_right)
+    ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=9.5, labelpad=5)
     ax.set_title("Model Comparison",
-                 fontsize=9.5, fontweight="semibold", pad=8)
+                 fontsize=10.5, fontweight="semibold", pad=8)
 
     # X-ticks: only scatter group labels
     scatter_xticks = [group_positions[g] for g in group_positions]
     scatter_xlabels = ["Supervised", "Self-\nsupervised", "Vision-\nlanguage"]
     ax.set_xticks(scatter_xticks)
-    ax.set_xticklabels(scatter_xlabels, fontsize=6.5)
+    ax.set_xticklabels(scatter_xlabels, fontsize=8.0)
 
     # Subtle horizontal grid
     ax.yaxis.grid(True, which="major", color="#EBEBEB", linewidth=0.4, zorder=0)
@@ -394,7 +389,7 @@ def plot_comparison_panel(ax, ref_ax=None):
     ax.yaxis.set_minor_locator(AutoMinorLocator(2))
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.1f}"))
     ax.tick_params(axis="y", which="major", direction="out", length=5,
-                   width=1.2, labelsize=7.5)
+                   width=1.2, labelsize=8.5)
     ax.tick_params(axis="y", which="minor", direction="out", length=3,
                    width=0.8)
     ax.tick_params(axis="x", which="major", length=4, width=1.0, direction="out")
@@ -413,16 +408,16 @@ def plot_comparison_panel(ax, ref_ax=None):
     leg_handles = [
         Line2D([], [], marker="p", color="none", markerfacecolor="#777777",
                markeredgecolor="white", markeredgewidth=0.6,
-               markersize=10, label="CNN"),
+               markersize=11, label="CNN"),
         Line2D([], [], marker="*", color="none", markerfacecolor="#777777",
                markeredgecolor="white", markeredgewidth=0.5,
-               markersize=12, label="ViT"),
+               markersize=13, label="ViT"),
     ]
-    leg = ax.legend(handles=leg_handles, fontsize=7.5, frameon=True,
-                    loc="lower right", edgecolor="#dddddd", fancybox=False,
+    leg = ax.legend(handles=leg_handles, fontsize=9, frameon=True,
+                    loc="lower left", edgecolor="#dddddd", fancybox=False,
                     framealpha=0.95, handletextpad=0.3, borderpad=0.4,
                     labelspacing=0.3, ncol=1, columnspacing=0.5,
-                    bbox_to_anchor=(1.0, 0.0))
+                    bbox_to_anchor=(0.0, 0.0))
     leg.get_frame().set_linewidth(0.4)
 
 
