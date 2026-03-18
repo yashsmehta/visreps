@@ -279,7 +279,7 @@ def main():
                               hspace=0.42, wspace=0.28,
                               height_ratios=[1, 1],
                               width_ratios=[0.7, 1, 1],
-                              left=0.07, right=0.97, top=0.88, bottom=0.10)
+                              left=0.08, right=0.97, top=0.88, bottom=0.10)
 
     axes = {}
 
@@ -360,13 +360,20 @@ def main():
                      fontsize=8, color="#888888",
                      ha="center", va="bottom", family="sans-serif")
 
-    # ── Row labels ──
+    # ── Row labels (two-level: bold dataset + lighter species) ──
+    # Use two separate x positions to stack them side-by-side when rotated 90°
     tvsd_mid_y = (axes[(0, 0)].get_position().y0 + axes[(0, 0)].get_position().y1) / 2
     nsd_mid_y = (axes[(1, 0)].get_position().y0 + axes[(1, 0)].get_position().y1) / 2
-    fig.text(0.018, tvsd_mid_y, "TVSD  (Macaque)", fontsize=9.5, fontweight="bold",
+    # TVSD — bold name at x=0.010, species at x=0.028 (stacks left-to-right)
+    fig.text(0.008, tvsd_mid_y, "TVSD", fontsize=10, fontweight="bold",
              ha="center", va="center", color="#2a2a2a", rotation=90)
-    fig.text(0.018, nsd_mid_y, "NSD  (Human)", fontsize=9.5, fontweight="bold",
+    fig.text(0.028, tvsd_mid_y, "Macaque", fontsize=7.5,
+             ha="center", va="center", color="#888888", rotation=90)
+    # NSD
+    fig.text(0.008, nsd_mid_y, "NSD", fontsize=10, fontweight="bold",
              ha="center", va="center", color="#2a2a2a", rotation=90)
+    fig.text(0.028, nsd_mid_y, "Human", fontsize=7.5,
+             ha="center", va="center", color="#888888", rotation=90)
 
     # ── Panel labels (A–F) ──
     label_order = [(0, 0), (0, 1), (0, 2), (1, 0), (1, 1), (1, 2)]
