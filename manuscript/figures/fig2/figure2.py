@@ -139,7 +139,8 @@ def _make_tick_formatter(label_map):
 
 # ── Coarseness panel ─────────────────────────────────────────────────────
 
-def plot_raw_coarseness(ax, dataset, region, show_ylabel=True, show_xlabel=True):
+def plot_raw_coarseness(ax, dataset, region, show_ylabel=True, show_xlabel=True,
+                        show_untrained_label=True):
     """Plot coarseness panel with raw Spearman ρ values."""
 
     if dataset == "nsd":
@@ -196,13 +197,13 @@ def plot_raw_coarseness(ax, dataset, region, show_ylabel=True, show_xlabel=True)
     if not np.isnan(un_mean):
         ax.axhline(un_mean, color="#AAAAAA", linestyle="--",
                     linewidth=0.9, alpha=0.7, zorder=1)
-        # Light italic label above the line, left side, in front of everything
-        y_offset = (y_max - y_min) * 0.03  # ~2mm visual offset above the line
-        ax.text(0.02, un_mean + y_offset, " Untrained",
-                fontsize=6, fontstyle="italic", color="#AAAAAA",
-                ha="left", va="bottom",
-                transform=blended_transform_factory(ax.transAxes, ax.transData),
-                zorder=10)
+        if show_untrained_label:
+            y_offset = (y_max - y_min) * 0.03
+            ax.text(0.02, un_mean + y_offset, " Untrained",
+                    fontsize=6, fontstyle="italic", color="#AAAAAA",
+                    ha="left", va="bottom",
+                    transform=blended_transform_factory(ax.transAxes, ax.transData),
+                    zorder=10)
 
     # ── 4) Single 1000-way trained bar ──
     bl_err_lo = max(bl_mean - bl_ci_lo, 0) if not np.isnan(bl_ci_lo) else 0
@@ -246,20 +247,16 @@ def plot_raw_coarseness(ax, dataset, region, show_ylabel=True, show_xlabel=True)
     ax.set_ylim(cur_ylim[0], cur_ylim[1] + y_range * 0.03)
 
     if show_xlabel:
-        ax.set_xlabel("ImageNet training classes", fontsize=8, labelpad=8)
+        ax.set_xlabel("ImageNet training classes", fontsize=9, labelpad=6)
     if show_ylabel:
-        ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=8.5, labelpad=3)
+        ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=9, labelpad=3)
     else:
         ax.set_ylabel("")
     sns.despine(ax=ax, right=True, top=True, offset=3)
 
     _draw_bar_break(ax)
 
-    # "(default)" subtitle below the 1000 tick — bottom row only
-    if show_xlabel:
-        ax.text(BAR_CENTER, -0.10, "(default)", fontsize=5.5,
-                ha="center", va="top", color="#777777", fontstyle="italic",
-                transform=ax.get_xaxis_transform())
+    # "(default)" subtitle below the 1000 tick — removed for cleanliness
 
 
 # ── Main ─────────────────────────────────────────────────────────────────
@@ -267,22 +264,22 @@ def plot_raw_coarseness(ax, dataset, region, show_ylabel=True, show_xlabel=True)
 def main():
     setup_style()
     plt.rcParams.update({
-        "axes.labelsize": 8,
-        "axes.titlesize": 9,
-        "xtick.labelsize": 7,
-        "ytick.labelsize": 7,
+        "axes.labelsize": 9,
+        "axes.titlesize": 10,
+        "xtick.labelsize": 7.5,
+        "ytick.labelsize": 7.5,
         "axes.linewidth": 0.6,
         "xtick.major.width": 0.6,
         "ytick.major.width": 0.6,
     })
 
-    fig = plt.figure(figsize=(11.5, 6.8))
+    fig = plt.figure(figsize=(11.5, 7.2))
 
     outer = gridspec.GridSpec(2, 3, figure=fig,
-                              hspace=0.28, wspace=0.28,
+                              hspace=0.42, wspace=0.28,
                               height_ratios=[1, 1],
                               width_ratios=[0.7, 1, 1],
-                              left=0.07, right=0.97, top=0.93, bottom=0.10)
+                              left=0.07, right=0.97, top=0.88, bottom=0.10)
 
     axes = {}
 
@@ -294,7 +291,8 @@ def main():
 
     ax_v1 = fig.add_subplot(outer[0, 1])
     plot_raw_coarseness(ax_v1, "tvsd", "V1",
-                        show_ylabel=True, show_xlabel=False)
+                        show_ylabel=True, show_xlabel=False,
+                        show_untrained_label=True)
     axes[(0, 1)] = ax_v1
 
     ax_it = fig.add_subplot(outer[0, 2])
@@ -318,30 +316,73 @@ def main():
                         show_ylabel=False, show_xlabel=True)
     axes[(1, 2)] = ax_ventral
 
-    # ── Region titles ──
-    for ax_key, title in [
-        ((0, 1), "V1 (Early)"),
-        ((0, 2), "IT (Late)"),
-        ((1, 1), "Early Visual Stream"),
-        ((1, 2), "Ventral Visual Stream"),
-    ]:
-        axes[ax_key].set_title(title, fontsize=9, fontweight="bold",
-                                pad=6, color="#222222")
+    # ── Column headers (shared across both rows) ──
+    # One bold title per column, positioned above the TVSD (top) row.
+    # Per-row gray subtitles list the specific brain regions.
+    col_headers = {
+        1: "Early Visual Cortex",
+        2: "Higher Visual Cortex",
+    }
+    for col, header in col_headers.items():
+        pos = axes[(0, col)].get_position()
+        x_center = (pos.x0 + pos.x1) / 2
+        y_top = pos.y1
+        fig.text(x_center, y_top + 0.058, header,
+                 fontsize=11.5, fontweight="bold", color="#1a1a1a",
+                 ha="center", va="bottom", family="sans-serif")
+
+    # Per-row subtitles: stream/region name + specific ROIs in brackets
+    # TVSD: single region names (V1, IT)
+    # NSD: stream name + constituent ROIs
+    row_subtitles = {
+        # (ax_key): (line1, line2_or_None)
+        (0, 1): ("V1", None),
+        (0, 2): ("IT", None),
+        (1, 1): ("Early visual stream", "(V1, V2, V3)"),
+        (1, 2): ("Ventral visual stream", "(VO, PHC, and higher areas)"),
+    }
+    for ax_key, (line1, line2) in row_subtitles.items():
+        ax = axes[ax_key]
+        pos = ax.get_position()
+        x_center = (pos.x0 + pos.x1) / 2
+        y_top = pos.y1
+        if line2:
+            # Two-line subtitle: stream name + ROIs in brackets
+            fig.text(x_center, y_top + 0.025, line1,
+                     fontsize=8, color="#888888",
+                     ha="center", va="bottom", family="sans-serif")
+            fig.text(x_center, y_top + 0.005, line2,
+                     fontsize=6.5, color="#aaaaaa",
+                     ha="center", va="bottom", family="sans-serif")
+        else:
+            # Single-line subtitle (TVSD)
+            fig.text(x_center, y_top + 0.012, line1,
+                     fontsize=8, color="#888888",
+                     ha="center", va="bottom", family="sans-serif")
 
     # ── Row labels ──
     tvsd_mid_y = (axes[(0, 0)].get_position().y0 + axes[(0, 0)].get_position().y1) / 2
     nsd_mid_y = (axes[(1, 0)].get_position().y0 + axes[(1, 0)].get_position().y1) / 2
-    fig.text(0.015, tvsd_mid_y, "TVSD  (Macaque)", fontsize=9.5, fontweight="bold",
-             ha="center", va="center", color="#333333", rotation=90)
-    fig.text(0.015, nsd_mid_y, "NSD  (Human)", fontsize=9.5, fontweight="bold",
-             ha="center", va="center", color="#333333", rotation=90)
+    fig.text(0.018, tvsd_mid_y, "TVSD  (Macaque)", fontsize=9.5, fontweight="bold",
+             ha="center", va="center", color="#2a2a2a", rotation=90)
+    fig.text(0.018, nsd_mid_y, "NSD  (Human)", fontsize=9.5, fontweight="bold",
+             ha="center", va="center", color="#2a2a2a", rotation=90)
 
     # ── Panel labels (A–F) ──
     label_order = [(0, 0), (0, 1), (0, 2), (1, 0), (1, 1), (1, 2)]
     for i, key in enumerate(label_order):
         label = chr(ord("A") + i)
         ax = axes[key]
-        ax.text(-0.10, 1.10, label, transform=ax.transAxes,
+        # Top-row data panels: extra offset for column header + subtitle
+        # Bottom-row data panels: offset for subtitle only
+        # Schematic panels (col 0): standard offset
+        if key[1] == 0:
+            y_offset = 1.10
+        elif key[0] == 0:
+            y_offset = 1.30  # top row with column header above
+        else:
+            y_offset = 1.16  # bottom row with subtitle only
+        ax.text(-0.10, y_offset, label, transform=ax.transAxes,
                 fontsize=13, fontweight="bold", va="top", ha="left",
                 family="sans-serif")
 
@@ -367,12 +408,21 @@ def main():
         frameon=True, fancybox=False, framealpha=0.92,
         edgecolor="#dddddd", borderpad=0.4,
         handletextpad=0.3, labelspacing=0.25,
-        title="Latent repr. for\ncoarse labels",
+        title="Coarse label source",
         title_fontsize=7,
         loc="center left",
-        bbox_to_anchor=(0.0, 0.45),
+        bbox_to_anchor=(0.0, 0.40),
     )
     leg._legend_box.align = "left"
+
+    # ── Subtle row separator ──
+    tvsd_bottom = axes[(0, 0)].get_position().y0
+    nsd_top_title = axes[(1, 1)].get_position().y1 + 0.060
+    sep_y = (tvsd_bottom + nsd_top_title) / 2
+    fig.add_artist(plt.Line2D(
+        [0.04, 0.98], [sep_y, sep_y],
+        transform=fig.transFigure, color="#cccccc",
+        linewidth=0.8, zorder=0))
 
     # ── Save ──
     out = f"{OUTPUT_DIR}/figure2.png"
