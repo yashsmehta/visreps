@@ -60,9 +60,9 @@ class Trainer:
     def train_epoch(self, epoch):
         self.model.train()
         loader, use_pbar = self._create_progress_bar(self.loaders["train"], epoch)
+        grad_clip = self.cfg.get("grad_clip", 0)
 
         total_loss = 0
-        total_grad_norm = 0
 
         for i, (images, labels) in enumerate(loader):
             # Forward pass (with optional AMP)
@@ -73,17 +73,14 @@ class Trainer:
 
             # Backward pass (with GradScaler for AMP)
             self.scaler.scale(loss).backward()
-            if hasattr(self.cfg, 'grad_clip') and self.cfg.grad_clip > 0:
+            if grad_clip > 0:
                 self.scaler.unscale_(self.optimizer)
-                grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.grad_clip)
-            else:
-                grad_norm = torch.norm(torch.stack([p.grad.norm() for p in self.model.parameters() if p.grad is not None]))
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), grad_clip)
             self.scaler.step(self.optimizer)
             self.scaler.update()
 
             # Track metrics
             total_loss += loss.item()
-            total_grad_norm += grad_norm.item()
             lr = self.optimizer.param_groups[0]['lr']
 
             # Logging
@@ -92,7 +89,7 @@ class Trainer:
             # Progress updates (only for interactive environments)
             if use_pbar:
                 avg_loss = total_loss / (i + 1)
-                loader.set_postfix({'Avg Loss': f'{avg_loss:.4f}', 'LR': f'{lr:.6f}', 'Grad Norm': f'{grad_norm:.4f}'})
+                loader.set_postfix({'Avg Loss': f'{avg_loss:.4f}', 'LR': f'{lr:.6f}'})
 
         avg_loss = total_loss / len(loader)
         return avg_loss, {'epoch_loss': avg_loss, 'learning_rate': lr}
