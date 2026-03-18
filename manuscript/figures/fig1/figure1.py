@@ -545,18 +545,26 @@ def main():
         inset_idx_2 = select_inset_indices(pcs_2way_trained, labels_2way, 2)
 
     # ══════════════════════════════════════════════════════════════════════
-    # Figure 1a: Label space (2-way, 4-way, 1000-way)
+    # Figure 1a: Label space (2-class, 4-class, ..., 1000-class)
+    # Layout: [2-class | 4-class | thin gap with progression | 1000-class]
     # ══════════════════════════════════════════════════════════════════════
-    fig_a, axes_a = plt.subplots(1, 3, figsize=(14, 4.8))
+    fig_a = plt.figure(figsize=(14, 4.8))
+    # 2-class and 4-class close together; more space before 1000-class for progression
+    gs_a = gridspec.GridSpec(1, 3, figure=fig_a,
+                             width_ratios=[1, 1, 1.15],
+                             wspace=0.15,
+                             left=0.04, right=0.97, top=0.86, bottom=0.10)
+    axes_a = [fig_a.add_subplot(gs_a[0, 0]),
+              fig_a.add_subplot(gs_a[0, 1]),
+              fig_a.add_subplot(gs_a[0, 2])]
 
-    plot_top_panel(axes_a[0], top_pcs, labels_2, 2, PALETTE_2, "2 classes",
+    # Plot panels without titles — we'll draw a unified header instead
+    plot_top_panel(axes_a[0], top_pcs, labels_2, 2, PALETTE_2, "",
                    show_ylabel=True,
-                   subtitle="median split on PC 1",
                    decision_lines=[{"type": "vline", "pos": med_pc1}])
 
-    plot_top_panel(axes_a[1], top_pcs, labels_4, 4, PALETTE_4, "4 classes",
+    plot_top_panel(axes_a[1], top_pcs, labels_4, 4, PALETTE_4, "",
                    show_ylabel=False,
-                   subtitle="+ median split on PC 2",
                    decision_lines=[
                        {"type": "vline", "pos": med_pc1},
                        {"type": "hline_segment",
@@ -593,8 +601,7 @@ def main():
             colors_1k[pos[0]] = tuple(mcolors.to_rgba(inset_1k_hex[k]))
 
     plot_top_panel(axes_a[2], top_pcs, top_class_labels, 1000, colors_1k,
-                   "1000 classes", point_size=20, alpha=0.70, show_ylabel=False,
-                   subtitle="default ImageNet")
+                   "", point_size=20, alpha=0.70, show_ylabel=False)
 
     # ── Add image insets to all three panels ──
     from dotenv import load_dotenv
@@ -613,7 +620,47 @@ def main():
     else:
         print(f"WARNING: ImageNet dir not found ({imagenet_dir}), skipping insets")
 
-    fig_a.subplots_adjust(wspace=0.12, left=0.05, right=0.97, top=0.90, bottom=0.10)
+    # ── Unified header: progression 2 → 4 → 8 → 16 → 32 → 64 | break | 1000 ──
+    pos0 = axes_a[0].get_position()
+    pos1 = axes_a[1].get_position()
+    pos2 = axes_a[2].get_position()
+    header_y = pos0.y1 + 0.06   # main label y
+    sub_y = pos0.y1 + 0.02      # subtitle y
+
+    cx0 = (pos0.x0 + pos0.x1) / 2
+    cx1 = (pos1.x0 + pos1.x1) / 2
+    cx2 = (pos2.x0 + pos2.x1) / 2
+
+    # Bold panel labels with "classes"
+    fig_a.text(cx0, header_y, "2 classes", ha="center", va="bottom",
+               fontsize=12, fontweight="bold", color="#1a1a1a",
+               transform=fig_a.transFigure)
+    fig_a.text(cx1, header_y, "4 classes", ha="center", va="bottom",
+               fontsize=12, fontweight="bold", color="#1a1a1a",
+               transform=fig_a.transFigure)
+    fig_a.text(cx2, header_y, "1000 classes", ha="center", va="bottom",
+               fontsize=12, fontweight="bold", color="#1a1a1a",
+               transform=fig_a.transFigure)
+
+    # Subtitles
+    fig_a.text(cx0, sub_y, "median split on PC 1", ha="center", va="bottom",
+               fontsize=8, color="#888888", fontstyle="italic",
+               transform=fig_a.transFigure)
+    fig_a.text(cx1, sub_y, "+ split on PC 2", ha="center", va="bottom",
+               fontsize=8, color="#888888", fontstyle="italic",
+               transform=fig_a.transFigure)
+    fig_a.text(cx2, sub_y, "default ImageNet", ha="center", va="bottom",
+               fontsize=8, color="#888888", fontstyle="italic",
+               transform=fig_a.transFigure)
+
+    # Intermediate progression: 8, 16, 32, 64 classes
+    # Single line of text placed between "4 classes" and "1000 classes"
+    gap_cx = (pos1.x1 + pos2.x0) / 2
+    fig_a.text(gap_cx, header_y + 0.005,
+               "8  ·  16  ·  32  ·  64 classes",
+               ha="center", va="bottom",
+               fontsize=9.5, fontweight="normal", color="#999999",
+               transform=fig_a.transFigure)
 
     out_a = os.path.join(SCRIPT_DIR, "figure1a.png")
     fig_a.savefig(out_a, dpi=300, bbox_inches="tight", facecolor="white",
