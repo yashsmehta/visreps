@@ -1,13 +1,13 @@
 """Figure 4: Per-Concept Alignment Analysis.
 
 Layout (2 rows):
-  Row 1:  [Behavioral RDM]  [CLIP 8-class RDM]  [1000-class RDM]  [colorbar]
+  Row 1:  [Behavioral RDM]  [8 classes (CLIP repr.) RDM]  [1000-class RDM]  [colorbar]
           [              super-category legend row                  ]
   Row 2:  [Scatter plot]                          [Histogram]
 
-Panel A: Category-sorted RDMs — Behavioral vs CLIP 8-class vs 1000-class
+Panel A: Category-sorted RDMs — Behavioral vs 8 classes (CLIP repr.) vs 1000-class
          (concepts grouped by 8 semantic super-categories derived from THINGS-27)
-Panel B: Per-concept scatter — CLIP 8-class vs 1000-way per-concept RSA
+Panel B: Per-concept scatter — 8 classes (CLIP repr.) vs 1000-way per-concept RSA
 Panel C: Histogram of per-concept advantage (delta rho)
 
 Usage:
@@ -184,7 +184,7 @@ def main():
     rdms_ranked = precomputed["rdms_ranked"]
 
     rdm_behav_orig = rdms_ranked["Behavioral"][np.ix_(unsort, unsort)]
-    rdm_clip8_orig = rdms_ranked["CLIP 8-class"][np.ix_(unsort, unsort)]
+    rdm_clip8_orig = rdms_ranked["8 classes (CLIP repr.)"][np.ix_(unsort, unsort)]
     rdm_1k_orig = rdms_ranked["1000-class"][np.ix_(unsort, unsort)]
 
     fine_categories = load_categories()
@@ -227,8 +227,8 @@ def main():
     im = _draw_rdm(ax_rdm_behav, rdm_behav_super, "Behavioral",
                     "(ground truth)", super_boundaries, n, super_cats_used,
                     subtitle_italic=True, show_sidebar_labels=True)
-    _draw_rdm(ax_rdm_clip8, rdm_clip8_super, "CLIP 8-class",
-              f"$\\rho_s$ = {rsa_scores['CLIP 8-class']:.3f}",
+    _draw_rdm(ax_rdm_clip8, rdm_clip8_super, "8 classes (CLIP repr.)",
+              f"$\\rho_s$ = {rsa_scores['8 classes (CLIP repr.)']:.3f}",
               super_boundaries, n, super_cats_used)
     _draw_rdm(ax_rdm_1k, rdm_1k_super, "1000-class",
               f"$\\rho_s$ = {rsa_scores['1000-class']:.3f}",
@@ -258,7 +258,7 @@ def main():
 
     # Override histogram formatting for standalone display
     ax_hist.set_xlabel(
-        r"$\Delta\rho_s$ (CLIP 8-class $-$ 1000-class)", fontsize=11)
+        r"$\Delta\rho_s$ (8 classes (CLIP repr.) $-$ 1000-class)", fontsize=11)
     ax_hist.set_ylabel("Count", fontsize=11)
     ax_hist.tick_params(axis="both", labelsize=9.5, length=4, width=0.8)
     ax_hist.set_title("Per-Concept Advantage", fontsize=12.5,

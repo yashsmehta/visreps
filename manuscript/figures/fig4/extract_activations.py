@@ -1,4 +1,4 @@
-"""Extract concept-averaged FC1 and FC2 activations for CLIP 8-class and 1000-class.
+"""Extract concept-averaged FC1 and FC2 activations for 8 classes (CLIP repr.) and 1000-class.
 
 Saves post-ReLU activations for both layers, concept-averaged over THINGS images.
 

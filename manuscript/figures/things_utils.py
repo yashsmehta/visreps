@@ -72,13 +72,13 @@ def compute_things_data(data=None):
     # Sorted RDMs
     rdms_sorted = {
         "Behavioral": rdm_behav[np.ix_(sort_idx, sort_idx)],
-        "CLIP 8-class": rdm_clip8[np.ix_(sort_idx, sort_idx)],
+        "8 classes (CLIP repr.)": rdm_clip8[np.ix_(sort_idx, sort_idx)],
         "1000-class": rdm_1k[np.ix_(sort_idx, sort_idx)],
     }
 
     # RSA scores
     rsa_scores = {}
-    for key in ["CLIP 8-class", "1000-class"]:
+    for key in ["8 classes (CLIP repr.)", "1000-class"]:
         rsa_scores[key] = compute_rdm_correlation(
             torch.tensor(rdms_sorted[key]), torch.tensor(rdms_sorted["Behavioral"]),
             correlation="Spearman"
@@ -88,7 +88,7 @@ def compute_things_data(data=None):
     ranked_behav = rank_transform(rdms_sorted["Behavioral"])
     diff_rdm = (
         np.abs(ranked_behav - rank_transform(rdms_sorted["1000-class"]))
-        - np.abs(ranked_behav - rank_transform(rdms_sorted["CLIP 8-class"]))
+        - np.abs(ranked_behav - rank_transform(rdms_sorted["8 classes (CLIP repr.)"]))
     )
 
     # Rank-transform for display
@@ -119,7 +119,7 @@ def compute_things_data(data=None):
 def plot_rdm_panels(axes, precomputed, show_difference=True, colorbar_axes=None):
     """Draw RDM panels using precomputed data.
 
-    axes: list of 3 or 4 axes (Behavioral, CLIP 8-class, 1000-class, [Difference])
+    axes: list of 3 or 4 axes (Behavioral, 8 classes (CLIP repr.), 1000-class, [Difference])
     colorbar_axes: tuple (ax_cb_magma, ax_cb_diff) or None to skip colorbars.
     """
     block_boundaries = precomputed["block_boundaries"]
@@ -134,7 +134,7 @@ def plot_rdm_panels(axes, precomputed, show_difference=True, colorbar_axes=None)
 
     panels = [
         ("Behavioral", rdms_ranked["Behavioral"], None, "magma"),
-        ("CLIP 8-class", rdms_ranked["CLIP 8-class"], rsa_scores["CLIP 8-class"], "magma"),
+        ("8 classes (CLIP repr.)", rdms_ranked["8 classes (CLIP repr.)"], rsa_scores["8 classes (CLIP repr.)"], "magma"),
         ("1000-class", rdms_ranked["1000-class"], rsa_scores["1000-class"], "magma"),
     ]
     if show_difference:
@@ -246,7 +246,7 @@ def plot_scatter_panel(ax_scatter, ax_hist, precomputed):
     df["marker"] = markers
     df["highlighted"] = is_highlighted
 
-    # ── Scatter (x = CLIP 8-class, y = 1000-class) ──
+    # ── Scatter (x = 8 classes (CLIP repr.), y = 1000-class) ──
     lims = [min(df["corr_1k"].min(), df["corr_clip8"].min()) - 0.08,
             max(df["corr_1k"].max(), df["corr_clip8"].max()) + 0.05]
     xx = np.linspace(lims[0], lims[1], 200)
@@ -275,7 +275,7 @@ def plot_scatter_panel(ax_scatter, ax_hist, precomputed):
 
     ax_scatter.set_xlim(lims)
     ax_scatter.set_ylim(lims)
-    ax_scatter.set_xlabel(r"Per-concept $\rho_s$ (CLIP 8-class)", fontsize=10.5)
+    ax_scatter.set_xlabel(r"Per-concept $\rho_s$ (8 classes (CLIP repr.))", fontsize=10.5)
     ax_scatter.set_ylabel(r"Per-concept $\rho_s$ (1000-class)", fontsize=10.5)
     ax_scatter.set_title("Per-Concept Alignment", fontsize=12,
                           fontweight="semibold", pad=10)
@@ -352,7 +352,7 @@ def plot_scatter_panel(ax_scatter, ax_hist, precomputed):
         ax_hist.yaxis.set_major_locator(mticker.MaxNLocator(3, integer=True))
         pct_fs = 8.5
     else:
-        ax_hist.set_xlabel(r"$\Delta\rho_s$ (CLIP 8-class $-$ 1000-class)",
+        ax_hist.set_xlabel(r"$\Delta\rho_s$ (8 classes (CLIP repr.) $-$ 1000-class)",
                            fontsize=10.5)
         ax_hist.set_ylabel("Count", fontsize=10.5)
         ax_hist.tick_params(axis="both", labelsize=9, length=4, width=0.8)

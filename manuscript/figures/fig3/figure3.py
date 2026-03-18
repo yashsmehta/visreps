@@ -252,7 +252,7 @@ def _fetch_clip8_score():
         "mean": s["mean"],
         "ci_low": s["ci_low"],
         "ci_high": s["ci_high"],
-        "label": "CLIP 8-class",
+        "label": "8 classes (CLIP repr.)",
     }
 
 
@@ -328,7 +328,7 @@ def plot_comparison_panel(ax, ref_ax=None):
                 color=COARSE_BAR_COLOR, linestyle=(0, (5, 3)),
                 linewidth=1.0, alpha=0.55, zorder=1)
         # Label just above the dashed line
-        ax.text(x_ref_end, best_coarse["mean"] + 0.008, "CLIP 8-class",
+        ax.text(x_ref_end, best_coarse["mean"] + 0.008, "8 classes (CLIP repr.)",
                 ha="right", va="bottom", fontsize=7, color=COARSE_BAR_COLOR,
                 fontstyle="italic")
 
@@ -434,7 +434,7 @@ PROJECT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../.
 # (title, subtitle, data_key, needs_l2)
 PC_PANELS = [
     ("Behavioral",  "(ground truth)", None),
-    ("CNN",         "(CLIP 8-class)", "clip8"),
+    ("CNN",         "(8 classes (CLIP repr.))", "clip8"),
     ("AlexNet",     "(1K classes)",   "alexnet_pre"),
     ("ViT-B/16",    "(1K classes)",   "vit_pre"),
 ]

@@ -1,4 +1,4 @@
-"""PC / UMAP scatter: Behavioral vs CLIP 8-class vs 1000-class.
+"""PC / UMAP scatter: Behavioral vs 8 classes (CLIP repr.) vs 1000-class.
 
 Three-panel scatter showing how concept representations are organized
 in behavioral similarity space vs two model spaces. Points colored by
@@ -247,7 +247,7 @@ def main():
         panel_idx += 1
 
     plot_scatter_panel(axes[panel_idx], clip8_2d, labels,
-                       f"CLIP 8-class", subtitle=f"({layer_label})",
+                       f"8 classes (CLIP repr.)", subtitle=f"({layer_label})",
                        xlabel=clip8_xl, ylabel=clip8_yl)
     panel_idx += 1
 
