@@ -45,10 +45,10 @@ OUTPUT = os.path.join(SCRIPT_DIR, "figure1.png")
 PALETTE_2 = ["#1b9e77", "#d95f02"]
 PALETTE_4 = ["#00A896", "#7B68EE", "#E8963E", "#D64045"]
 
-# Bottom row: learned representation colors (same 4-color scheme for
-# 4-way and 1000-way panels; 2-way uses its own 2-color scheme)
+# Bottom row: learned representation colors — slightly more saturated
+# for better visibility on scatter with low alpha
 REPR_COLORS_2 = ["#1b9e77", "#d95f02"]
-REPR_COLORS_4 = ["#00A896", "#7B68EE", "#E8963E", "#D64045"]
+REPR_COLORS_4 = ["#00997F", "#6B5CE7", "#E07D28", "#C93035"]
 
 INSET_LAYER = "fc1"
 N_INSETS = 3  # images per class
@@ -194,9 +194,42 @@ def _get_thumbnail(path, size=48):
     return _thumb_cache[path]
 
 
+def _repel_positions(points, min_dist=0.12, iterations=200, anchor_weight=0.01):
+    """Push overlapping 2D positions apart iteratively with anchor pull.
+
+    First applies a radial expansion from the centroid to pre-separate tight
+    clusters, then iteratively repels remaining overlaps.
+    """
+    pts = np.array(points, dtype=float)
+    anchors = pts.copy()
+
+    # Step 1: Radial pre-expansion from centroid
+    centroid = pts.mean(axis=0)
+    for i in range(len(pts)):
+        diff = pts[i] - centroid
+        d = np.linalg.norm(diff)
+        if d < min_dist * 0.5 and d > 1e-8:
+            # Push outward so each point is at least min_dist/2 from centroid
+            pts[i] = centroid + diff / d * min_dist * 0.6
+
+    # Step 2: Pairwise repulsion
+    for _ in range(iterations):
+        for i in range(len(pts)):
+            for j in range(i + 1, len(pts)):
+                diff = pts[i] - pts[j]
+                d = np.linalg.norm(diff)
+                if d < min_dist and d > 1e-8:
+                    push = (min_dist - d) / 2.0 * diff / d * 1.3
+                    pts[i] += push
+                    pts[j] -= push
+            # Gentle pull back toward anchor
+            pts[i] += anchor_weight * (anchors[i] - pts[i])
+    return pts
+
+
 def plot_bottom_panel(ax, pcs, labels, n_classes, colors, title,
                       img_paths=None, inset_indices=None,
-                      point_size=0.5, alpha=0.20, inset_zoom=0.35,
+                      point_size=0.8, alpha=0.30, inset_zoom=0.38,
                       show_ylabel=True):
     """Draw one learned-representation PC scatter panel (bottom row)."""
     rng = np.random.RandomState(42)
@@ -209,36 +242,69 @@ def plot_bottom_panel(ax, pcs, labels, n_classes, colors, title,
                    c=colors[c], s=point_size, alpha=alpha,
                    edgecolors="none", rasterized=True, zorder=2)
 
-    ax.set_xlabel("PC 1", fontsize=9, labelpad=3)
+    ax.set_xlabel("PC 1", fontsize=10, labelpad=5, style="italic")
     if show_ylabel:
-        ax.set_ylabel("PC 2", fontsize=9, labelpad=3)
-    ax.set_title(title, fontsize=11, fontweight="bold", pad=6, color="#1a1a1a")
-    ax.tick_params(axis="both", labelsize=7, length=2.5, width=0.5, pad=2)
+        ax.set_ylabel("PC 2", fontsize=10, labelpad=5, style="italic")
+    ax.set_title(title, fontsize=12, fontweight="bold", pad=10, color="#1a1a1a")
+    ax.tick_params(axis="both", labelsize=8, length=3, width=0.5, pad=3,
+                   color="#999999")
 
     for idx in [0, 1]:
         lo, hi = pcs[:, idx].min(), pcs[:, idx].max()
-        margin = (hi - lo) * 0.12
+        margin = (hi - lo) * 0.08
         (ax.set_xlim if idx == 0 else ax.set_ylim)(lo - margin, hi + margin)
 
-    sns.despine(ax=ax, offset=4)
-    ax.xaxis.set_major_locator(plt.MaxNLocator(4))
-    ax.yaxis.set_major_locator(plt.MaxNLocator(4))
+    sns.despine(ax=ax, offset=6)
+    for spine in ax.spines.values():
+        spine.set_color("#666666")
+    ax.xaxis.set_major_locator(plt.MaxNLocator(5))
+    ax.yaxis.set_major_locator(plt.MaxNLocator(5))
     ax.xaxis.set_major_formatter(plt.FormatStrFormatter("%.1f"))
     ax.yaxis.set_major_formatter(plt.FormatStrFormatter("%.1f"))
 
-    # Image insets
+    # Image insets with repulsion to avoid overlap
     if inset_indices is not None and img_paths is not None:
-        for ii in inset_indices:
-            thumb = _get_thumbnail(img_paths[ii])
+        # Compute repelled display positions
+        orig_pts = np.array([[pcs[ii, 0], pcs[ii, 1]] for ii in inset_indices])
+        x_range = pcs[:, 0].max() - pcs[:, 0].min()
+        y_range = pcs[:, 1].max() - pcs[:, 1].min()
+        # Normalize to unit square for repulsion
+        norm_pts = orig_pts.copy()
+        norm_pts[:, 0] = (norm_pts[:, 0] - pcs[:, 0].min()) / x_range
+        norm_pts[:, 1] = (norm_pts[:, 1] - pcs[:, 1].min()) / y_range
+        repelled_norm = _repel_positions(norm_pts, min_dist=0.22, iterations=300,
+                                        anchor_weight=0.012)
+        # Clamp to stay within [−0.05, 1.05] in normalized space
+        repelled_norm = np.clip(repelled_norm, -0.05, 1.05)
+        # Convert back to data coordinates
+        repelled = repelled_norm.copy()
+        repelled[:, 0] = repelled_norm[:, 0] * x_range + pcs[:, 0].min()
+        repelled[:, 1] = repelled_norm[:, 1] * y_range + pcs[:, 1].min()
+
+        for k, ii in enumerate(inset_indices):
+            thumb = _get_thumbnail(img_paths[ii], size=52)
             if thumb is None:
                 continue
             im_box = OffsetImage(thumb, zoom=inset_zoom)
             im_box.image.axes = ax
             c = colors[int(labels[ii])]
+            disp_x, disp_y = repelled[k]
+
+            # Draw thin connector line from data point to inset
+            dist = np.sqrt((disp_x - pcs[ii, 0])**2 + (disp_y - pcs[ii, 1])**2)
+            if dist > 0.03:
+                ax.annotate("", xy=(pcs[ii, 0], pcs[ii, 1]),
+                            xytext=(disp_x, disp_y),
+                            arrowprops=dict(arrowstyle="-", color=c,
+                                            lw=0.8, alpha=0.45,
+                                            shrinkA=2, shrinkB=18),
+                            zorder=5)
+
             ab = AnnotationBbox(
-                im_box, (pcs[ii, 0], pcs[ii, 1]),
-                frameon=True, pad=0.15,
-                bboxprops=dict(edgecolor=c, linewidth=2.0, facecolor="white"),
+                im_box, (disp_x, disp_y),
+                frameon=True, pad=0.08,
+                bboxprops=dict(edgecolor=c, linewidth=1.5, facecolor="white",
+                               alpha=0.97),
                 zorder=6,
             )
             ax.add_artist(ab)
@@ -369,31 +435,33 @@ def main():
     plt.close(fig_a)
 
     # ══════════════════════════════════════════════════════════════════════
-    # Figure 1b: Learned representations (4-way vs 1000-way, stacked)
+    # Figure 1b: Learned representations (1000-way on top, 4-way on bottom)
     # ══════════════════════════════════════════════════════════════════════
-    fig_b, axes_b = plt.subplots(2, 1, figsize=(8, 10))
+    fig_b, axes_b = plt.subplots(2, 1, figsize=(6.5, 9.5))
 
+    # 1000-way (pretrained) model on top — colored by 4-way labels
     plot_bottom_panel(
-        axes_b[0], pcs_4way_trained, labels_4way, 4, REPR_COLORS_4,
-        "4-way model",
+        axes_b[0], pcs_pretrained_aligned, labels_4way, 4, REPR_COLORS_4,
+        "CNN trained on 1000 classes",
         img_paths=img_paths, inset_indices=inset_idx_4,
-        point_size=0.8, alpha=0.25, inset_zoom=0.40,
+        point_size=1.0, alpha=0.35, inset_zoom=0.475,
         show_ylabel=True,
     )
 
-    # 1000-way (pretrained) model — colored by 4-way labels
+    # 4-way model on bottom
     plot_bottom_panel(
-        axes_b[1], pcs_pretrained_aligned, labels_4way, 4, REPR_COLORS_4,
-        "1000-way model",
+        axes_b[1], pcs_4way_trained, labels_4way, 4, REPR_COLORS_4,
+        "CNN trained on 4 derived classes",
         img_paths=img_paths, inset_indices=inset_idx_4,
-        point_size=0.8, alpha=0.25, inset_zoom=0.40,
+        point_size=1.0, alpha=0.35, inset_zoom=0.475,
         show_ylabel=True,
     )
 
-    fig_b.subplots_adjust(hspace=0.35, left=0.10, right=0.95, top=0.95, bottom=0.05)
+    fig_b.subplots_adjust(hspace=0.28, left=0.12, right=0.95, top=0.96, bottom=0.06)
+    plt.tight_layout(h_pad=2.5)
 
     out_b = os.path.join(SCRIPT_DIR, "figure1b.png")
-    fig_b.savefig(out_b, dpi=300, bbox_inches="tight", facecolor="white",
+    fig_b.savefig(out_b, dpi=600, bbox_inches="tight", facecolor="white",
                   edgecolor="none")
     print(f"Saved -> {out_b}")
     plt.close(fig_b)
