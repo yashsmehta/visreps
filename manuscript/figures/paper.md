@@ -23,7 +23,7 @@ Computational models of vision increasingly rely on detailed training objectives
 
 ---
 
-**Status:** Working draft — figures are organized into 6 main figures with subdirectories (`fig1/`–`fig6/`). Supplementary figures listed at the end.
+**Status:** Working draft — figures are organized into 5 main figures with subdirectories (`fig1/`–`fig5/`). Supplementary figures listed at the end.
 
 **PCA source models in main figures:** AlexNet, CLIP, Pixels. ViT and DINOv3-derived labels in supplementary only.
 
@@ -31,92 +31,78 @@ Computational models of vision increasingly rely on detailed training objectives
 
 ## Narrative Arc
 
-The six main figures follow a progression: **method overview → representation analysis → neural data → behavioral data → per-concept analysis → data efficiency**.
+The five main figures follow a progression: **method overview + representation analysis → neural data → behavioral data → per-concept analysis → data efficiency**.
 
-1. **Figure 1** is a schematic overview: the PCA-based coarse-graining procedure, the DNN training paradigm, how alignment is measured (RSA), and the evaluation domains (brain and behavior).
-2. **Figure 2** establishes that coarse-trained representations are genuinely different from 1000-way representations — via class-level RDMs, cross-model RSA, projection controls, and PC-space visualizations with image insets showing the geometric reorganization.
-3. **Figure 3** presents neural alignment across species: macaque electrophysiology (TVSD) and human fMRI (NSD) side by side, with coarseness curves (raw Spearman ρ). Per-layer profiles in supplementary.
-4. **Figure 4** presents behavioral alignment (THINGS): coarseness results, model comparison with pretrained baselines, and RDM visualizations explaining *why* coarse models win.
-5. **Figure 5** digs into per-concept alignment: which semantic categories drive the coarse advantage, how broad is the effect, and which behavioral dimensions explain the pattern?
-6. **Figure 6** introduces the data-efficiency paradigm: coarse vs fine-grained training at varying data scales.
-
----
-
-## Figure 1: Method Overview (Schematic)
-
-**Directory:** `manuscript/figures/fig1/`
-
-**Narrative role:** A purely schematic figure that introduces the approach. No data, no results — just the method pipeline and evaluation framework. This is the "how we did it" figure.
-
-**Status:** Schematic — to be composed manually (e.g., in Illustrator/Inkscape). Code-generated components (PC scatter) have been moved to Figure 2C.
-
-### Panel A — The coarse-graining procedure
-
-Schematic of the pipeline: ImageNet images → pretrained source model (AlexNet, CLIP, ViT, or raw Pixels) → PCA on feature space (or pixel space) → recursive median splits along top PCs → coarse label sets (2, 4, 8, 16, 32, 64 classes).
-
-Follow the spirit of the NeurIPS schematic (`experiments/neurips_2025/fig1/schematic_imagenet_pca.png`) — a clean, linear pipeline diagram. Show the flow from images to features to PCA projection to class assignments. Include example images at each split to give intuition for what PC1, PC2, etc. separate (e.g., PC1 roughly separates man-made vs. natural).
-
-- *Key message:* The procedure is principled (data-driven, not arbitrary taxonomy), produces balanced classes, and uses only visual statistics — no linguistic or semantic labels.
-
-### Panel B — DNN training schematic
-
-Minimal diagram showing the training paradigm: same architecture (CustomCNN / AlexNet-style) × same ~1.26M ImageNet images × same training protocol (SGD, 20 epochs, same augmentations), only varying the output classification head (2, 4, 8, 16, 32, 64, or 1000 classes). Three seeds per condition.
-
-- *Key message:* The **only** variable is label granularity. Architecture, data, and training procedure are identical across all conditions.
-
-### Panel C — RSA methodology schematic
-
-Schematic showing how representational similarity analysis is computed: model activations → RDM (representational dissimilarity matrix) → comparison with neural/behavioral RDMs via Spearman correlation.
-
-- *Key message:* RSA provides a common currency to compare model representations with brain and behavioral data.
-
-### Panel D — Brain and behavior evaluation domains
-
-Schematic showing the three evaluation benchmarks: (1) macaque electrophysiology (TVSD — V1, V4, IT), (2) human fMRI (NSD — early and ventral visual stream), (3) human behavioral similarity judgments (THINGS triplet task).
-
-- *Key message:* We test across species (macaque + human), measurement modalities (spiking + BOLD), and levels (neural + behavioral).
+1. **Figure 1** combines the method overview with representation analysis: the top row shows the PCA-based coarse-graining procedure via shared-PCA scatter (2-way, 4-way, 1000-way label coloring), and the bottom row shows that the *learned* representations are qualitatively different via PC scatter of model activations (2-way, 4-way, 1000-way side by side with image insets).
+2. **Figure 2** presents neural alignment across species: macaque electrophysiology (TVSD) and human fMRI (NSD) side by side, with coarseness curves (raw Spearman ρ). Per-layer profiles in supplementary.
+3. **Figure 3** presents behavioral alignment (THINGS): coarseness results, model comparison with pretrained baselines, and RDM visualizations explaining *why* coarse models win.
+4. **Figure 4** digs into per-concept alignment: which semantic categories drive the coarse advantage, how broad is the effect, and which behavioral dimensions explain the pattern?
+5. **Figure 5** introduces the data-efficiency paradigm: coarse vs fine-grained training at varying data scales.
 
 ---
 
-## Figure 2: Coarse Representations Are Fundamentally Different
+## Figure 1: Method Overview + Representation Analysis
 
-**Directory:** `manuscript/figures/fig2/`
+**Directory:** `manuscript/figures/fig1/` (top row), `manuscript/figures/fig2/` (bottom row)
 
-**Narrative role:** Establish that the internal representations learned from coarse supervision are *qualitatively distinct* from 1000-way representations. The RDMs show how internal structure changes with granularity, and the PC scatter with image insets gives immediate visual intuition for geometric reorganization. Cross-model RSA and projection control results are described in text and available in supplementary.
+**Narrative role:** Combines the method introduction with a visual demonstration that coarse-trained representations are qualitatively different. The top row shows how the coarse-graining procedure partitions images in a shared PCA space; the bottom row shows that the *learned* representations reorganize geometry in fundamentally different ways depending on label granularity.
 
-### Panel A — 2×3 grid of class-level RDMs
+### Layout — 2 rows × 3 columns
 
-Six rank-normalized class-level RDMs (1000×1000, Pearson dissimilarity, FC1 layer) arranged in a 2×3 grid, sorted by 8 WordNet super-categories with colored sidebars. The grid shows 4-way, 8-way, 16-way, 32-way, 64-way, and 1000-way models (CLIP-PCA labels), progressing from coarsest to finest.
+```
+┌──────────────────┬──────────────────┬──────────────────┐
+│ Shared PCA:      │ Shared PCA:      │ Shared PCA:      │
+│ 2-way coloring   │ 4-way coloring   │ 1000-way coloring│
+│ (label space)    │ (label space)    │ (label space)    │
+├──────────────────┼──────────────────┼──────────────────┤
+│ Learned repr:    │ Learned repr:    │ Learned repr:    │
+│ 2-way model      │ 4-way model      │ 1000-way model   │
+│ (FC1 PCs +       │ (FC1 PCs +       │ (FC1 PCs +       │
+│  image insets)   │  image insets)   │  image insets)   │
+└──────────────────┴──────────────────┴──────────────────┘
+```
 
-- *Key visual:* The block-diagonal structure (within-category similarity) progressively sharpens from 4-way to 1000-way, but even the coarsest models show meaningful category organization.
-- *Key message:* Coarse training produces qualitatively distinct internal geometry — not simply a blurred version of fine-grained representations.
+### Top row (Panels A–C) — Shared PCA scatter (label space)
 
-### Panel B — PC1/PC2 scatter with image insets
+Three PC1 vs PC2 scatter plots of ImageNet images (1 per class, 1000 points), projected onto the same CLIP PCA axes. All three panels share identical coordinates — only the coloring changes:
 
-Two vertically stacked PC1 vs. PC2 scatter plots of ImageNet activations (FC1 layer, L2-normalized), colored by 4-way AlexNet-PCA labels:
+- **A (2-way):** Median split on PC1 → 2 colors with decision boundary line.
+- **B (4-way):** Median splits on PC1 then PC2 → 4 colors with decision boundary lines.
+- **C (1000-way):** Each ImageNet class gets a unique color → continuous gradient, no structure.
 
-**Top:** Fine-grained (1000-way) model — smooth gradient in PC space, no clear class separation.
-**Bottom:** Coarsened (4-way) model — distinct clusters with rich internal variability.
+- *Key message:* The coarse-graining procedure is simple and principled — median splits along PCA axes of a pretrained feature space. Same images, same coordinates, different label assignments.
+- *Script:* `manuscript/figures/fig1/pc_scatter_explore.py`
+- *Data:* `manuscript/figures/fig1/pc_scatter_shared_pca.npz`
 
-A subset of representative points (~3 per class) show actual ImageNet thumbnails as insets, with borders colored by class. Inset points are selected at class extremes and centroids for maximum informativeness.
+### Bottom row (Panels D–F) — Learned representation scatter (model activation space)
 
-- *Key visual:* The 1000-way model distributes images along a continuous gradient; the coarse model reorganizes the same images into clearly separated groups. The image insets make this concrete — you can *see* that each cluster contains visually coherent images.
-- *Key message:* Coarse training fundamentally changes how the network organizes visual information — different geometry, not just reduced geometry.
-- *Data source:* `experiments/representation_analysis/2pcs_compare/data_4way_alexnet.npz` (AlexNet-PCA labels, imagenet-mini-50, L2-normed FC1).
+Three side-by-side PC1 vs PC2 scatter plots of ImageNet activations (FC1 layer, L2-normalized), each from a model trained at a different granularity. Points colored by their respective coarse labels. Representative images shown as insets at class extremes and centroids.
+
+- **D (2-way model):** Two broad clusters with rich internal variability.
+- **E (4-way model):** Four well-separated clusters, each internally variable but categorically distinct.
+- **F (1000-way model):** Smooth gradient — no clear class separation; coarse labels intermixed.
+
+- *Key visual:* The bottom row mirrors the top row's 2-way / 4-way / 1000-way progression, but now shows how each training objective *reshapes* the learned geometry. Coarse models impose clear categorical boundaries; the 1000-way model distributes images along a continuous gradient.
+- *Key message:* Coarse training fundamentally changes how the network organizes visual information — different geometry, not just reduced geometry. These representations cannot be recovered by dimensionality reduction of a fine-grained model.
+- *Data source:* `experiments/representation_analysis/2pcs_compare/` (AlexNet-PCA labels, imagenet-mini-50, L2-normed FC1). Will need a `data_2way_alexnet.npz` in addition to existing `data_4way_alexnet.npz`.
 
 ### Observed results
 
-**(A) Class-level RDM grid.** Six RDMs showing the progression from 4-way to 1000-way. The 1000-way RDM shows fine-grained within-category structure with sharp diagonal blocks. Coarser models show progressively broader block structure — the 4-way model has large uniform blocks while the 64-way model approaches the 1000-way pattern but with coarser boundaries.
+**(A–C) Shared PCA scatter.** All 1000 points share the same (x, y) coordinates across panels. The 2-way panel shows a clean PC1 median split (natural vs man-made). The 4-way panel subdivides each half by PC2. The 1000-way panel shows no visible structure — a cloud of 1000 distinct colors.
 
-**(B) PC scatter with image insets (FC1, AlexNet-PCA 4-way).** Top panel: the 1000-way model's FC1 activations projected onto their own top 2 PCs show a smooth gradient (PC1 ≈ 3.0%, PC2 ≈ 2.4% var.) — 4-way PCA labels are intermixed with no clear boundaries. Bottom panel: the 4-way model's FC1 activations show four well-separated clusters (PC1 ≈ 22.5%, PC2 ≈ 19.5% var.), each internally variable but categorically distinct. Image insets reveal the semantic content of each cluster. The coarse model imposes a fundamentally different geometry, not just a lower-dimensional version of the fine-grained geometry.
+**(D) 2-way model learned representations.** FC1 activations projected onto their top 2 PCs show two well-separated clusters with high variance explained by PC1. Image insets reveal the semantic split (e.g., natural scenes vs artifacts).
+
+**(E) 4-way model learned representations.** Four well-separated clusters (PC1 ≈ 22.5%, PC2 ≈ 19.5% var.), each internally variable but categorically distinct. Image insets reveal the semantic content of each cluster.
+
+**(F) 1000-way model learned representations.** Smooth gradient in PC space (PC1 ≈ 3.0%, PC2 ≈ 2.4% var.) — coarse labels are intermixed with no clear boundaries. The model distributes representations to separate 1000 classes, destroying the broad categorical structure.
 
 **Cross-model RSA (described in text, supplementary).** Cross-model RSA (1000-way vs. coarse) increases from ρ ≈ 0.22 (2-way) to ρ ≈ 0.52 (64-way), but never approaches the inter-seed baseline (ρ ≈ 0.76). Projection control: projected-1K vs. coarse RSA is extremely low (ρ ≈ 0.03 at 2-class, ρ ≈ 0.35 at 64-class), confirming coarse features cannot be recovered by PCA of the fine-grained model.
 
 ---
 
-## Figure 3: Neural Alignment Across Species (TVSD + NSD)
+## Figure 2: Neural Alignment Across Species (TVSD + NSD)
 
-**Directory:** `manuscript/figures/fig3/`
+**Directory:** `manuscript/figures/fig3/` (code still in fig3/ — directory rename pending)
 
 **Narrative role:** Present neural alignment results from both macaque electrophysiology (TVSD) and human fMRI (NSD) in a single unified figure. This cross-species layout immediately demonstrates that the coarseness finding is robust — it holds in spiking data and BOLD fMRI, across early and late visual regions, and across two completely different species. **All coarseness plots are normalized to percentage of the 1000-way baseline** (1000-way = 100%), making the central claim visually immediate. No reconstruction controls here — those are in Supplementary S4.
 
@@ -173,11 +159,11 @@ Full per-layer RSA profiles (all 7 granularity levels, 14 layer taps) available 
 
 ---
 
-## Figure 4: Behavioral Alignment (THINGS)
+## Figure 3: Behavioral Alignment (THINGS)
 
-**Directory:** `manuscript/figures/fig4/`
+**Directory:** `manuscript/figures/fig4/` (code still in fig4/ — directory rename pending)
 
-**Narrative role:** Present the behavioral alignment results — the most surprising finding. Coarse models *vastly* outperform 1000-way on human similarity judgments. This figure shows the result (coarseness log plot), compares against pretrained models, and visualizes *why* via RDMs. Per-concept analysis is in Figure 5; data efficiency is in Figure 6.
+**Narrative role:** Present the behavioral alignment results — the most surprising finding. Coarse models *vastly* outperform 1000-way on human similarity judgments. This figure shows the result (coarseness log plot), compares against pretrained models, and visualizes *why* via RDMs. Per-concept analysis is in Figure 4; data efficiency is in Figure 5.
 
 ### Layout — 2 rows
 
@@ -238,11 +224,11 @@ Concepts sorted by the 27 THINGS semantic categories with boundary lines overlai
 
 ---
 
-## Figure 5: Per-Concept Alignment Analysis
+## Figure 4: Per-Concept Alignment Analysis
 
-**Directory:** `manuscript/figures/fig5/`
+**Directory:** `manuscript/figures/fig5/` (code still in fig5/ — directory rename pending)
 
-**Narrative role:** Dig deeper into *which* concepts drive the coarse advantage on THINGS behavioral alignment. The scatter plot and histogram from the original Figure 4 are expanded here as standalone panels, with room for additional analyses.
+**Narrative role:** Dig deeper into *which* concepts drive the coarse advantage on THINGS behavioral alignment. The scatter plot and histogram from the original Figure 3 are expanded here as standalone panels, with room for additional analyses.
 
 ### Layout — 1 row × 3 columns
 
@@ -287,9 +273,9 @@ Horizontal bar chart showing Spearman ρ between per-concept advantage (CLIP 8-c
 
 ---
 
-## Figure 6: Data Efficiency
+## Figure 5: Data Efficiency
 
-**Directory:** `manuscript/figures/fig6/`
+**Directory:** `manuscript/figures/fig6/` (code still in fig6/ — directory rename pending)
 
 **Narrative role:** Introduce a new analysis paradigm — varying the number of training images per class while holding granularity constant. Shows that coarse-trained models are more data-efficient than fine-grained models on behavioral alignment.
 
@@ -378,10 +364,12 @@ All scripts live in `manuscript/figures/supplementary/` and are run from the pro
 | Figure | Script | What it shows | Key takeaway |
 |--------|--------|---------------|-------------|
 | **S12** | `supp_s12_representation_summary.py` | Eigenspectrum, participation ratio, TwoNN intrinsic dim, sparsity across granularity (2×2) | Coarse models concentrate variance in fewer dimensions with higher sparsity. |
-| ~~**S13**~~ | *(moved to Figure 5C)* | | |
+| ~~**S13**~~ | *(moved to Figure 4C)* | | |
 | **S14** | `supp_s14_image_collages.py` | Composite of example images where coarse wins vs. 1000-way wins | Visual intuition for which concepts benefit from coarse vs. fine-grained training. |
 | **S15** | `supp_s15_pc_poles.py` | Most/least activating ImageNet images for top PCs of AlexNet + CLIP | PC1 separates natural/man-made; higher PCs capture progressively finer semantic axes. |
 | **S16** | `supp_s16_levels.py` | Levels benchmark (Muttenthaler et al. 2025): 3×3 grid (metrics × triplet types) | Coarse models improve on between-class and class-boundary triplets; within-class converges at moderate granularity. |
+| **S17** | `supp_s17_seed_variability.py` | Seed variability analysis | Score variability across seeds. |
+| **S18** | `supp_s18_class_rdms.py` | Class-level RDM grid (all granularity levels: 2,4,8,16,32,64,1000-way, CLIP-PCA) | Moved from old Figure 2A. Full progression of block-diagonal structure across all coarseness levels. |
 
 ---
 
@@ -392,53 +380,54 @@ manuscript/figures/
 ├── paper.md              # This file
 ├── fig_utils.py                # Shared constants, style, helpers
 ├── things_utils.py             # Shared THINGS plotting utilities
-├── fig1/                       # Method overview (schematic only)
-│   └── (schematics — coarse-graining, training, RSA, evaluation domains)
-├── fig2/                       # Representations are different
-│   ├── figure2.py              # RDMs + PC scatter w/ image insets
+├── fig1/                       # Figure 1 top row: shared PCA scatter + method overview
+│   ├── pc_scatter_explore.py   # Shared PCA scatter (2-way, 4-way, 1000-way coloring)
+│   └── pc_scatter_shared_pca.png
+├── fig2/                       # Figure 1 bottom row: learned representation PC scatter
+│   ├── figure2.py              # PC scatter w/ image insets (code shares fig2/ dir)
 │   └── figure2.png
-├── fig3/                       # Combined neural data (TVSD + NSD)
+├── fig3/                       # Figure 2: Neural alignment (TVSD + NSD)
 │   ├── figure3.py              # Combined TVSD + NSD figure
 │   └── figure3.png
-├── fig4/                       # THINGS behavioral — headline result + RDMs
+├── fig4/                       # Figure 3: THINGS behavioral — headline result + RDMs
 │   ├── figure4.py              # Schematic + coarseness + model comparison + RDMs
 │   └── figure4.png
-├── fig5/                       # Per-concept alignment analysis
+├── fig5/                       # Figure 4: Per-concept alignment analysis
 │   ├── figure5.py              # Scatter + histogram
 │   ├── dimension_profiling.py  # Semantic dimension profiling (Panel C)
 │   └── figure5.png
-├── fig6/                       # Data efficiency
+├── fig6/                       # Figure 5: Data efficiency
 │   ├── figure6.py              # Schematic + data-efficiency bars
 │   └── figure6.png
-└── supplementary/              # 16 supplementary figures (S1–S16)
+└── supplementary/              # 18 supplementary figures (S1–S18)
     ├── README.md               # Index, run commands, data sources
     ├── supp_s1_training_summary.py
     ├── supp_s2_summary_bars.py
     ├── ...
-    └── supp_s16_levels.py
+    └── supp_s18_class_rdms.py
 ```
 
 ---
 
 ## Design Notes
 
-- **Consistent color scheme across Figures 3 & 4:**
+- **Consistent color scheme across Figures 2 & 3:**
   - PCA source models: AlexNet (medium blue `#6baed6`, circle), CLIP (dark blue `#08519c`, square), Pixels (brown `#8c564b`, triangle-down). ViT moved to supplementary.
   - 1000-way baseline: Warm amber (`#e8963e`, diamond)
   - Untrained baseline: Light gray dashed line (`#AAAAAA`)
   - Supplementary figures retain the original 4-architecture palette (AlexNet teal, CLIP purple, ViT crimson, Pixels brown) in `fig_utils.py`.
-- **Raw Spearman ρ (Figures 3 & 4):** All coarseness plots show raw Spearman ρ values.
+- **Raw Spearman ρ (Figures 2 & 3):** All coarseness plots show raw Spearman ρ values.
 - **Per-layer profiles moved to supplementary (S3).** Main figures show only coarseness curves.
 - **Reconstruction controls in supplementary (S4).** Neural reconstruction for TVSD/NSD; THINGS reconstruction also in supplementary.
 - **Summary bars in supplementary (S2).** Cross-dataset pretrained vs. scratch comparison.
-- **Figure 1 is schematic-only** — no code-generated panels. PC scatter moved to Figure 2C. Expectations panel removed.
-- **Figure 2 Panel C** — PC scatter with image insets (from `experiments/representation_analysis/2pcs_compare/data_4way.npz`). Moved from former Figure 1C.
-- **Log-scale x-axis** for all coarseness plots (Figures 3 and 4).
+- **Figure 1 combines method + representation analysis** — top row is shared PCA scatter (label space), bottom row is learned representation PC scatter (model activation space). Old RDM panel moved to supplementary S18.
+- **Log-scale x-axis** for all coarseness plots (Figures 2 and 3).
 - **Schematics should be simple** — the reader should grasp each dataset in 5–10 seconds.
-- **Reconstruction controls in supplementary** — not in main figures. This keeps Figures 3–5 focused on results.
-- **Figure 4 is the climax** — the behavioral result is the most surprising, shown via coarseness + model comparison + RDMs.
-- **Figure 5 is the deep dive** — per-concept analysis showing which semantic categories drive the coarse advantage.
-- **Figure 6 is the practical implication** — data efficiency shows coarse training is not only better but also more sample-efficient.
+- **Reconstruction controls in supplementary** — not in main figures. This keeps Figures 2–4 focused on results.
+- **Figure 3 is the climax** — the behavioral result is the most surprising, shown via coarseness + model comparison + RDMs.
+- **Figure 4 is the deep dive** — per-concept analysis showing which semantic categories drive the coarse advantage.
+- **Figure 5 is the practical implication** — data efficiency shows coarse training is not only better but also more sample-efficient.
+- **Class-level RDMs in supplementary (S18)** — moved from old Figure 2A. Supplementary version includes all granularity levels (2, 4, 8, 16, 32, 64, 1000-way), not just alternating.
 - **No DINO or ViT PCA in main figures** — supplementary only. Main figures show AlexNet, CLIP, and Pixels PCA sources.
 - **No NSD-Synthetic in main figures** — supplementary only.
 - **V4 (TVSD) in supplementary only** — V1 and IT represent the extremes of the visual hierarchy.

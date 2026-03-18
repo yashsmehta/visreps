@@ -85,7 +85,7 @@ PRETRAINED_GROUPS = {
 GROUP_COLORS = {
     "Supervised":      "#4a8c6f",   # sage green
     "Self-supervised": "#6b5b95",   # muted lavender
-    "Vision-language": "#c26b3a",   # burnt sienna
+    "Vision-language": "#c4377a",   # magenta-rose (distinct from 1K orange)
 }
 ARCH_MARKERS = {"cnn": "p", "vit": "*"}
 
@@ -209,37 +209,17 @@ def _draw_neurips_bar(ax, x, height, width, color, y_base=0.25,
     ax.add_patch(rect)
 
 
-def plot_comparison_panel(ax):
-    """Panel C: Coarse vs 1000-way bars + pretrained model scatter."""
-    # ── Fetch data ──
-    bl = get_condition_summary("things-behavior", "N/A", "imagenet1k", 1000,
-                               "spearman", epoch=20, analysis="rsa")
+def plot_comparison_panel(ax, ref_ax=None):
+    """Panel C: Pretrained model scatter with coarse-grain 8-way reference line.
+
+    If ref_ax is provided, syncs y-axis limits with it after plotting.
+    """
+    # ── Fetch coarse-grain 8-way reference score ──
     best_coarse = _fetch_clip8_score()
     all_points = _fetch_pretrained_data()
 
-    # ── Layout: 2 bars then pretrained scatter ──
-    bar_w = 0.48
-    bar_positions = [0.0, 0.6]  # coarse, 1000-way
-    bars = [
-        (bar_positions[0], best_coarse["mean"], best_coarse["ci_low"],
-         best_coarse["ci_high"], COARSE_BAR_COLOR, best_coarse["label"]),
-        (bar_positions[1], bl["mean"], bl["ci_low"],
-         bl["ci_high"], BASELINE_1K_COLOR, "1000-class"),
-    ]
-
-    for x, score, ci_lo, ci_hi, color, label in bars:
-        if np.isnan(score):
-            continue
-        _draw_neurips_bar(ax, x, score, bar_w, color,
-                          y_base=0.2, edgecolor="#333333", linewidth=0.7)
-        err_lo = max(score - ci_lo, 0) if not np.isnan(ci_lo) else 0
-        err_hi = max(ci_hi - score, 0) if not np.isnan(ci_hi) else 0
-        ax.errorbar(x, score, yerr=[[err_lo], [err_hi]], fmt="none",
-                    ecolor="#333333", capsize=2.3, capthick=0.7,
-                    elinewidth=0.7, zorder=4)
-
-    # ── Dashed reference line from coarse bar into scatter region ──
-    scatter_start = 2.0
+    # ── Layout: scatter groups only (no bars) ──
+    scatter_start = 0.0
     group_positions = {
         "Supervised":      scatter_start,
         "Self-supervised": scatter_start + 1.4,
@@ -247,20 +227,20 @@ def plot_comparison_panel(ax):
     }
     jitter_spread = 0.25
 
+    # ── Dashed reference line for coarse-grain 8-way ──
     if not np.isnan(best_coarse["mean"]):
-        x_ref_start = bar_positions[0] + bar_w / 2 + 0.1
+        x_ref_start = -0.6
         x_ref_end = list(group_positions.values())[-1] + 0.6
         ax.plot([x_ref_start, x_ref_end],
                 [best_coarse["mean"], best_coarse["mean"]],
                 color=COARSE_BAR_COLOR, linestyle=(0, (5, 3)),
-                linewidth=0.7, alpha=0.40, zorder=1)
+                linewidth=1.0, alpha=0.55, zorder=1)
+        # Label just above the dashed line
+        ax.text(x_ref_end, best_coarse["mean"] + 0.008, "CLIP 8-class",
+                ha="right", va="bottom", fontsize=7, color=COARSE_BAR_COLOR,
+                fontstyle="italic")
 
-    # Subtle vertical separator between bars and scatter
-    sep_x = (bar_positions[-1] + scatter_start) / 2
-    ax.axvline(sep_x, color="#d0d0d0", linewidth=0.6, linestyle="-",
-               ymin=0.0, ymax=1.0, zorder=0)
-
-    # ── Draw pretrained scatter (1.5× larger) ──
+    # ── Draw pretrained scatter ──
     pt_size_base = 160
     pt_size_star = 220
     for pt in all_points:
@@ -281,7 +261,7 @@ def plot_comparison_panel(ax):
         ax.scatter(x_jit, pt["score"], marker=pt["marker"], c=pt["color"],
                    s=sz, edgecolors="white", linewidths=0.7, zorder=5)
 
-    # ── Model name labels (larger) ──
+    # ── Model name labels ──
     fs_model = 7.0
     x_offset = 0.24
     min_gap = 0.022
@@ -302,19 +282,16 @@ def plot_comparison_panel(ax):
 
     # ── Axis formatting ──
     xlim_right = list(group_positions.values())[-1] + 1.8
-    ax.set_xlim(-0.55, xlim_right)
-    ax.set_ylim(0.25, 0.601)
+    ax.set_xlim(-0.6, xlim_right)
     ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=8.5, labelpad=5)
     ax.set_title("Model Comparison",
                  fontsize=9.5, fontweight="semibold", pad=8)
 
-    # X-ticks
-    bar_xticks = bar_positions
-    bar_xlabels = ["CLIP\n8-class", "1000-\nclass"]
+    # X-ticks: only scatter group labels
     scatter_xticks = [group_positions[g] for g in group_positions]
     scatter_xlabels = ["Supervised", "Self-\nsupervised", "Vision-\nlanguage"]
-    ax.set_xticks(bar_xticks + scatter_xticks)
-    ax.set_xticklabels(bar_xlabels + scatter_xlabels, fontsize=6.5)
+    ax.set_xticks(scatter_xticks)
+    ax.set_xticklabels(scatter_xlabels, fontsize=6.5)
 
     # Subtle horizontal grid
     ax.yaxis.grid(True, which="major", color="#EBEBEB", linewidth=0.4, zorder=0)
@@ -334,7 +311,13 @@ def plot_comparison_panel(ax):
     ax.spines["bottom"].set_linewidth(1.2)
     ax.spines["left"].set_linewidth(1.2)
 
-    # ── Legend (CNN/ViT markers only — bar labels are self-explanatory) ──
+    # ── Sync y-axis with Panel B if provided ──
+    if ref_ax is not None:
+        ref_ax.figure.canvas.draw()
+        ylim = ref_ax.get_ylim()
+        ax.set_ylim(ylim)
+
+    # ── Legend: CNN/ViT markers only ──
     leg_handles = [
         Line2D([], [], marker="p", color="none", markerfacecolor="#777777",
                markeredgecolor="white", markeredgewidth=0.6,
@@ -373,8 +356,8 @@ THINGS_IMAGE_DIR = os.path.expanduser(
 INSET_CONCEPTS = ["asparagus", "engine", "gorilla"]
 INSET_BORDER_COLORS = {
     "asparagus": SUPER_COLORS["Food"],      # orange
-    "engine":    SUPER_COLORS["Vehicle"],    # green
-    "gorilla":   SUPER_COLORS["Animal"],     # red
+    "engine":    SUPER_COLORS["Vehicle"],   # green
+    "gorilla":   SUPER_COLORS["Animal"],    # red
 }
 
 
@@ -386,9 +369,16 @@ def _load_concept_names():
     return list(behav_data["concept_names"])
 
 
+# Override default image variant for specific concepts (pick most recognizable at small size)
+INSET_IMAGE_VARIANT = {
+    "asparagus": "asparagus_04s.jpg",  # green bundle on white plate — high contrast
+    "engine":    "engine_08s.jpg",     # silver V8 on black pedestal, white bg — clean silhouette
+}
+
 def _load_inset_image(concept, size=256):
     """Load and resize a THINGS concept image."""
-    path = os.path.join(THINGS_IMAGE_DIR, concept, f"{concept}_01b.jpg")
+    filename = INSET_IMAGE_VARIANT.get(concept, f"{concept}_01b.jpg")
+    path = os.path.join(THINGS_IMAGE_DIR, concept, filename)
     img = Image.open(path).convert("RGB").resize((size, size), Image.LANCZOS)
     return np.array(img)
 
@@ -423,8 +413,9 @@ def draw_image_insets(axes, all_pcs, concept_names):
     """Draw image insets for the triplet on each scatter panel.
 
     Places open circles at data positions, connects them with lines
-    that stop at circle edges, and places images adjacent to circles
-    avoiding overlap with the connecting lines.
+    that stop at circle edges, and places images adjacent to circles.
+    Uses a larger offset distance and connector lines from circle to image
+    to keep the association clear even when points are clustered.
     """
     indices = [concept_names.index(c) for c in INSET_CONCEPTS]
     images = {c: _load_inset_image(c) for c in INSET_CONCEPTS}
@@ -437,7 +428,6 @@ def draw_image_insets(axes, all_pcs, concept_names):
         ylim = ax.get_ylim()
         x_range = xlim[1] - xlim[0]
         y_range = ylim[1] - ylim[0]
-        # Circle visual radius ~ sqrt(s) in points, convert to data units
         circle_radius = 0.025 * max(x_range, y_range)
 
         # Draw connecting lines between circles (stop at circle edges)
@@ -450,7 +440,7 @@ def draw_image_insets(axes, all_pcs, concept_names):
                     color="#222222", linewidth=1.3, linestyle="-",
                     alpha=0.6, zorder=6, solid_capstyle="round")
 
-        # Draw open circles at data positions (80% of original size)
+        # Draw open circles at data positions
         for concept in INSET_CONCEPTS:
             x, y = coords[concept]
             ax.scatter(x, y, s=80, facecolors="none", edgecolors="black",
@@ -458,8 +448,15 @@ def draw_image_insets(axes, all_pcs, concept_names):
 
         # Place images: direction away from centroid, with minimum angular
         # separation enforced so images never bunch together.
+        # Adaptive offset: close to circles but not overlapping.
         centroid = np.mean([coords[c] for c in INSET_CONCEPTS], axis=0)
-        offset_dist = 0.20 * max(x_range, y_range)
+        triplet_spread = max(
+            np.ptp([coords[c][0] for c in INSET_CONCEPTS]) / x_range,
+            np.ptp([coords[c][1] for c in INSET_CONCEPTS]) / y_range,
+        )
+        # Scale offset: 0.13 when clustered (AlexNet/ViT), up to 0.27 when spread
+        # (Behavioral/CNN). Must clear circle radius + half tile size.
+        offset_dist = (0.13 + 0.14 * min(triplet_spread / 0.4, 1.0)) * max(x_range, y_range)
 
         # Compute "away from centroid" angles
         angles = {}
@@ -491,20 +488,102 @@ def draw_image_insets(axes, all_pcs, concept_names):
         for i, c in enumerate(concept_list):
             angles[c] = angle_list[i]
 
-        # Place images
-        margin_x = 0.06 * x_range
-        margin_y = 0.06 * y_range
+        # Place images with minimal margin (scatter panels already have 8% data margins)
+        margin_x = 0.02 * x_range
+        margin_y = 0.02 * y_range
+        # Minimum distance from circle center to image center
+        min_dist_circle = 0.18 * max(x_range, y_range)
+        # Minimum distance between tile centers (prevents tile overlap)
+        min_dist_tiles = 0.12 * max(x_range, y_range)
+
+        # First pass: compute initial positions
+        tile_positions = {}
+        x_lo = xlim[0] + margin_x
+        x_hi = xlim[1] - margin_x
+        y_lo = ylim[0] + margin_y
+        y_hi = ylim[1] - margin_y
         for concept in INSET_CONCEPTS:
             pt = coords[concept]
             a = angles[concept]
             ox = pt[0] + np.cos(a) * offset_dist
             oy = pt[1] + np.sin(a) * offset_dist
+            ox = np.clip(ox, x_lo, x_hi)
+            oy = np.clip(oy, y_lo, y_hi)
 
-            # Clamp to axis limits
-            ox = np.clip(ox, xlim[0] + margin_x, xlim[1] - margin_x)
-            oy = np.clip(oy, ylim[0] + margin_y, ylim[1] - margin_y)
+            # After clamping, check if tile is too close to its circle.
+            # If so, slide sideways (perpendicular) to maintain min distance.
+            dx, dy = ox - pt[0], oy - pt[1]
+            dist = np.sqrt(dx**2 + dy**2)
+            if dist < min_dist_circle:
+                # Need to move perpendicular to reach min_dist_circle
+                shortfall = np.sqrt(max(min_dist_circle**2 - dist**2, 0))
+                # Perpendicular direction (rotate 90° from the radial direction)
+                if dist > 1e-10:
+                    perp_x, perp_y = -dy / dist, dx / dist
+                else:
+                    perp_x, perp_y = 1.0, 0.0
+                # Try both perpendicular directions, pick the one within bounds
+                for sign in [1, -1]:
+                    nx = ox + sign * perp_x * shortfall
+                    ny = oy + sign * perp_y * shortfall
+                    if x_lo <= nx <= x_hi and y_lo <= ny <= y_hi:
+                        ox, oy = nx, ny
+                        break
+                else:
+                    # Both directions go out of bounds; just push radially
+                    if dist > 1e-10:
+                        scale = min_dist_circle / dist
+                        ox = pt[0] + dx * scale
+                        oy = pt[1] + dy * scale
 
-            im = OffsetImage(images[concept], zoom=0.094)
+            tile_positions[concept] = [ox, oy]
+
+        # Second pass: push apart overlapping tiles (iterative repulsion)
+        concept_list = list(INSET_CONCEPTS)
+        for _ in range(30):
+            moved = False
+            for i in range(len(concept_list)):
+                for j in range(i + 1, len(concept_list)):
+                    ci, cj = concept_list[i], concept_list[j]
+                    pi, pj = tile_positions[ci], tile_positions[cj]
+                    dx = pi[0] - pj[0]
+                    dy = pi[1] - pj[1]
+                    dist = np.sqrt(dx**2 + dy**2)
+                    if dist < min_dist_tiles and dist > 1e-10:
+                        push = (min_dist_tiles - dist) * 0.5
+                        ux, uy = dx / dist, dy / dist
+                        pi[0] += ux * push
+                        pi[1] += uy * push
+                        pj[0] -= ux * push
+                        pj[1] -= uy * push
+                        moved = True
+            if not moved:
+                break
+
+        # Clamp again after repulsion
+        for concept in INSET_CONCEPTS:
+            pos = tile_positions[concept]
+            pos[0] = np.clip(pos[0], xlim[0] + margin_x, xlim[1] - margin_x)
+            pos[1] = np.clip(pos[1], ylim[0] + margin_y, ylim[1] - margin_y)
+
+        # Shorten connector lines to 75% — move tiles closer to circles
+        for concept in INSET_CONCEPTS:
+            pt = coords[concept]
+            ox, oy = tile_positions[concept]
+            ox = pt[0] + (ox - pt[0]) * 0.75
+            oy = pt[1] + (oy - pt[1]) * 0.75
+            tile_positions[concept] = [ox, oy]
+
+        # Draw connector lines and images
+        for concept in INSET_CONCEPTS:
+            pt = coords[concept]
+            ox, oy = tile_positions[concept]
+
+            ax.plot([pt[0], ox], [pt[1], oy],
+                    color="#555555", linewidth=0.6, linestyle="-",
+                    alpha=0.5, zorder=6)
+
+            im = OffsetImage(images[concept], zoom=0.11)
             ab = AnnotationBbox(im, (ox, oy), frameon=True, pad=0.08,
                                 bboxprops=dict(
                                     edgecolor="black",
@@ -560,13 +639,13 @@ def main():
                            left=0.05, right=0.96,
                            top=0.95, bottom=0.07)
 
-    # Panel A: col 0 (aligned with D1)
-    ax_schematic = fig.add_subplot(gs[0, 0])
+    # Panel A: cols 0–1 (schematic spans 2 columns)
+    ax_schematic = fig.add_subplot(gs[0, 0:2])
     draw_schematic_placeholder(ax_schematic,
                                "THINGS\nBehavioral Similarity\n(schematic)")
 
-    # Panel B: col 1 (aligned with D2)
-    ax_coarse = fig.add_subplot(gs[0, 1])
+    # Panel B: col 2
+    ax_coarse = fig.add_subplot(gs[0, 2])
     plot_coarseness_raw(ax_coarse)
 
     # Panel B legend — vertical, right side of panel
@@ -593,9 +672,9 @@ def main():
         borderpad=0.4, bbox_to_anchor=(0.99, 0.45))
     leg_c.get_frame().set_linewidth(0.3)
 
-    # Panel C: cols 2–3 (aligned with D3 + D4)
-    ax_compare = fig.add_subplot(gs[0, 2:])
-    plot_comparison_panel(ax_compare)
+    # Panel C: col 3
+    ax_compare = fig.add_subplot(gs[0, 3])
+    plot_comparison_panel(ax_compare, ref_ax=ax_coarse)
 
     # ── Bottom row: 4 PCA scatter panels (one per column) ──
     pc_axes = [fig.add_subplot(gs[1, i]) for i in range(4)]
@@ -619,20 +698,22 @@ def main():
     concept_names = _load_concept_names()
     draw_image_insets(pc_axes, all_pcs, concept_names)
 
-    # Shared super-category legend
+    # Super-category legend inside first scatter panel (upper-left)
     cat_handles = [
         Line2D([0], [0], marker="o", color="none",
                markerfacecolor=SUPER_COLORS[name],
                markeredgecolor="white", markeredgewidth=0.4,
-               markersize=7.5, label=name)
+               markersize=6, label=name)
         for name in SUPER_ORDER
     ]
-    fig.legend(
-        handles=cat_handles, loc="lower center",
-        ncol=len(SUPER_ORDER), fontsize=8.5, frameon=False,
-        handletextpad=0.4, columnspacing=1.4,
-        bbox_to_anchor=(0.5, -0.015),
+    leg_cat = pc_axes[0].legend(
+        handles=cat_handles, loc="upper left",
+        ncol=2, fontsize=6.5, frameon=True,
+        handletextpad=0.2, columnspacing=0.6, labelspacing=0.25,
+        borderpad=0.3, edgecolor="#dddddd", fancybox=False,
+        framealpha=0.90,
     )
+    leg_cat.get_frame().set_linewidth(0.3)
 
     # ── Panel labels ──
     for ax, label, x_off in zip(

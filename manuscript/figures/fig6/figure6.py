@@ -325,16 +325,17 @@ def main():
                 fontsize=14, fontweight="bold", va="top", ha="left",
                 family="sans-serif")
 
-    # Shared legend at top
+    # Legend in bottom-right of Panel A
     handles = [
         Line2D([], [], marker=MARKERS[c], color=COLORS[c], markersize=7,
                linewidth=2.0, markeredgecolor="white", markeredgewidth=0.8,
                label=f"{c}-class")
         for c in CONDITIONS if c in data["condition"].unique()
     ]
-    fig.legend(handles=handles, loc="upper center", ncol=len(handles),
-               frameon=False, fontsize=9, bbox_to_anchor=(0.52, 1.02),
-               columnspacing=1.8, handletextpad=0.6)
+    ax_early.legend(handles=handles, loc="lower right", ncol=1,
+                    frameon=True, fontsize=8, fancybox=False,
+                    edgecolor="#DDDDDD", framealpha=0.9,
+                    handletextpad=0.4, labelspacing=0.3)
 
     out = f"{OUTPUT_DIR}/figure6.png"
     fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white",

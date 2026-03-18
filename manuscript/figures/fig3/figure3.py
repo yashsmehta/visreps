@@ -1,4 +1,4 @@
-"""Figure 3: Combined TVSD + NSD Neural Alignment.
+"""Figure 2: Combined TVSD + NSD Neural Alignment.
 
 2 rows × 3 columns:
   Column 0: dataset schematics (placeholders)
@@ -7,8 +7,8 @@
   Row 1 (NSD):   Schematic | Early coarseness | Ventral coarseness
 
 Coarseness panels show raw Spearman ρ values.
-AlexNet/CLIP as blue shades, Pixels as brown, 1K as warm amber.
-Per-layer profiles and ViT moved to supplementary.
+AlexNet/CLIP as blue shades, Pixels as brown.
+Untrained + 1000-way shown as grouped bar pair after axis break.
 
 Usage:
     python manuscript/figures/fig3/figure3.py
@@ -18,7 +18,10 @@ import sys
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
+import matplotlib.patches as mpatches
 from matplotlib.lines import Line2D
+from matplotlib.transforms import blended_transform_factory
+from matplotlib.ticker import FixedLocator, FuncFormatter, NullLocator, AutoMinorLocator
 import seaborn as sns
 
 sys.path.insert(0, "plotters")
@@ -26,15 +29,13 @@ from plotter_utils import get_condition_summary, query_best_scores
 
 sys.path.insert(0, "manuscript/figures")
 from fig_utils import (
-    COARSE_CFGS, BREAK_1K_POS,
-    UNTRAINED_LINE_STYLE, MARKER_SIZE, EDGE_COLOR, EDGE_WIDTH,
-    setup_style, compute_jitter,
-    format_coarseness_axes, draw_schematic_placeholder,
+    COARSE_CFGS, MARKER_SIZE, EDGE_COLOR, EDGE_WIDTH,
+    setup_style, compute_jitter, draw_schematic_placeholder,
 )
 
 OUTPUT_DIR = "manuscript/figures/fig3"
 
-# ── Figure 3 color scheme (AlexNet/CLIP = blue shades, 1K = amber) ──
+# ── Color scheme ─────────────────────────────────────────────────────────
 ARCHITECTURES = [
     ("alexnet", "pca_labels_alexnet", "AlexNet"),
     ("clip",    "pca_labels_clip",    "CLIP"),
@@ -45,10 +46,17 @@ ARCH_STYLE = {
     "clip":    {"color": "#08519c", "marker": "s"},    # dark blue
     "pixels":  {"color": "#c0a898", "marker": "v"},    # muted tan
 }
-BASELINE_1K_COLOR = "#e8963e"  # warm amber
+BASELINE_1K_COLOR = "#e8963e"    # warm amber
+UNTRAINED_BAR_COLOR = "#999999"  # medium gray
+
+# ── Grouped bar positions (log₂ axis) ────────────────────────────────────
+BAR_CENTER = 250
+BAR_LEFT = BAR_CENTER / 1.16    # untrained  (~216)
+BAR_RIGHT = BAR_CENTER * 1.16   # trained    (~290)
+BAR_WIDTH_FRAC = 0.15
 
 
-# ── NSD data fetching ────────────────────────────────────────────────────
+# ── Data fetching ────────────────────────────────────────────────────────
 
 def fetch_nsd_arch_data(folder, region):
     means, ci_lo, ci_hi = [], [], []
@@ -66,8 +74,6 @@ def fetch_nsd_baseline(region, epoch=20):
                               "spearman", epoch=epoch, analysis="rsa")
     return s["mean"], s["ci_low"], s["ci_high"]
 
-
-# ── TVSD data fetching ───────────────────────────────────────────────────
 
 def _sem_summary(df):
     seed_means = df.groupby("seed")["score"].mean()
@@ -100,7 +106,38 @@ def fetch_tvsd_baseline(region, epoch=20):
     return m, m - 1.96 * s, m + 1.96 * s
 
 
-# ── Coarseness plotting ─────────────────────────────────────────────────
+# ── Axis break ───────────────────────────────────────────────────────────
+
+def _draw_bar_break(ax):
+    """Draw // break marks between the coarse scatter region and the bars."""
+    trans = blended_transform_factory(ax.transData, ax.transAxes)
+    mid = np.exp((np.log(64) + np.log(BAR_LEFT)) / 2)
+    rect_hw = mid * 0.16
+    rect = mpatches.FancyBboxPatch(
+        (mid / 1.16, -0.05), width=rect_hw * 1.5, height=0.10,
+        boxstyle="square,pad=0", facecolor="white", edgecolor="none",
+        transform=trans, clip_on=False, zorder=9)
+    ax.add_patch(rect)
+    for x_shift in [0.93, 1.07]:
+        x_c = mid * x_shift
+        ax.plot([x_c / 1.04, x_c * 1.04], [-0.028, 0.028],
+                transform=trans, color="#555555", linewidth=0.7,
+                clip_on=False, zorder=11)
+
+
+# ── Tick label formatter ─────────────────────────────────────────────────
+
+def _make_tick_formatter(label_map):
+    """Tolerance-based tick formatter for log-axis tick matching."""
+    def _fmt(val, pos):
+        for k, lbl in label_map.items():
+            if abs(val - k) < k * 0.05:
+                return lbl
+        return ""
+    return _fmt
+
+
+# ── Coarseness panel ─────────────────────────────────────────────────────
 
 def plot_raw_coarseness(ax, dataset, region, show_ylabel=True, show_xlabel=True):
     """Plot coarseness panel with raw Spearman ρ values."""
@@ -117,22 +154,11 @@ def plot_raw_coarseness(ax, dataset, region, show_ylabel=True, show_xlabel=True)
                 transform=ax.transAxes, fontsize=9, color="#888")
         return
 
-    # Untrained dashed line
+    # ── 1) Architecture scatter points ──
+    all_y_vals = [bl_mean]
     if not np.isnan(un_mean):
-        ax.axhline(un_mean, **UNTRAINED_LINE_STYLE, zorder=1)
+        all_y_vals.append(un_mean)
 
-    # 1000-way horizontal reference line + diamond
-    ax.axhline(bl_mean, color=BASELINE_1K_COLOR, linestyle="-",
-               linewidth=0.6, alpha=0.35, zorder=2)
-    bl_err_lo = max(bl_mean - bl_ci_lo, 0) if not np.isnan(bl_ci_lo) else 0
-    bl_err_hi = max(bl_ci_hi - bl_mean, 0) if not np.isnan(bl_ci_hi) else 0
-    ax.errorbar(BREAK_1K_POS, bl_mean, yerr=[[bl_err_lo], [bl_err_hi]],
-                fmt="D", color=BASELINE_1K_COLOR, markersize=MARKER_SIZE,
-                markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
-                capsize=2, capthick=0.7, ecolor=BASELINE_1K_COLOR,
-                elinewidth=1.0, zorder=5)
-
-    # Architectures (AlexNet, CLIP, Pixels — no ViT)
     for arch_idx, (arch_key, folder, _) in enumerate(ARCHITECTURES):
         style = ARCH_STYLE[arch_key]
         if dataset == "nsd":
@@ -146,6 +172,7 @@ def plot_raw_coarseness(ax, dataset, region, show_ylabel=True, show_xlabel=True)
             errs_lo = 1.96 * sems
             errs_hi = 1.96 * sems
 
+        all_y_vals.extend([m for m in means if not np.isnan(m)])
         jitter = compute_jitter(arch_idx, len(ARCHITECTURES))
 
         for i, cfg in enumerate(COARSE_CFGS):
@@ -156,111 +183,83 @@ def plot_raw_coarseness(ax, dataset, region, show_ylabel=True, show_xlabel=True)
                         fmt=style["marker"], color=style["color"],
                         markersize=MARKER_SIZE,
                         markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
-                        capsize=2, capthick=0.7,
-                        ecolor=style["color"], elinewidth=1.0, zorder=4)
+                        capsize=1.5, capthick=0.5,
+                        ecolor=style["color"], elinewidth=0.7, zorder=4)
 
-    format_coarseness_axes(ax, "", show_ylabel=show_ylabel,
-                           show_xlabel=show_xlabel)
+    # ── 2) Y-axis range (no forced zero) ──
+    y_min = min(all_y_vals)
+    y_max = max(all_y_vals)
+    y_range = y_max - y_min
+    y_bottom = y_min - y_range * 0.12
 
+    # ── 3) Untrained dashed line (mean only, behind everything) + label ──
+    if not np.isnan(un_mean):
+        ax.axhline(un_mean, color="#AAAAAA", linestyle="--",
+                    linewidth=0.9, alpha=0.7, zorder=1)
+        # Light italic label above the line, left side, in front of everything
+        y_offset = (y_max - y_min) * 0.03  # ~2mm visual offset above the line
+        ax.text(0.02, un_mean + y_offset, " Untrained",
+                fontsize=6, fontstyle="italic", color="#AAAAAA",
+                ha="left", va="bottom",
+                transform=blended_transform_factory(ax.transAxes, ax.transData),
+                zorder=10)
 
-# ── Class count dot grids ──────────────────────────────────────────────
+    # ── 4) Single 1000-way trained bar ──
+    bl_err_lo = max(bl_mean - bl_ci_lo, 0) if not np.isnan(bl_ci_lo) else 0
+    bl_err_hi = max(bl_ci_hi - bl_mean, 0) if not np.isnan(bl_ci_hi) else 0
+    ax.bar(BAR_CENTER, bl_mean - y_bottom, bottom=y_bottom,
+           width=BAR_CENTER * BAR_WIDTH_FRAC,
+           color=BASELINE_1K_COLOR, edgecolor="#c07830",
+           linewidth=0.4, zorder=3)
+    ax.errorbar(BAR_CENTER, bl_mean,
+                yerr=[[bl_err_lo], [bl_err_hi]],
+                fmt="none", ecolor="#555555", elinewidth=0.7,
+                capsize=2.2, capthick=0.6, zorder=5)
 
-def _ordered_grid_positions(n_classes, margin=0.22):
-    """Generate centered, evenly-spaced dot positions for N classes.
+    # ── 4) Axis formatting ──
+    ax.set_xscale("log", base=2)
 
-    Uses clean rectangular layouts (powers of 2 map to natural grids).
-    A generous inner margin ensures clear white space between dots and
-    the box border so dots don't crowd the edges.
-    Returns (N, 2) array of (x, y) positions in [0, 1]² space.
-    """
-    # Hand-picked layouts: (rows, cols) for each coarse granularity
-    layouts = {2: (1, 2), 4: (2, 2), 8: (2, 4), 16: (4, 4),
-               32: (4, 8), 64: (8, 8)}
-    rows, cols = layouts.get(n_classes, (int(np.ceil(np.sqrt(n_classes))),
-                                         int(np.ceil(np.sqrt(n_classes)))))
-    x_pos = np.linspace(margin, 1 - margin, cols) if cols > 1 else [0.5]
-    y_pos = np.linspace(margin, 1 - margin, rows) if rows > 1 else [0.5]
-    xx, yy = np.meshgrid(x_pos, y_pos)
-    return np.column_stack([xx.ravel(), yy.ravel()])[:n_classes]
+    # Tick labels: coarse ticks + "1000" at BAR_CENTER
+    all_ticks = COARSE_CFGS + [BAR_CENTER]
+    label_map = {v: str(v) for v in COARSE_CFGS}
+    label_map[BAR_CENTER] = "1000"
+    ax.xaxis.set_major_locator(FixedLocator(all_ticks))
+    ax.xaxis.set_major_formatter(FuncFormatter(_make_tick_formatter(label_map)))
+    ax.xaxis.set_minor_locator(NullLocator())
+    ax.tick_params(axis="x", which="minor", bottom=False)
+    # Hide the tick *mark* at BAR_CENTER (label only, no spine notch)
+    ax.tick_params(axis="x", which="major", length=3.5, width=0.6)
+    if not show_xlabel:
+        ax.set_xticklabels([""] * len(all_ticks))
+    ax.set_xlim(1.5, BAR_CENTER * 1.35)
 
+    # Y-axis
+    ax.tick_params(axis="y", which="major", direction="out", length=3.5, width=0.6)
+    ax.yaxis.set_minor_locator(AutoMinorLocator(2))
+    ax.tick_params(axis="y", which="minor", direction="out", length=2, width=0.4)
+    ax.yaxis.grid(True, which="major", color="#F0F0F0", linewidth=0.3, zorder=0)
+    ax.yaxis.set_major_formatter(FuncFormatter(
+        lambda v, _: f"{v:.2f}".rstrip("0").rstrip(".")))
 
-def draw_class_count_grids(fig, bottom_axes, grid_dim=32):
-    """Draw dot density grids below x-axis ticks to visualize class counts.
+    # Small top margin
+    cur_ylim = ax.get_ylim()
+    ax.set_ylim(cur_ylim[0], cur_ylim[1] + y_range * 0.03)
 
-    Low counts (2–64) use ordered grid layouts so individual dots are clearly
-    countable and evenly spaced. N=1000 uses random fill on a 32×32 grid,
-    creating a solid packed field that contrasts dramatically with the sparse
-    low-count boxes.
-    """
-    fig.canvas.draw()  # finalize positions before reading coordinates
+    if show_xlabel:
+        ax.set_xlabel("ImageNet training classes", fontsize=8, labelpad=8)
+    if show_ylabel:
+        ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=8.5, labelpad=3)
+    else:
+        ax.set_ylabel("")
+    sns.despine(ax=ax, right=True, top=True, offset=3)
 
-    class_counts = COARSE_CFGS + [1000]
-    x_data_positions = COARSE_CFGS + [BREAK_1K_POS]
+    _draw_bar_break(ax)
 
-    fill_color = '#8fa8be'   # muted slate blue — understated, not competing
-    bg_color = '#fafafa'     # near-white background
-    border_color = '#b5b5b5'
-
-    grid_side = 0.038  # figure fraction per grid square (scaled for wider figure)
-    gap = 0.038        # gap below axes y0 (tight — "Classes" label removed)
-
-    # Dot sizes scale with class count: prominent circles for sparse grids
-    # (easy to count), tiny dots for N=1000 (overlap into solid fill).
-    dot_sizes = {2: 16, 4: 12, 8: 9, 16: 7, 32: 5.5, 64: 4.5, 1000: 4.0}
-
-    # Pre-generate dot positions for each class count
-    # Low counts: ordered grid.  N=1000: random fill on dense grid.
-    dot_positions = {}
-    for n_classes in class_counts:
-        if n_classes <= 64:
-            dot_positions[n_classes] = _ordered_grid_positions(n_classes)
-        else:
-            inner_margin = 0.12
-            pos = np.linspace(inner_margin, 1 - inner_margin, grid_dim)
-            xx, yy = np.meshgrid(pos, pos)
-            all_pos = np.column_stack([xx.ravel(), yy.ravel()])
-            rng = np.random.RandomState(42 + n_classes)
-            n_fill = min(n_classes, len(all_pos))
-            idx = rng.choice(len(all_pos), n_fill, replace=False)
-            dot_positions[n_classes] = all_pos[idx]
-
-    for ax in bottom_axes:
-        ax_pos = ax.get_position()
-
-        for x_data, n_classes in zip(x_data_positions, class_counts):
-            # Convert data x-position to figure x-coordinate
-            display_pt = ax.transData.transform([x_data, 0])
-            fig_pt = fig.transFigure.inverted().transform(display_pt)
-            cx = fig_pt[0]
-
-            left = cx - grid_side / 2
-            bottom = ax_pos.y0 - gap - grid_side
-
-            if bottom < 0.01 or left < 0:
-                continue
-
-            inset = fig.add_axes([left, bottom, grid_side, grid_side])
-            inset.set_facecolor(bg_color)
-
-            # Draw dots (size scales with class count)
-            pts = dot_positions[n_classes]
-            inset.scatter(pts[:, 0], pts[:, 1],
-                          s=dot_sizes[n_classes], c=fill_color,
-                          edgecolors='none', linewidths=0, zorder=2)
-
-            inset.set_xlim(0, 1)
-            inset.set_ylim(0, 1)
-            inset.set_xticks([])
-            inset.set_yticks([])
-            if n_classes == 1000:
-                # Solid fill, no border — reads as a completely packed block
-                inset.set_facecolor(fill_color)
-                for spine in inset.spines.values():
-                    spine.set_visible(False)
-            else:
-                for spine in inset.spines.values():
-                    spine.set_linewidth(0.5)
-                    spine.set_color(border_color)
+    # "(default)" subtitle below the 1000 tick — bottom row only
+    if show_xlabel:
+        ax.text(BAR_CENTER, -0.10, "(default)", fontsize=5.5,
+                ha="center", va="top", color="#777777", fontstyle="italic",
+                transform=ax.get_xaxis_transform())
 
 
 # ── Main ─────────────────────────────────────────────────────────────────
@@ -268,23 +267,22 @@ def draw_class_count_grids(fig, bottom_axes, grid_dim=32):
 def main():
     setup_style()
     plt.rcParams.update({
-        "axes.labelsize": 9,
-        "axes.titlesize": 10,
-        "xtick.labelsize": 8,
-        "ytick.labelsize": 8,
-        "axes.linewidth": 0.8,
-        "xtick.major.width": 0.8,
-        "ytick.major.width": 0.8,
+        "axes.labelsize": 8,
+        "axes.titlesize": 9,
+        "xtick.labelsize": 7,
+        "ytick.labelsize": 7,
+        "axes.linewidth": 0.6,
+        "xtick.major.width": 0.6,
+        "ytick.major.width": 0.6,
     })
 
-    fig = plt.figure(figsize=(14.5, 9.0))
+    fig = plt.figure(figsize=(11.5, 6.8))
 
-    # 3 rows (TVSD, separator, NSD) × 3 columns (schematic, region1, region2)
-    outer = gridspec.GridSpec(3, 3, figure=fig,
-                              hspace=0.35, wspace=0.28,
-                              height_ratios=[1, 0.005, 1],
-                              width_ratios=[0.8, 1, 1],
-                              left=0.07, right=0.96, top=0.92, bottom=0.19)
+    outer = gridspec.GridSpec(2, 3, figure=fig,
+                              hspace=0.28, wspace=0.28,
+                              height_ratios=[1, 1],
+                              width_ratios=[0.7, 1, 1],
+                              left=0.07, right=0.97, top=0.93, bottom=0.10)
 
     axes = {}
 
@@ -304,105 +302,77 @@ def main():
                         show_ylabel=False, show_xlabel=False)
     axes[(0, 2)] = ax_it
 
-    # ── Row 2: NSD ──
-    ax_nsd_schem = fig.add_subplot(outer[2, 0])
+    # ── Row 1: NSD ──
+    ax_nsd_schem = fig.add_subplot(outer[1, 0])
     draw_schematic_placeholder(ax_nsd_schem,
                                "NSD schematic\n(Human fMRI,\n8 subjects, early/ventral\nvisual stream)")
-    axes[(2, 0)] = ax_nsd_schem
+    axes[(1, 0)] = ax_nsd_schem
 
-    ax_early = fig.add_subplot(outer[2, 1])
+    ax_early = fig.add_subplot(outer[1, 1])
     plot_raw_coarseness(ax_early, "nsd", "early visual stream",
                         show_ylabel=True, show_xlabel=True)
-    axes[(2, 1)] = ax_early
+    axes[(1, 1)] = ax_early
 
-    ax_ventral = fig.add_subplot(outer[2, 2])
+    ax_ventral = fig.add_subplot(outer[1, 2])
     plot_raw_coarseness(ax_ventral, "nsd", "ventral visual stream",
                         show_ylabel=False, show_xlabel=True)
-    axes[(2, 2)] = ax_ventral
+    axes[(1, 2)] = ax_ventral
 
     # ── Region titles ──
     for ax_key, title in [
         ((0, 1), "V1 (Early)"),
         ((0, 2), "IT (Late)"),
-        ((2, 1), "Early Visual Stream"),
-        ((2, 2), "Ventral Visual Stream"),
+        ((1, 1), "Early Visual Stream"),
+        ((1, 2), "Ventral Visual Stream"),
     ]:
-        axes[ax_key].set_title(title, fontsize=10, fontweight="bold",
-                                pad=8, color="#1a1a1a")
+        axes[ax_key].set_title(title, fontsize=9, fontweight="bold",
+                                pad=6, color="#222222")
 
     # ── Row labels ──
     tvsd_mid_y = (axes[(0, 0)].get_position().y0 + axes[(0, 0)].get_position().y1) / 2
-    nsd_mid_y = (axes[(2, 0)].get_position().y0 + axes[(2, 0)].get_position().y1) / 2
-    fig.text(0.015, tvsd_mid_y, "TVSD  (Macaque)", fontsize=10.5, fontweight="bold",
+    nsd_mid_y = (axes[(1, 0)].get_position().y0 + axes[(1, 0)].get_position().y1) / 2
+    fig.text(0.015, tvsd_mid_y, "TVSD  (Macaque)", fontsize=9.5, fontweight="bold",
              ha="center", va="center", color="#333333", rotation=90)
-    fig.text(0.015, nsd_mid_y, "NSD  (Human)", fontsize=10.5, fontweight="bold",
+    fig.text(0.015, nsd_mid_y, "NSD  (Human)", fontsize=9.5, fontweight="bold",
              ha="center", va="center", color="#333333", rotation=90)
 
     # ── Panel labels (A–F) ──
-    label_order = [(0, 0), (0, 1), (0, 2), (2, 0), (2, 1), (2, 2)]
+    label_order = [(0, 0), (0, 1), (0, 2), (1, 0), (1, 1), (1, 2)]
     for i, key in enumerate(label_order):
         label = chr(ord("A") + i)
         ax = axes[key]
-        ax.text(-0.12, 1.14, label, transform=ax.transAxes,
-                fontsize=14, fontweight="bold", va="top", ha="left",
+        ax.text(-0.10, 1.10, label, transform=ax.transAxes,
+                fontsize=13, fontweight="bold", va="top", ha="left",
                 family="sans-serif")
 
-    # ── Remove per-axes legends ──
+    # ── Remove per-axes legends (except panel B) ──
     for key, ax in axes.items():
+        if key == (0, 1):
+            continue
         legend = ax.get_legend()
         if legend:
             legend.remove()
 
-    # ── Horizontal separator ──
-    tvsd_bottom = axes[(0, 0)].get_position().y0
-    nsd_top = axes[(2, 0)].get_position().y1
-    mid_y = (tvsd_bottom + nsd_top) / 2
-    line_x0 = axes[(0, 0)].get_position().x0 - 0.01
-    line_x1 = axes[(0, 2)].get_position().x1 + 0.01
-    fig.add_artist(plt.Line2D([line_x0, line_x1], [mid_y, mid_y],
-                               transform=fig.transFigure, color="#cccccc",
-                               linewidth=0.7, linestyle="-", clip_on=False))
-
-    # ── Remove "Classes" xlabel from bottom row — dot grids replace it ──
-    axes[(2, 1)].set_xlabel("")
-    axes[(2, 2)].set_xlabel("")
-
-    # ── Class count dot grids (below bottom data panels in columns 1-2) ──
-    draw_class_count_grids(fig, [axes[(2, 1)], axes[(2, 2)]])
-
-    # ── Per-axis "Number of training classes" labels ──
-    for ax in [axes[(2, 1)], axes[(2, 2)]]:
-        ax_pos = ax.get_position()
-        ax_cx = (ax_pos.x0 + ax_pos.x1) / 2
-        label_y = ax_pos.y0 - 0.038 - 0.038 - 0.008
-        fig.text(ax_cx, max(label_y, 0.045),
-                 "Number of training classes", fontsize=8, ha="center",
-                 va="top", color="#555555")
-
-    # ── Shared legend (centered across data panels in columns 1-2) ──
-    fig_left = axes[(0, 1)].get_position().x0
-    fig_right = axes[(0, 2)].get_position().x1
-    fig_center = (fig_left + fig_right) / 2
-
-    handles = []
+    # ── In-plot legend in TVSD V1 (panel B) ──
+    arch_handles = []
     for arch_key, _, display in ARCHITECTURES:
         style = ARCH_STYLE[arch_key]
         h = Line2D([], [], marker=style["marker"], color="none",
                    markerfacecolor=style["color"],
                    markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
-                   markersize=MARKER_SIZE, label=display)
-        handles.append(h)
-    handles.append(Line2D([], [], marker="D", color="none",
-                          markerfacecolor=BASELINE_1K_COLOR,
-                          markeredgecolor=EDGE_COLOR,
-                          markeredgewidth=EDGE_WIDTH,
-                          markersize=MARKER_SIZE, label="1K (ImageNet)"))
-    handles.append(Line2D([], [], **UNTRAINED_LINE_STYLE, label="Untrained"))
-
-    fig.legend(handles=handles, loc="center", fontsize=8, frameon=False,
-               handletextpad=0.3, columnspacing=0.8, ncol=5,
-               borderpad=0.3, handlelength=1.5,
-               bbox_to_anchor=(fig_center, 0.02))
+                   markersize=5.5, label=display)
+        arch_handles.append(h)
+    leg = axes[(0, 1)].legend(
+        handles=arch_handles, fontsize=7.5,
+        frameon=True, fancybox=False, framealpha=0.92,
+        edgecolor="#dddddd", borderpad=0.4,
+        handletextpad=0.3, labelspacing=0.25,
+        title="Latent repr. for\ncoarse labels",
+        title_fontsize=7,
+        loc="center left",
+        bbox_to_anchor=(0.0, 0.45),
+    )
+    leg._legend_box.align = "left"
 
     # ── Save ──
     out = f"{OUTPUT_DIR}/figure3.png"
