@@ -2,7 +2,7 @@
 
 Layout (3 panels):
   Panel A: NSD (Early Visual Stream) — line plot across 4 data scales
-  Panel B: NSD (Ventral Stream) — line plot across 4 data scales
+  Panel B: NSD (Ventral Visual Stream) — line plot across 4 data scales
   Panel C: THINGS (Behavioral) — line plot across 4 data scales
 
 Usage:
@@ -52,7 +52,7 @@ BENCHMARKS = {
         "ylabel": r"RSA (Spearman $\rho$)",
     },
     "nsd": {
-        "title": "NSD (Ventral Stream)",
+        "title": "NSD (Ventral Visual Stream)",
         "ylabel": r"RSA (Spearman $\rho$)",
     },
     "things": {
@@ -292,40 +292,98 @@ def plot_panel(ax, data, benchmark):
 
 def main():
     setup_style()
+    plt.rcParams.update({
+        "axes.labelsize": 10,
+        "xtick.labelsize": 9,
+        "ytick.labelsize": 9,
+        "axes.linewidth": 0.7,
+    })
 
     csv_data = load_csv_data()
     full_data = load_full_imagenet()
     data = pd.concat([csv_data, full_data], ignore_index=True)
 
-    fig = plt.figure(figsize=(12, 3.5))
+    fig = plt.figure(figsize=(13, 4.4))
     fig.patch.set_facecolor("white")
 
-    gs = gridspec.GridSpec(1, 3, figure=fig, wspace=0.35,
-                           left=0.06, right=0.97, top=0.85, bottom=0.15)
+    # Layout: [NSD early | NSD ventral | spacer | THINGS]
+    # Use nested gridspecs: inner for NSD pair (tight), outer for NSD vs THINGS
+    outer = gridspec.GridSpec(1, 3, figure=fig,
+                              width_ratios=[2.15, 0.08, 1],
+                              wspace=0.12,
+                              left=0.06, right=0.96, top=0.78, bottom=0.15)
+    # NSD pair: tighter wspace
+    gs_nsd = gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=outer[0, 0],
+                                              wspace=0.28)
 
-    # Panel A: NSD (Early Visual Stream)
-    ax_early = fig.add_subplot(gs[0, 0])
+    # ── Panel A (left): NSD Early Visual Stream ──
+    ax_early = fig.add_subplot(gs_nsd[0, 0])
     plot_panel(ax_early, data[data["benchmark"] == "nsd_early"], "nsd_early")
+    ax_early.set_title("")  # Remove per-panel title; we'll use shared headers
 
-    # Panel B: NSD (Ventral Stream)
-    ax_nsd = fig.add_subplot(gs[0, 1])
+    # ── Panel A (right): NSD Ventral Visual Stream ──
+    ax_nsd = fig.add_subplot(gs_nsd[0, 1])
     plot_panel(ax_nsd, data[data["benchmark"] == "nsd"], "nsd")
+    ax_nsd.set_title("")
+    ax_nsd.set_ylabel("")  # Share y-label with left panel
 
-    # Panel C: THINGS (Behavioral)
-    ax_things = fig.add_subplot(gs[0, 2])
+    # ── Panel B: THINGS Behavioral ──
+    ax_things = fig.add_subplot(outer[0, 2])
     plot_panel(ax_things, data[data["benchmark"] == "things"], "things")
+    ax_things.set_title("")
 
-    # Panel labels
-    for ax, label, x_off in zip(
-        [ax_early, ax_nsd, ax_things],
-        ["A", "B", "C"],
-        [-0.14, -0.14, -0.14],
-    ):
-        ax.text(x_off, 1.12, label, transform=ax.transAxes,
-                fontsize=14, fontweight="bold", va="top", ha="left",
-                family="sans-serif")
+    # ── Dataset headers (bold, centered above panel groups) ──
+    # NSD header spans both NSD panels
+    nsd_left = ax_early.get_position().x0
+    nsd_right = ax_nsd.get_position().x1
+    nsd_center_x = (nsd_left + nsd_right) / 2
+    nsd_top_y = ax_early.get_position().y1
 
-    # Legend in bottom-right of Panel A
+    fig.text(nsd_center_x, nsd_top_y + 0.09, "Natural Scenes Dataset",
+             fontsize=12.5, fontweight="bold", color="#1a1a1a",
+             ha="center", va="bottom", family="sans-serif")
+
+    # THINGS header
+    things_pos = ax_things.get_position()
+    things_center_x = (things_pos.x0 + things_pos.x1) / 2
+    things_top_y = things_pos.y1
+
+    fig.text(things_center_x, nsd_top_y + 0.09, "THINGS Behavior",
+             fontsize=12.5, fontweight="bold", color="#1a1a1a",
+             ha="center", va="bottom", family="sans-serif")
+
+    # ── Region subtitles (gray, below dataset headers) ──
+    early_pos = ax_early.get_position()
+    early_cx = (early_pos.x0 + early_pos.x1) / 2
+    fig.text(early_cx, nsd_top_y + 0.015, "Early visual stream",
+             fontsize=9, color="#888888",
+             ha="center", va="bottom", family="sans-serif")
+
+    nsd_pos = ax_nsd.get_position()
+    nsd_cx = (nsd_pos.x0 + nsd_pos.x1) / 2
+    fig.text(nsd_cx, nsd_top_y + 0.015, "Ventral visual stream",
+             fontsize=9, color="#888888",
+             ha="center", va="bottom", family="sans-serif")
+
+    # ── Panel labels: A for NSD group, B for THINGS ──
+    # Use a shared y for vertical alignment
+    label_y = max(nsd_top_y, things_top_y) + 0.11
+    fig.text(nsd_left - 0.03, label_y, "A",
+             fontsize=14, fontweight="bold", va="bottom", ha="left",
+             family="sans-serif")
+    fig.text(things_pos.x0 - 0.03, label_y, "B",
+             fontsize=14, fontweight="bold", va="bottom", ha="left",
+             family="sans-serif")
+
+    # ── Subtle vertical separator between NSD and THINGS ──
+    sep_x = (ax_nsd.get_position().x1 + ax_things.get_position().x0) / 2
+    fig.add_artist(plt.Line2D(
+        [sep_x, sep_x],
+        [ax_early.get_position().y0 - 0.01, label_y - 0.01],
+        transform=fig.transFigure, color="#c8c8c8",
+        linewidth=0.8, zorder=0))
+
+    # ── Legend in Panel A (left) ──
     handles = [
         Line2D([], [], marker=MARKERS[c], color=COLORS[c], markersize=7,
                linewidth=2.0, markeredgecolor="white", markeredgewidth=0.8,
