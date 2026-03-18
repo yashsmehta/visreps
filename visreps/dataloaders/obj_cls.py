@@ -26,22 +26,41 @@ DS_STD = {
     "clip":   [0.26862954, 0.26130258, 0.27577711],
 }
 
-def get_transform(ds_stats="imgnet", data_augment=False, image_size=224, preprocess=True):
-    """Return a composed transform based on dataset stats and augmentation flag."""
+def get_transform(ds_stats="imgnet", data_augment=False, image_size=224, preprocess=True,
+                   val_resize_size=256):
+    """Return a composed transform based on dataset stats and augmentation flag.
+
+    When ``data_augment=True`` (training), uses ``RandomResizedCrop`` instead of
+    ``Resize + CenterCrop`` so the model sees different scales and positions each
+    epoch — the single most impactful ImageNet augmentation.
+
+    ``val_resize_size`` controls the resize dimension for validation transforms
+    (default 256, but modern recipes like ResNet50-V2 / ConvNeXt use 232).
+    """
     if not preprocess:
         return transforms.Compose([transforms.ToTensor()])
-    
-    if ds_stats == "tiny-imagenet":
-        resize_size, crop_size = 64, 64
-    else:
-        resize_size, crop_size = 256, image_size
 
-    tfms = [
-        transforms.Resize(resize_size, interpolation=transforms.InterpolationMode.BILINEAR),
-        transforms.CenterCrop(crop_size)
-    ]
     if data_augment:
-        tfms += [transforms.RandomHorizontalFlip(), transforms.RandomRotation(10)]
+        # Training: RandomResizedCrop + RandomHorizontalFlip (standard ImageNet)
+        if ds_stats == "tiny-imagenet":
+            crop_size = 64
+        else:
+            crop_size = image_size
+        tfms = [
+            transforms.RandomResizedCrop(crop_size, interpolation=transforms.InterpolationMode.BILINEAR),
+            transforms.RandomHorizontalFlip(),
+        ]
+    else:
+        # Validation / test: deterministic Resize + CenterCrop
+        if ds_stats == "tiny-imagenet":
+            resize_size, crop_size = 64, 64
+        else:
+            resize_size, crop_size = val_resize_size, image_size
+        tfms = [
+            transforms.Resize(resize_size, interpolation=transforms.InterpolationMode.BILINEAR),
+            transforms.CenterCrop(crop_size),
+        ]
+
     tfms += [transforms.ToTensor(), transforms.Normalize(DS_MEAN[ds_stats], DS_STD[ds_stats])]
     return transforms.Compose(tfms)
 
@@ -308,15 +327,15 @@ def prepare_tinyimgnet_data(cfg, pca_labels, shuffle, preprocess, train_test_spl
         if not preprocess:
             transform = transforms.Compose([transforms.ToTensor()])
         else:
-            tfms = (
-                [transforms.Resize(64), transforms.CenterCrop(64)]
-                + ([
+            if augment:
+                tfms = [
+                    transforms.RandomResizedCrop(64, interpolation=transforms.InterpolationMode.BILINEAR),
                     transforms.RandomHorizontalFlip(0.5),
-                    transforms.RandomRotation(10),
-                    transforms.ColorJitter(0.2, 0.2, 0.2)
-                  ] if augment else [])
-                + [transforms.ToTensor(), transforms.Normalize(DS_MEAN["tiny-imagenet"], DS_STD["tiny-imagenet"])]
-            )
+                    transforms.ColorJitter(0.2, 0.2, 0.2),
+                ]
+            else:
+                tfms = [transforms.Resize(64), transforms.CenterCrop(64)]
+            tfms += [transforms.ToTensor(), transforms.Normalize(DS_MEAN["tiny-imagenet"], DS_STD["tiny-imagenet"])]
             transform = transforms.Compose(tfms)
         
         # Use the folder_split to point to the correct directory

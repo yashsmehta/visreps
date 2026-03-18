@@ -27,9 +27,14 @@ class Trainer:
         self.datasets, self.loaders = get_obj_cls_loader(self.cfg)
         num_classes = self.cfg.pca_n_classes if self.cfg.pca_labels else self.datasets["train"].num_classes
         self.model = model_utils.load_model(self.cfg, self.device, num_classes=num_classes)
-        self.criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+        label_smoothing = self.cfg.get("label_smoothing", 0.1)
+        self.criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
         self.optimizer = utils.setup_optimizer(self.model, self.cfg)
         self.scheduler = utils.setup_scheduler(self.optimizer, self.cfg)
+
+        # AMP (automatic mixed precision)
+        self.use_amp = self.cfg.get("use_amp", False) and self.device.type == "cuda"
+        self.scaler = torch.amp.GradScaler(self.device.type, enabled=self.use_amp)
 
         # Logging and checkpointing
         self.checkpoint_dir = None
@@ -44,13 +49,6 @@ class Trainer:
     def evaluate(self, split="test"):
         self.model.eval()
         return calculate_cls_accuracy(self.loaders[split], self.model, self.device)
-
-    def _compute_gradients(self, loss):
-        """Compute gradients and optionally clip them."""
-        loss.backward()
-        if hasattr(self.cfg, 'grad_clip') and self.cfg.grad_clip > 0:
-            return torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.grad_clip)
-        return torch.norm(torch.stack([p.grad.norm() for p in self.model.parameters() if p.grad is not None]))
 
     def _create_progress_bar(self, loader, epoch):
         """Create progress bar for interactive environments."""
@@ -67,14 +65,21 @@ class Trainer:
         total_grad_norm = 0
 
         for i, (images, labels) in enumerate(loader):
-            # Forward pass
+            # Forward pass (with optional AMP)
             images, labels = images.to(self.device), labels.to(self.device)
             self.optimizer.zero_grad()
-            loss = self.criterion(self.model(images), labels)
+            with torch.autocast(self.device.type, enabled=self.use_amp):
+                loss = self.criterion(self.model(images), labels)
 
-            # Backward pass
-            grad_norm = self._compute_gradients(loss)
-            self.optimizer.step()
+            # Backward pass (with GradScaler for AMP)
+            self.scaler.scale(loss).backward()
+            if hasattr(self.cfg, 'grad_clip') and self.cfg.grad_clip > 0:
+                self.scaler.unscale_(self.optimizer)
+                grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.grad_clip)
+            else:
+                grad_norm = torch.norm(torch.stack([p.grad.norm() for p in self.model.parameters() if p.grad is not None]))
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
 
             # Track metrics
             total_loss += loss.item()
