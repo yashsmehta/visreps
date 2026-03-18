@@ -108,7 +108,7 @@ All alignment scores use Spearman $\rho$ (RSA) unless otherwise noted. Error bar
 
 ---
 
-## ~~Figure S13.~~ *Moved to main Figure 5C.*
+## ~~Figure S13.~~ *Moved to main Figure 4C.*
 
 ---
 

@@ -23,8 +23,9 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import matplotlib.patches as mpatches
 from matplotlib.lines import Line2D
-from matplotlib.ticker import AutoMinorLocator, MultipleLocator, FuncFormatter
+from matplotlib.ticker import AutoMinorLocator, MultipleLocator, FuncFormatter, FixedLocator, NullLocator
 from matplotlib.offsetbox import OffsetImage, AnnotationBbox
+from matplotlib.transforms import blended_transform_factory
 from PIL import Image
 import seaborn as sns
 
@@ -37,7 +38,7 @@ from fig_utils import (
     COARSE_CFGS, BREAK_1K_POS,
     UNTRAINED_LINE_STYLE, MARKER_SIZE, EDGE_COLOR, EDGE_WIDTH,
     setup_style, compute_jitter,
-    format_coarseness_axes, draw_schematic_placeholder,
+    format_coarseness_axes, draw_schematic_placeholder, draw_xaxis_break,
 )
 sys.path.insert(0, "manuscript/figures/fig3")
 from plot_pc_scatter import (
@@ -62,6 +63,10 @@ ARCH_STYLE = {
 }
 BASELINE_1K_COLOR = "#d4822e"  # warm amber
 COARSE_BAR_COLOR = "#08519c"   # dark blue (CLIP)
+
+# ── Bar position for 1000-way (matches Fig 2 style) ──────────────────────
+BAR_CENTER = 250
+BAR_WIDTH_FRAC = 0.15
 
 # ── Pretrained model comparison config ────────────────────────────────────
 PRETRAINED_GROUPS = {
@@ -103,8 +108,38 @@ def fetch_things_arch_data(folder):
     return np.array(means), np.array(ci_lo), np.array(ci_hi)
 
 
+def _draw_bar_break(ax):
+    """Draw // break marks between the coarse scatter region and the bar."""
+    trans = blended_transform_factory(ax.transData, ax.transAxes)
+    mid = np.exp((np.log(64) + np.log(BAR_CENTER / 1.16)) / 2)
+    rect_hw = mid * 0.16
+    rect = mpatches.FancyBboxPatch(
+        (mid / 1.16, -0.05), width=rect_hw * 1.5, height=0.10,
+        boxstyle="square,pad=0", facecolor="white", edgecolor="none",
+        transform=trans, clip_on=False, zorder=9)
+    ax.add_patch(rect)
+    for x_shift in [0.93, 1.07]:
+        x_c = mid * x_shift
+        ax.plot([x_c / 1.04, x_c * 1.04], [-0.028, 0.028],
+                transform=trans, color="#555555", linewidth=0.7,
+                clip_on=False, zorder=11)
+
+
+def _make_tick_formatter(label_map):
+    """Tolerance-based tick formatter for log-axis tick matching."""
+    def _fmt(val, pos):
+        for k, lbl in label_map.items():
+            if abs(val - k) < k * 0.05:
+                return lbl
+        return ""
+    return _fmt
+
+
 def plot_coarseness_raw(ax):
-    """Panel B: Raw Spearman rho coarseness for THINGS behavioral."""
+    """Panel B: Raw Spearman rho coarseness for THINGS behavioral.
+
+    Uses bar style for 1000-way baseline (matching Figure 2).
+    """
     # 1000-way baseline
     bl = get_condition_summary("things-behavior", "N/A", "imagenet1k", 1000,
                                "spearman", epoch=20, analysis="rsa")
@@ -113,25 +148,19 @@ def plot_coarseness_raw(ax):
     # Untrained baseline
     un = get_condition_summary("things-behavior", "N/A", "imagenet1k", 1000,
                                "spearman", epoch=0, analysis="rsa")
-    if not np.isnan(un["mean"]):
-        ax.axhline(un["mean"], **UNTRAINED_LINE_STYLE, zorder=1)
 
-    # 1000-way horizontal reference line + diamond
+    # Collect y-values for axis range
+    all_y_vals = []
     if not np.isnan(bl_mean):
-        ax.axhline(bl_mean, color=BASELINE_1K_COLOR, linestyle="-",
-                    linewidth=0.6, alpha=0.35, zorder=2)
-        bl_err_lo = max(bl["mean"] - bl["ci_low"], 0) if not np.isnan(bl["ci_low"]) else 0
-        bl_err_hi = max(bl["ci_high"] - bl["mean"], 0) if not np.isnan(bl["ci_high"]) else 0
-        ax.errorbar(BREAK_1K_POS, bl_mean, yerr=[[bl_err_lo], [bl_err_hi]],
-                     fmt="D", color=BASELINE_1K_COLOR, markersize=MARKER_SIZE + 1,
-                     markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
-                     capsize=2.5, capthick=0.8, ecolor=BASELINE_1K_COLOR,
-                     elinewidth=1.0, zorder=5)
+        all_y_vals.append(bl_mean)
+    if not np.isnan(un["mean"]):
+        all_y_vals.append(un["mean"])
 
     # Coarse architectures
     for arch_idx, (arch_key, folder, _) in enumerate(ARCHITECTURES):
         style = ARCH_STYLE[arch_key]
         means, ci_lo, ci_hi = fetch_things_arch_data(folder)
+        all_y_vals.extend([m for m in means if not np.isnan(m)])
         jitter = compute_jitter(arch_idx, len(ARCHITECTURES))
         for i, cfg in enumerate(COARSE_CFGS):
             if np.isnan(means[i]):
@@ -140,12 +169,75 @@ def plot_coarseness_raw(ax):
             e_hi = max(ci_hi[i] - means[i], 0) if not np.isnan(ci_hi[i]) else 0
             ax.errorbar(cfg * jitter, means[i], yerr=[[e_lo], [e_hi]],
                          fmt=style["marker"], color=style["color"],
-                         markersize=MARKER_SIZE + 1,
+                         markersize=MARKER_SIZE,
                          markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
-                         capsize=2.5, capthick=0.8,
-                         ecolor=style["color"], elinewidth=1.0, zorder=4)
+                         capsize=1.5, capthick=0.5,
+                         ecolor=style["color"], elinewidth=0.7, zorder=4)
 
-    format_coarseness_axes(ax, "", show_ylabel=True, show_xlabel=True)
+    # Y-axis range (no forced zero)
+    y_min = min(all_y_vals) if all_y_vals else 0
+    y_max = max(all_y_vals) if all_y_vals else 1
+    y_range = y_max - y_min
+    y_bottom = y_min - y_range * 0.12
+
+    # Untrained dashed line + label
+    if not np.isnan(un["mean"]):
+        ax.axhline(un["mean"], **UNTRAINED_LINE_STYLE, zorder=1)
+        y_offset = y_range * 0.03
+        ax.text(0.02, un["mean"] + y_offset, " Untrained",
+                fontsize=6, fontstyle="italic", color="#AAAAAA",
+                ha="left", va="bottom",
+                transform=blended_transform_factory(ax.transAxes, ax.transData),
+                zorder=10)
+
+    # 1000-way bar
+    if not np.isnan(bl_mean):
+        bl_err_lo = max(bl_mean - bl["ci_low"], 0) if not np.isnan(bl["ci_low"]) else 0
+        bl_err_hi = max(bl["ci_high"] - bl_mean, 0) if not np.isnan(bl["ci_high"]) else 0
+        ax.bar(BAR_CENTER, bl_mean - y_bottom, bottom=y_bottom,
+               width=BAR_CENTER * BAR_WIDTH_FRAC,
+               color=BASELINE_1K_COLOR, edgecolor="#c07830",
+               linewidth=0.4, zorder=3)
+        ax.errorbar(BAR_CENTER, bl_mean,
+                    yerr=[[bl_err_lo], [bl_err_hi]],
+                    fmt="none", ecolor="#555555", elinewidth=0.7,
+                    capsize=2.2, capthick=0.6, zorder=5)
+
+    # Axis formatting
+    ax.set_xscale("log", base=2)
+    all_ticks = COARSE_CFGS + [BAR_CENTER]
+    label_map = {v: str(v) for v in COARSE_CFGS}
+    label_map[BAR_CENTER] = "1000"
+    ax.xaxis.set_major_locator(FixedLocator(all_ticks))
+    ax.xaxis.set_major_formatter(FuncFormatter(_make_tick_formatter(label_map)))
+    ax.xaxis.set_minor_locator(NullLocator())
+    ax.tick_params(axis="x", which="minor", bottom=False)
+    ax.tick_params(axis="x", which="major", length=3.5, width=0.6)
+    ax.set_xlim(1.5, BAR_CENTER * 1.35)
+
+    # Y-axis
+    ax.tick_params(axis="y", which="major", direction="out", length=3.5, width=0.6)
+    ax.yaxis.set_minor_locator(AutoMinorLocator(2))
+    ax.tick_params(axis="y", which="minor", direction="out", length=2, width=0.4)
+    ax.yaxis.grid(True, which="major", color="#F0F0F0", linewidth=0.3, zorder=0)
+    ax.yaxis.set_major_formatter(FuncFormatter(
+        lambda v, _: f"{v:.2f}".rstrip("0").rstrip(".")))
+
+    # Small top margin
+    cur_ylim = ax.get_ylim()
+    ax.set_ylim(cur_ylim[0], cur_ylim[1] + y_range * 0.03)
+
+    ax.set_xlabel("ImageNet training classes", fontsize=8, labelpad=8)
+    ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=8.5, labelpad=3)
+    sns.despine(ax=ax, right=True, top=True, offset=3)
+
+    _draw_bar_break(ax)
+
+    # "(default)" subtitle below the 1000 tick
+    ax.text(BAR_CENTER, -0.10, "(default)", fontsize=5.5,
+            ha="center", va="top", color="#777777", fontstyle="italic",
+            transform=ax.get_xaxis_transform())
+
     ax.set_title("Alignment vs. Granularity",
                  fontsize=9.5, fontweight="semibold", pad=8)
 
@@ -648,29 +740,25 @@ def main():
     ax_coarse = fig.add_subplot(gs[0, 2])
     plot_coarseness_raw(ax_coarse)
 
-    # Panel B legend — vertical, right side of panel
+    # Panel B legend — architecture markers (bar is self-explanatory)
     legend_handles = []
     for arch_key, _, display in ARCHITECTURES:
         style = ARCH_STYLE[arch_key]
         h = Line2D([], [], marker=style["marker"], color="none",
                    markerfacecolor=style["color"],
                    markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
-                   markersize=MARKER_SIZE, label=display)
+                   markersize=5.5, label=display)
         legend_handles.append(h)
-    legend_handles.append(Line2D([], [], marker="D", color="none",
-                                  markerfacecolor=BASELINE_1K_COLOR,
-                                  markeredgecolor=EDGE_COLOR,
-                                  markeredgewidth=EDGE_WIDTH,
-                                  markersize=MARKER_SIZE, label="1K (ImageNet)"))
-    legend_handles.append(Line2D([], [], **UNTRAINED_LINE_STYLE, label="Untrained"))
-
     leg_c = ax_coarse.legend(
-        handles=legend_handles,
-        fontsize=6.5, frameon=True, loc="center right",
-        edgecolor="#e0e0e0", fancybox=False, framealpha=0.95,
-        handletextpad=0.25, labelspacing=0.35, ncol=1,
-        borderpad=0.4, bbox_to_anchor=(0.99, 0.45))
-    leg_c.get_frame().set_linewidth(0.3)
+        handles=legend_handles, fontsize=7.5,
+        frameon=True, fancybox=False, framealpha=0.92,
+        edgecolor="#dddddd", borderpad=0.4,
+        handletextpad=0.3, labelspacing=0.25,
+        title="Latent repr. for\ncoarse labels",
+        title_fontsize=7,
+        loc="center left",
+        bbox_to_anchor=(0.0, 0.45))
+    leg_c._legend_box.align = "left"
 
     # Panel C: col 3
     ax_compare = fig.add_subplot(gs[0, 3])

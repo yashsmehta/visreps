@@ -1,4 +1,4 @@
-"""Figure 2A/B — Cross-model RSA: coarse ≠ fine-grained.
+"""Supplementary: Cross-model RSA (formerly Figure 2A/B) — Cross-model RSA: coarse ≠ fine-grained.
 
 Computes RSA between internal representations of different models to show:
   (A) Coarse models are fundamentally different from 1000-way (cross-model RSA
