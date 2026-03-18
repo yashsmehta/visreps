@@ -286,7 +286,7 @@ def main():
     # ── Row 0: TVSD ──
     ax_tvsd_schem = fig.add_subplot(outer[0, 0])
     draw_schematic_placeholder(ax_tvsd_schem,
-                               "TVSD schematic\n(Macaque electrophysiology,\nV1 / V4 / IT)")
+                               "TVSD schematic\n(Electrophysiology,\nV1 / V4 / IT)")
     axes[(0, 0)] = ax_tvsd_schem
 
     ax_v1 = fig.add_subplot(outer[0, 1])
@@ -303,7 +303,7 @@ def main():
     # ── Row 1: NSD ──
     ax_nsd_schem = fig.add_subplot(outer[1, 0])
     draw_schematic_placeholder(ax_nsd_schem,
-                               "NSD schematic\n(Human fMRI,\n8 subjects, early/ventral\nvisual stream)")
+                               "NSD schematic\n(fMRI, 8 subjects,\nearly/ventral\nvisual stream)")
     axes[(1, 0)] = ax_nsd_schem
 
     ax_early = fig.add_subplot(outer[1, 1])
@@ -315,6 +315,18 @@ def main():
     plot_raw_coarseness(ax_ventral, "nsd", "ventral visual stream",
                         show_ylabel=False, show_xlabel=True)
     axes[(1, 2)] = ax_ventral
+
+    # ── Align schematic panels with data panel plot areas ──
+    # The data panels (col 1-2) have headers above them, so their actual plot
+    # area is shorter than the gridspec cell. Match the schematics to this.
+    for row in (0, 1):
+        data_ax = axes[(row, 1)]
+        schem_ax = axes[(row, 0)]
+        data_pos = data_ax.get_position()
+        schem_pos = schem_ax.get_position()
+        # Match top and bottom of schematic to data panel
+        schem_ax.set_position([schem_pos.x0, data_pos.y0,
+                               schem_pos.width, data_pos.height])
 
     # ── Column headers (shared across both rows) ──
     # One bold title per column, positioned above the TVSD (top) row.
@@ -360,38 +372,35 @@ def main():
                      fontsize=8, color="#888888",
                      ha="center", va="bottom", family="sans-serif")
 
-    # ── Row labels (two-level: bold dataset + lighter species) ──
-    # Use two separate x positions to stack them side-by-side when rotated 90°
-    tvsd_mid_y = (axes[(0, 0)].get_position().y0 + axes[(0, 0)].get_position().y1) / 2
-    nsd_mid_y = (axes[(1, 0)].get_position().y0 + axes[(1, 0)].get_position().y1) / 2
-    # TVSD — bold name at x=0.010, species at x=0.028 (stacks left-to-right)
-    fig.text(0.008, tvsd_mid_y, "TVSD", fontsize=10, fontweight="bold",
-             ha="center", va="center", color="#2a2a2a", rotation=90)
-    fig.text(0.028, tvsd_mid_y, "Macaque", fontsize=7.5,
-             ha="center", va="center", color="#888888", rotation=90)
-    # NSD
-    fig.text(0.008, nsd_mid_y, "NSD", fontsize=10, fontweight="bold",
-             ha="center", va="center", color="#2a2a2a", rotation=90)
-    fig.text(0.028, nsd_mid_y, "Human", fontsize=7.5,
-             ha="center", va="center", color="#888888", rotation=90)
+    # ── Row labels (two-line: bold dataset + lighter species, both centered) ──
+    # rotation=90 makes "above/below" map to separate x positions on screen.
+    # x_left = dataset name line, x_right = species line (below in reading order).
+    for row, (dataset, species) in [(0, ("TVSD", "Macaque")),
+                                      (1, ("NSD", "Human"))]:
+        schem_pos = axes[(row, 0)].get_position()
+        fy = (schem_pos.y0 + schem_pos.y1) / 2
+        # Two explicit x positions: dataset on the left, species on the right
+        fig.text(0.018, fy, dataset, fontsize=10, fontweight="bold",
+                 color="#2a2a2a", ha="center", va="center", rotation=90)
+        fig.text(0.035, fy, species, fontsize=8,
+                 color="#999999", ha="center", va="center", rotation=90)
 
-    # ── Panel labels (A–F) ──
+    # ── Panel labels (A–F) — use figure coords for vertical alignment ──
+    # All panels in a row share the same y position in figure space.
+    # Top row: aligned to top of data panels + column header space
+    # Bottom row: aligned to top of data panels + subtitle space
+    row0_y = axes[(0, 1)].get_position().y1 + 0.068  # above column header
+    row1_y = axes[(1, 1)].get_position().y1 + 0.038  # above subtitle
+
     label_order = [(0, 0), (0, 1), (0, 2), (1, 0), (1, 1), (1, 2)]
     for i, key in enumerate(label_order):
         label = chr(ord("A") + i)
         ax = axes[key]
-        # Top-row data panels: extra offset for column header + subtitle
-        # Bottom-row data panels: offset for subtitle only
-        # Schematic panels (col 0): standard offset
-        if key[1] == 0:
-            y_offset = 1.10
-        elif key[0] == 0:
-            y_offset = 1.30  # top row with column header above
-        else:
-            y_offset = 1.16  # bottom row with subtitle only
-        ax.text(-0.10, y_offset, label, transform=ax.transAxes,
-                fontsize=13, fontweight="bold", va="top", ha="left",
-                family="sans-serif")
+        pos = ax.get_position()
+        x = pos.x0 - 0.02  # slightly left of each panel
+        y = row0_y if key[0] == 0 else row1_y
+        fig.text(x, y, label, fontsize=13, fontweight="bold",
+                 va="bottom", ha="left", family="sans-serif")
 
     # ── Remove per-axes legends (except panel B) ──
     for key, ax in axes.items():
