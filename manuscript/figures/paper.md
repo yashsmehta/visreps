@@ -4,22 +4,7 @@
 
 ## Abstract
 
-Computational models of vision increasingly rely on detailed training objectives — from discriminating among thousands of object
-  categories to self-supervised instance-level learning — under the assumption that finer-grained supervision yields more
-  brain-like representations. Here we put this assumption to the test. We develop a data-driven method to continuously vary the
-  granularity of a supervisory signal — from just 2 broad categories to 1,000 fine-grained classes — while holding architecture,
-  data, and training procedure constant. We first show that coarse supervisory signals do not produce impoverished representations:
-   they give rise to rich internal structure that is qualitatively distinct from fine-grained features and cannot be recovered by
-  dimensionality reduction of a fully supervised model. We then measure alignment with biological vision across three measurement
-  scales — macaque single-neuron recordings, human fMRI, and human behavioral similarity judgments — and find a striking pattern.
-  In early visual cortex of both species, even the coarsest models match fine-grained alignment. Higher visual areas converge with
-  only a few dozen categories. Most remarkably, on behavioral alignment, coarse-trained models dramatically exceed fine-grained
-  training: a network distinguishing just 4 broad categories outperforms standard 1,000-way ImageNet classification by 40% and
-  surpasses pretrained vision transformers and CLIP — because coarse supervision preserves the between-category structure that
-  dominates how humans perceive similarity. These results reveal that learning to carve the world into broad categories gives rise
-  to surprisingly rich representations that align with biological vision across scales, from single neurons to behavior. Beyond
-  challenging the more-is-better intuition, these findings point to a general principle — that the categorical grain of supervision
-   shapes representational geometry in ways that may inform the design of more biologically-aligned artificial neural networks.
+A central question in computational neuroscience is what learning signals give rise to human-like visual representations. Current deep-learning approaches pursue increasingly fine-grained supervision - from thousands of object categories to instance-level contrastive objectives - under the assumption that richer training signals yield more brain-like features. Here we show that a remarkably coarse signal suffices. We introduce a modality-agnostic method for generating coarse category structures and use it to train hundreds of deep neural networks on ImageNet under systematically varied supervision - from 2 broad categories to 1,000 fine-grained classes - while holding architecture and training procedure constant. We evaluate alignment with biological vision at three scales: macaque single-neuron recordings, human fMRI, and human behavioral similarity judgments. On neural data, coarse-trained networks match or exceed fine-grained models in both species with orders-of-magnitude fewer categories. On behavioral similarity, coarse-trained networks outperform 1,000-class supervision by 40% and surpass state-of-the-art pretrained vision transformers and vision–language models across all architectures and training paradigms tested. Our findings demonstrate that a coarse learning signal is sufficient to produce surprisingly human-aligned internal representations. More broadly, they suggest that the key to building artificial systems that perceive as humans do may lie not in richer supervision but in discovering the right coarse structure of the visual world.
 
 ---
 
