@@ -43,7 +43,7 @@ OUTPUT = os.path.join(SCRIPT_DIR, "figure1.png")
 # ── Colors ──────────────────────────────────────────────────────────────
 # Top row: coarse-graining label colors
 PALETTE_2 = ["#1b9e77", "#d95f02"]
-PALETTE_4 = ["#00A896", "#7B68EE", "#E8963E", "#D64045"]
+PALETTE_4 = ["#2d6a4f", "#74c69d", "#e8963e", "#d64045"]  # dark green, light green, amber, red
 
 # Bottom row: learned representation colors — slightly more saturated
 # for better visibility on scatter with low alpha
@@ -52,6 +52,142 @@ REPR_COLORS_4 = ["#00997F", "#6B5CE7", "#E07D28", "#C93035"]
 
 INSET_LAYER = "fc1"
 N_INSETS = 3  # images per class
+
+# ── Figure 1a inset configuration ──────────────────────────────────────
+# 2 images per 4-way quadrant = 8 total. Each tuple: (class_idx, synset_id, image_index)
+# image_index chosen for brightness and visual clarity.
+# Q0 (man-made objects): armchair + barber chair
+# 6 images: pairs for Q0 and Q3, single representative for Q1 and Q2
+# Q0 (man-made objects): armchair + barber chair (pair)
+# Q1 (vehicles): school bus (single representative, deep inside Q1)
+# Q2 (plants): African violet (single representative, very deep inside Q2, bd=0.155)
+# Q3 (vertebrates): wood frog + bullfrog (pair)
+INSET_CLASSES = [
+    (236, "n02738535", 12),   # Q0: armchair (bright, 600x600)
+    (249, "n02791124", 15),   # Q0: barber chair (bright, 185x197)
+    (613, "n04146614", 10),   # Q1: school bus (bright yellow, 500x374)
+    (973, "n12833149",  3),   # Q2: African violet (bright, 500x366)
+    (8,   "n01641206", 15),   # Q3: wood frog (bright, 500x278)
+    (10,  "n01641577",  0),   # Q3: bullfrog (bright, 500x333)
+]
+
+
+def _get_inset_image(synset_id, imagenet_dir, size=52, image_index=5):
+    """Load a representative image for a given ImageNet synset.
+
+    Parameters
+    ----------
+    image_index : int
+        Which image to pick from the sorted list (0=first, 5=sixth, etc.).
+        Avoids edge-case first images that are sometimes atypical.
+    """
+    class_dir = os.path.join(imagenet_dir, synset_id)
+    if not os.path.isdir(class_dir):
+        return None
+    imgs = sorted([f for f in os.listdir(class_dir)
+                   if f.lower().endswith(('.jpeg', '.jpg', '.png'))])
+    if not imgs:
+        return None
+    idx = min(image_index, len(imgs) - 1)
+    path = os.path.join(class_dir, imgs[idx])
+    try:
+        img = Image.open(path).convert("RGB")
+        # Center crop to square before resizing
+        w, h = img.size
+        side = min(w, h)
+        left = (w - side) // 2
+        top = (h - side) // 2
+        img = img.crop((left, top, left + side, top + side))
+        img = img.resize((size, size), Image.LANCZOS)
+        return np.array(img)
+    except Exception:
+        return None
+
+
+def add_top_row_insets(ax, pcs, class_labels, label_array, colors, inset_classes,
+                       imagenet_dir, zoom=0.32, thumb_size=52):
+    """Overlay image insets on a top-row scatter panel.
+
+    Parameters
+    ----------
+    ax : matplotlib Axes
+    pcs : (N, 2) PCA coordinates
+    class_labels : (N,) original 1000-way class index for each point
+    label_array : (N,) labels used for coloring in THIS panel (2-way, 4-way, or 1000-way)
+    colors : list of colors indexed by label_array values
+    inset_classes : list of (class_idx, synset_id) tuples
+    imagenet_dir : path to ImageNet train directory
+    zoom : image zoom factor
+    thumb_size : thumbnail pixel size
+    """
+    positions = []
+    thumbnails = []
+    border_colors = []
+
+    for entry in inset_classes:
+        cls_idx, synset_id = entry[0], entry[1]
+        img_idx = entry[2] if len(entry) > 2 else 5
+        # Find this class in the PCA array
+        idx = np.where(class_labels == cls_idx)[0]
+        if len(idx) == 0:
+            continue
+        idx = idx[0]
+        thumb = _get_inset_image(synset_id, imagenet_dir, size=thumb_size,
+                                 image_index=img_idx)
+        if thumb is None:
+            continue
+        positions.append(pcs[idx])
+        thumbnails.append(thumb)
+        border_colors.append(colors[label_array[idx] % len(colors)])
+
+    if not positions:
+        return
+
+    positions = np.array(positions)
+
+    # Repel overlapping positions
+    x_range = pcs[:, 0].max() - pcs[:, 0].min()
+    y_range = pcs[:, 1].max() - pcs[:, 1].min()
+    norm_pts = positions.copy()
+    norm_pts[:, 0] = (norm_pts[:, 0] - pcs[:, 0].min()) / x_range
+    norm_pts[:, 1] = (norm_pts[:, 1] - pcs[:, 1].min()) / y_range
+
+    # Repel with stronger force to separate close pairs
+    repelled = _repel_positions(norm_pts, min_dist=0.28, iterations=500,
+                                anchor_weight=0.008)
+    repelled = np.clip(repelled, -0.08, 1.08)
+    repelled[:, 0] = repelled[:, 0] * x_range + pcs[:, 0].min()
+    repelled[:, 1] = repelled[:, 1] * y_range + pcs[:, 1].min()
+
+    for k in range(len(thumbnails)):
+        im_box = OffsetImage(thumbnails[k], zoom=zoom)
+        im_box.image.axes = ax
+        c = border_colors[k]
+        disp_x, disp_y = repelled[k]
+        orig_x, orig_y = positions[k]
+
+        # Connector line from data point to inset
+        dist = np.sqrt((disp_x - orig_x)**2 + (disp_y - orig_y)**2)
+        if dist > 0.015:
+            ax.annotate("", xy=(orig_x, orig_y),
+                        xytext=(disp_x, disp_y),
+                        arrowprops=dict(arrowstyle="-", color=c,
+                                        lw=0.9, alpha=0.5,
+                                        shrinkA=1, shrinkB=14),
+                        zorder=5)
+
+        import matplotlib.patheffects as pe
+        ab = AnnotationBbox(
+            im_box, (disp_x, disp_y),
+            frameon=True, pad=0.10,
+            bboxprops=dict(edgecolor=c, linewidth=2.8, facecolor="white",
+                           alpha=0.97,
+                           path_effects=[
+                               pe.withStroke(linewidth=4.0, foreground="white"),
+                           ]),
+            zorder=6,
+        )
+        ax.add_artist(ab)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -78,7 +214,7 @@ def median_split_labels(pcs, n_way):
 
 def plot_top_panel(ax, pcs, labels, n_classes, colors, title,
                    point_size=22, alpha=0.75, show_ylabel=True,
-                   decision_lines=None):
+                   decision_lines=None, subtitle=None):
     """Draw one shared-PCA scatter panel (top row)."""
     rng = np.random.RandomState(42)
     order = rng.permutation(len(labels))
@@ -92,7 +228,20 @@ def plot_top_panel(ax, pcs, labels, n_classes, colors, title,
     ax.set_xlabel("PC 1", fontsize=10, labelpad=4)
     if show_ylabel:
         ax.set_ylabel("PC 2", fontsize=10, labelpad=4)
-    ax.set_title(title, fontsize=12, fontweight="bold", pad=8)
+    if subtitle:
+        ax.set_title(f"{title}\n{subtitle}", fontsize=12, fontweight="normal",
+                     pad=8, linespacing=1.4)
+        # Make the first line bold, second line smaller and gray
+        t = ax.title
+        t.set_fontweight("bold")
+        # Use a two-part approach: bold title + smaller subtitle below
+        ax.set_title("")
+        ax.set_title(title, fontsize=12, fontweight="bold", pad=18)
+        ax.text(0.5, 1.01, subtitle, transform=ax.transAxes,
+                fontsize=8.5, color="#666666", ha="center", va="bottom",
+                fontstyle="italic")
+    else:
+        ax.set_title(title, fontsize=12, fontweight="bold", pad=8)
     ax.set_xticklabels([])
     ax.set_yticklabels([])
     ax.tick_params(axis="both", length=0)
@@ -102,7 +251,7 @@ def plot_top_panel(ax, pcs, labels, n_classes, colors, title,
         margin = (hi - lo) * 0.10
         (ax.set_xlim if idx == 0 else ax.set_ylim)(lo - margin, hi + margin)
 
-    sns.despine(ax=ax, offset=5)
+    sns.despine(ax=ax, offset=5, left=not show_ylabel)
 
     # Decision boundary lines
     if decision_lines is not None:
@@ -398,14 +547,16 @@ def main():
     # ══════════════════════════════════════════════════════════════════════
     # Figure 1a: Label space (2-way, 4-way, 1000-way)
     # ══════════════════════════════════════════════════════════════════════
-    fig_a, axes_a = plt.subplots(1, 3, figsize=(14, 4))
+    fig_a, axes_a = plt.subplots(1, 3, figsize=(14, 4.8))
 
-    plot_top_panel(axes_a[0], top_pcs, labels_2, 2, PALETTE_2, "2-way",
+    plot_top_panel(axes_a[0], top_pcs, labels_2, 2, PALETTE_2, "2 classes",
                    show_ylabel=True,
+                   subtitle="median split on PC 1",
                    decision_lines=[{"type": "vline", "pos": med_pc1}])
 
-    plot_top_panel(axes_a[1], top_pcs, labels_4, 4, PALETTE_4, "4-way",
+    plot_top_panel(axes_a[1], top_pcs, labels_4, 4, PALETTE_4, "4 classes",
                    show_ylabel=False,
+                   subtitle="+ median split on PC 2",
                    decision_lines=[
                        {"type": "vline", "pos": med_pc1},
                        {"type": "hline_segment",
@@ -423,15 +574,56 @@ def main():
         base[:3] = np.clip(base[:3] + jitter, 0, 1)
         colors_1k.append(tuple(base))
     rng_colors.shuffle(colors_1k)
-    plot_top_panel(axes_a[2], top_pcs, top_class_labels, 1000, colors_1k,
-                   "1000-way", point_size=20, alpha=0.70, show_ylabel=False)
 
-    fig_a.subplots_adjust(wspace=0.30, left=0.05, right=0.97, top=0.90, bottom=0.10)
+    # Force highly distinct colors for the 6 inset classes in the 1000-way scheme
+    # so their border colors are visually distinguishable from each other
+    import matplotlib.colors as mcolors
+    inset_1k_hex = [
+        "#e41a1c",  # red        (Q0: armchair)
+        "#377eb8",  # blue       (Q0: barber chair)
+        "#4daf4a",  # green      (Q1: school bus)
+        "#ff7f00",  # orange     (Q2: African violet)
+        "#f781bf",  # pink       (Q3: wood frog)
+        "#1b9e77",  # teal       (Q3: bullfrog)
+    ]
+    for k, entry in enumerate(INSET_CLASSES):
+        cls_idx = entry[0]
+        pos = np.where(top_class_labels == cls_idx)[0]
+        if len(pos) > 0:
+            colors_1k[pos[0]] = tuple(mcolors.to_rgba(inset_1k_hex[k]))
+
+    plot_top_panel(axes_a[2], top_pcs, top_class_labels, 1000, colors_1k,
+                   "1000 classes", point_size=20, alpha=0.70, show_ylabel=False,
+                   subtitle="default ImageNet")
+
+    # ── Add image insets to all three panels ──
+    from dotenv import load_dotenv
+    load_dotenv()
+    imagenet_dir = os.environ.get("IMAGENET_DATA_DIR", "")
+    if imagenet_dir and os.path.isdir(imagenet_dir):
+        add_top_row_insets(axes_a[0], top_pcs, top_class_labels,
+                           labels_2, PALETTE_2, INSET_CLASSES,
+                           imagenet_dir, zoom=0.40, thumb_size=68)
+        add_top_row_insets(axes_a[1], top_pcs, top_class_labels,
+                           labels_4, PALETTE_4, INSET_CLASSES,
+                           imagenet_dir, zoom=0.40, thumb_size=68)
+        add_top_row_insets(axes_a[2], top_pcs, top_class_labels,
+                           top_class_labels, colors_1k, INSET_CLASSES,
+                           imagenet_dir, zoom=0.40, thumb_size=68)
+    else:
+        print(f"WARNING: ImageNet dir not found ({imagenet_dir}), skipping insets")
+
+    fig_a.subplots_adjust(wspace=0.12, left=0.05, right=0.97, top=0.90, bottom=0.10)
 
     out_a = os.path.join(SCRIPT_DIR, "figure1a.png")
     fig_a.savefig(out_a, dpi=300, bbox_inches="tight", facecolor="white",
                   edgecolor="none")
     print(f"Saved -> {out_a}")
+
+    out_a_svg = os.path.join(SCRIPT_DIR, "figure1a.svg")
+    fig_a.savefig(out_a_svg, format="svg", bbox_inches="tight", facecolor="white",
+                  edgecolor="none")
+    print(f"Saved -> {out_a_svg}")
     plt.close(fig_a)
 
     # ══════════════════════════════════════════════════════════════════════
