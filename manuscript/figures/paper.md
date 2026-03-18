@@ -102,7 +102,7 @@ Three side-by-side PC1 vs PC2 scatter plots of ImageNet activations (FC1 layer, 
 
 ## Figure 2: Neural Alignment Across Species (TVSD + NSD)
 
-**Directory:** `manuscript/figures/fig3/` (code still in fig3/ — directory rename pending)
+**Directory:** `manuscript/figures/fig2/`
 
 **Narrative role:** Present neural alignment results from both macaque electrophysiology (TVSD) and human fMRI (NSD) in a single unified figure. This cross-species layout immediately demonstrates that the coarseness finding is robust — it holds in spiking data and BOLD fMRI, across early and late visual regions, and across two completely different species. **All coarseness plots are normalized to percentage of the 1000-way baseline** (1000-way = 100%), making the central claim visually immediate. No reconstruction controls here — those are in Supplementary S4.
 
@@ -161,7 +161,7 @@ Full per-layer RSA profiles (all 7 granularity levels, 14 layer taps) available 
 
 ## Figure 3: Behavioral Alignment (THINGS)
 
-**Directory:** `manuscript/figures/fig4/` (code still in fig4/ — directory rename pending)
+**Directory:** `manuscript/figures/fig3/`
 
 **Narrative role:** Present the behavioral alignment results — the most surprising finding. Coarse models *vastly* outperform 1000-way on human similarity judgments. This figure shows the result (coarseness log plot), compares against pretrained models, and visualizes *why* via RDMs. Per-concept analysis is in Figure 4; data efficiency is in Figure 5.
 
@@ -226,7 +226,7 @@ Concepts sorted by the 27 THINGS semantic categories with boundary lines overlai
 
 ## Figure 4: Per-Concept Alignment Analysis
 
-**Directory:** `manuscript/figures/fig5/` (code still in fig5/ — directory rename pending)
+**Directory:** `manuscript/figures/fig4/`
 
 **Narrative role:** Dig deeper into *which* concepts drive the coarse advantage on THINGS behavioral alignment. The scatter plot and histogram from the original Figure 3 are expanded here as standalone panels, with room for additional analyses.
 
@@ -261,7 +261,7 @@ Horizontal bar chart showing Spearman ρ between per-concept advantage (CLIP 8-c
 
 - *Key visual:* Animal-related, plant-related dimensions strongly favor coarse models; home/furnishing, metallic/artificial dimensions favor 1000-way.
 - *Key message:* The coarse advantage is driven by high-level categorical dimensions (animate, natural), while fine-grained training excels on lower-level material/functional properties.
-- *Script:* `manuscript/figures/fig5/dimension_profiling.py`
+- *Script:* `manuscript/figures/fig4/dimension_profiling.py`
 
 ### Observed results
 
@@ -275,7 +275,7 @@ Horizontal bar chart showing Spearman ρ between per-concept advantage (CLIP 8-c
 
 ## Figure 5: Data Efficiency
 
-**Directory:** `manuscript/figures/fig6/` (code still in fig6/ — directory rename pending)
+**Directory:** `manuscript/figures/fig5/`
 
 **Narrative role:** Introduce a new analysis paradigm — varying the number of training images per class while holding granularity constant. Shows that coarse-trained models are more data-efficient than fine-grained models on behavioral alignment.
 
@@ -369,7 +369,7 @@ All scripts live in `manuscript/figures/supplementary/` and are run from the pro
 | **S15** | `supp_s15_pc_poles.py` | Most/least activating ImageNet images for top PCs of AlexNet + CLIP | PC1 separates natural/man-made; higher PCs capture progressively finer semantic axes. |
 | **S16** | `supp_s16_levels.py` | Levels benchmark (Muttenthaler et al. 2025): 3×3 grid (metrics × triplet types) | Coarse models improve on between-class and class-boundary triplets; within-class converges at moderate granularity. |
 | **S17** | `supp_s17_seed_variability.py` | Seed variability analysis | Score variability across seeds. |
-| **S18** | `supp_s18_class_rdms.py` | Class-level RDM grid (all granularity levels: 2,4,8,16,32,64,1000-way, CLIP-PCA) | Moved from old Figure 2A. Full progression of block-diagonal structure across all coarseness levels. |
+| **S18** | `plot_class_rdms.py` | Class-level RDM grid (all granularity levels: 2,4,8,16,32,64,1000-way, CLIP-PCA) | Moved from old Figure 2A. Full progression of block-diagonal structure across all coarseness levels. |
 
 ---
 
@@ -383,28 +383,25 @@ manuscript/figures/
 ├── fig1/                       # Figure 1 top row: shared PCA scatter + method overview
 │   ├── pc_scatter_explore.py   # Shared PCA scatter (2-way, 4-way, 1000-way coloring)
 │   └── pc_scatter_shared_pca.png
-├── fig2/                       # Figure 1 bottom row: learned representation PC scatter
-│   ├── figure2.py              # PC scatter w/ image insets (code shares fig2/ dir)
+├── fig2/                       # Figure 2: Neural alignment (TVSD + NSD)
+│   ├── figure2.py              # Combined TVSD + NSD figure
 │   └── figure2.png
-├── fig3/                       # Figure 2: Neural alignment (TVSD + NSD)
-│   ├── figure3.py              # Combined TVSD + NSD figure
+├── fig3/                       # Figure 3: THINGS behavioral — headline result + RDMs
+│   ├── figure3.py              # Schematic + coarseness + model comparison + RDMs
 │   └── figure3.png
-├── fig4/                       # Figure 3: THINGS behavioral — headline result + RDMs
-│   ├── figure4.py              # Schematic + coarseness + model comparison + RDMs
-│   └── figure4.png
-├── fig5/                       # Figure 4: Per-concept alignment analysis
-│   ├── figure5.py              # Scatter + histogram
+├── fig4/                       # Figure 4: Per-concept alignment analysis
+│   ├── figure4.py              # Scatter + histogram
 │   ├── dimension_profiling.py  # Semantic dimension profiling (Panel C)
+│   └── figure4.png
+├── fig5/                       # Figure 5: Data efficiency
+│   ├── figure5.py              # Data-efficiency line plots
 │   └── figure5.png
-├── fig6/                       # Figure 5: Data efficiency
-│   ├── figure6.py              # Schematic + data-efficiency bars
-│   └── figure6.png
 └── supplementary/              # 18 supplementary figures (S1–S18)
     ├── README.md               # Index, run commands, data sources
     ├── supp_s1_training_summary.py
     ├── supp_s2_summary_bars.py
     ├── ...
-    └── supp_s18_class_rdms.py
+    └── plot_class_rdms.py
 ```
 
 ---

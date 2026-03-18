@@ -1,273 +1,344 @@
-"""Figure 5: Per-Concept Alignment Analysis.
+"""Figure 5: Data Efficiency — Coarse vs Fine-Grained Training.
 
-Layout (2 rows):
-  Row 1:  [Behavioral RDM]  [CLIP 8-class RDM]  [1000-class RDM]  [colorbar]
-          [              super-category legend row                  ]
-  Row 2:  [Scatter plot]                          [Histogram]
-
-Panel A: Category-sorted RDMs — Behavioral vs CLIP 8-class vs 1000-class
-         (concepts grouped by 8 semantic super-categories derived from THINGS-27)
-Panel B: Per-concept scatter — CLIP 8-class vs 1000-way per-concept RSA
-Panel C: Histogram of per-concept advantage (delta rho)
+Layout (3 panels):
+  Panel A: NSD (Early Visual Stream) — line plot across 4 data scales
+  Panel B: NSD (Ventral Stream) — line plot across 4 data scales
+  Panel C: THINGS (Behavioral) — line plot across 4 data scales
 
 Usage:
     python manuscript/figures/fig5/figure5.py
 """
 
+import os
 import sys
+import json
+import sqlite3
 
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 import matplotlib.gridspec as gridspec
-import matplotlib.ticker as mticker
+from matplotlib.lines import Line2D
+from matplotlib.ticker import AutoMinorLocator, FuncFormatter
 import seaborn as sns
-from scipy.cluster.hierarchy import linkage, leaves_list
-from scipy.spatial.distance import squareform
 
 sys.path.insert(0, "manuscript/figures")
 from fig_utils import setup_style
-from things_utils import compute_things_data, plot_scatter_panel
-from experiments.things_visualizations.plot_rdms_categorized import (
-    load_categories, draw_category_sidebar, draw_boundary_lines,
-    rank_transform,
-)
 
 # ── Config ────────────────────────────────────────────────────────────────
 OUTPUT_DIR = "manuscript/figures/fig5"
+DB_PATH = "results.db"
+DATA_EFF_CSV = os.path.join("experiments", "coarse_grain_benefits",
+                            "data_efficiency", "data_efficiency_results.csv")
 
-# Super-category groupings (ordered for display)
-SUPER_CAT_ORDER = [
-    "Living things",
-    "Body & apparel",
-    "Food & drink",
-    "Home",
-    "Tools & equipment",
-    "Vehicles",
-    "Tech & leisure",
-    "Other",
-]
-
-FINE_TO_SUPER = {
-    "animal": "Living things", "plant": "Living things",
-    "body part": "Body & apparel", "clothing": "Body & apparel",
-    "clothing accessory": "Body & apparel",
-    "food": "Food & drink", "dessert": "Food & drink",
-    "drink": "Food & drink", "kitchen appliance": "Food & drink",
-    "kitchen tool": "Food & drink",
-    "furniture": "Home", "home decor": "Home", "container": "Home",
-    "tool": "Tools & equipment", "sports equipment": "Tools & equipment",
-    "medical equipment": "Tools & equipment",
-    "office supply": "Tools & equipment", "weapon": "Tools & equipment",
-    "vehicle": "Vehicles", "part of car": "Vehicles",
-    "electronic device": "Tech & leisure",
-    "musical instrument": "Tech & leisure", "toy": "Tech & leisure",
-    "Other": "Other",
+# Green shades for coarse, orange for fine-grained
+COLORS = {
+    8:    "#a1d99b",   # light green
+    16:   "#41ab5d",   # medium green
+    32:   "#006d2c",   # dark green
+    1000: "#e6550d",   # vivid orange
 }
+MARKERS = {8: "o", 16: "s", 32: "D", 1000: "X"}
 
-# Distinguishable palette for 8 super-categories
-SUPER_PALETTE = {
-    "Living things":      "#2ca02c",  # green
-    "Body & apparel":     "#9467bd",  # purple
-    "Food & drink":       "#d62728",  # red
-    "Home":               "#ff7f0e",  # orange
-    "Tools & equipment":  "#1f77b4",  # blue
-    "Vehicles":           "#8c564b",  # brown
-    "Tech & leisure":     "#17becf",  # cyan
-    "Other":              "#bdbdbd",  # grey
+CONDITIONS = [8, 16, 32, 1000]
+DATASETS = ["imagenet-mini-5", "imagenet-mini-10", "imagenet-mini-50", "imagenet-full"]
+DATASET_LABELS = {
+    "imagenet-mini-5": "5K", "imagenet-mini-10": "10K",
+    "imagenet-mini-50": "50K", "imagenet-full": "1.2M",
+}
+BENCHMARKS = {
+    "nsd_early": {
+        "title": "NSD (Early Visual Stream)",
+        "ylabel": r"RSA (Spearman $\rho$)",
+    },
+    "nsd": {
+        "title": "NSD (Ventral Stream)",
+        "ylabel": r"RSA (Spearman $\rho$)",
+    },
+    "things": {
+        "title": "THINGS (Behavioral)",
+        "ylabel": r"RSA (Spearman $\rho$)",
+    },
 }
 
 
-def _build_super_sort_order(fine_categories, behav_rdm):
-    """Sort concepts by super-category, then hierarchical clustering within."""
-    super_cats = np.array([FINE_TO_SUPER.get(c, "Other") for c in fine_categories])
+# ── Data loading ─────────────────────────────────────────────────────────
 
-    sorted_indices = []
-    block_boundaries = []
-    offset = 0
+def load_csv_data():
+    """Load data-efficiency CSV and aggregate to one row per (dataset, condition, benchmark)."""
+    df = pd.read_csv(DATA_EFF_CSV)
+    rows = []
 
-    for scat in SUPER_CAT_ORDER:
-        member_idx = np.where(super_cats == scat)[0]
-        if len(member_idx) == 0:
+    for bench in ["nsd", "nsd_early", "things"]:
+        bdf = df[df["benchmark"] == bench]
+        if bdf.empty:
             continue
-        if len(member_idx) <= 2:
-            order = member_idx
+
+        for ds in ["imagenet-mini-5", "imagenet-mini-10", "imagenet-mini-50"]:
+            dsdf = bdf[bdf["dataset"] == ds]
+            for cond in CONDITIONS:
+                cdf = dsdf[dsdf["condition"] == cond]
+                if cdf.empty:
+                    continue
+
+                if bench in ("nsd", "nsd_early"):
+                    # Average across subjects per epoch, then pick best epoch
+                    epoch_scores = {}
+                    for epoch, edf in cdf.groupby("epoch"):
+                        epoch_scores[epoch] = {
+                            "score": edf["score"].mean(),
+                            "ci_low": edf["ci_low"].mean(),
+                            "ci_high": edf["ci_high"].mean(),
+                        }
+                    best_epoch = max(epoch_scores, key=lambda e: epoch_scores[e]["score"])
+                    vals = epoch_scores[best_epoch]
+                else:
+                    # THINGS: pick best epoch directly
+                    best_row = cdf.loc[cdf["score"].idxmax()]
+                    vals = {
+                        "score": best_row["score"],
+                        "ci_low": best_row["ci_low"],
+                        "ci_high": best_row["ci_high"],
+                    }
+
+                rows.append({
+                    "dataset": ds, "condition": cond, "benchmark": bench, **vals,
+                })
+
+    return pd.DataFrame(rows)
+
+
+def load_full_imagenet():
+    """Load full ImageNet (1.2M) results from results.db with proper bootstrap CIs."""
+    conn = sqlite3.connect(DB_PATH)
+    rows = []
+
+    for cond in CONDITIONS:
+        if cond == 1000:
+            where = "cfg_id=1000 AND reconstruct_from_pcs=0"
         else:
-            sub_rdm = behav_rdm[np.ix_(member_idx, member_idx)]
-            sub_condensed = squareform(sub_rdm, checks=False)
-            sub_order = leaves_list(linkage(sub_condensed, method="average"))
-            order = member_idx[sub_order]
+            where = f"cfg_id={cond} AND pca_labels_folder='pca_labels_clip' AND reconstruct_from_pcs=0"
 
-        block_boundaries.append((offset, scat, len(order)))
-        sorted_indices.extend(order)
-        offset += len(order)
+        # ── THINGS ───────────────────────────────────────────────────────
+        things = pd.read_sql(f"""
+            SELECT seed, score, ci_low, ci_high
+            FROM results
+            WHERE neural_dataset='things-behavior'
+              AND compare_method='spearman' AND {where}
+            ORDER BY seed, score DESC
+        """, conn)
+        if not things.empty:
+            best = things.groupby("seed").first().reset_index()
+            rows.append({
+                "dataset": "imagenet-full", "condition": cond, "benchmark": "things",
+                "score": best["score"].mean(),
+                "ci_low": best["ci_low"].mean(),
+                "ci_high": best["ci_high"].mean(),
+            })
 
-    return np.array(sorted_indices), block_boundaries
+        # ── NSD ventral stream ───────────────────────────────────────────
+        nsd_best = pd.read_sql(f"""
+            SELECT run_id, seed, subject_idx, score,
+                   ROW_NUMBER() OVER (PARTITION BY seed, subject_idx ORDER BY score DESC) as rn
+            FROM results
+            WHERE neural_dataset='nsd'
+              AND region='ventral visual stream'
+              AND compare_method='spearman' AND {where}
+        """, conn)
+        if nsd_best.empty:
+            continue
+        nsd_best = nsd_best[nsd_best["rn"] == 1].drop(columns=["rn"])
+        mean_score = nsd_best["score"].mean()
+
+        # Get bootstrap distributions for best runs
+        run_ids = nsd_best["run_id"].unique().tolist()
+        placeholders = ",".join(f"'{r}'" for r in run_ids)
+        boot_dists = pd.read_sql(f"""
+            SELECT bd.run_id, bd.scores
+            FROM bootstrap_distributions bd
+            WHERE bd.run_id IN ({placeholders})
+              AND bd.compare_method='spearman'
+        """, conn)
+        boot_dists = boot_dists.merge(
+            nsd_best[["run_id", "seed", "subject_idx"]], on="run_id"
+        )
+
+        if not boot_dists.empty:
+            n_boot = 1000
+            seed_boots = []
+            for seed, sdf in boot_dists.groupby("seed"):
+                arrays = [np.array(json.loads(s)) for s in sdf["scores"].values]
+                arrays = [a for a in arrays if len(a) == n_boot]
+                if len(arrays) < 2:
+                    continue
+                seed_boots.append(np.vstack(arrays).mean(axis=0))
+            all_boots = np.vstack(seed_boots).mean(axis=0) if seed_boots else None
+            if all_boots is not None:
+                ci_low, ci_high = np.percentile(all_boots, [2.5, 97.5])
+            else:
+                sem = nsd_best["score"].std() / np.sqrt(len(nsd_best))
+                ci_low = mean_score - 1.96 * sem
+                ci_high = mean_score + 1.96 * sem
+        else:
+            sem = nsd_best["score"].std() / np.sqrt(len(nsd_best))
+            ci_low = mean_score - 1.96 * sem
+            ci_high = mean_score + 1.96 * sem
+
+        rows.append({
+            "dataset": "imagenet-full", "condition": cond, "benchmark": "nsd",
+            "score": mean_score, "ci_low": ci_low, "ci_high": ci_high,
+        })
+
+        # ── NSD early visual stream ────────────────────────────────────
+        nsd_early = pd.read_sql(f"""
+            SELECT run_id, seed, subject_idx, score,
+                   ROW_NUMBER() OVER (PARTITION BY seed, subject_idx ORDER BY score DESC) as rn
+            FROM results
+            WHERE neural_dataset='nsd'
+              AND region='early visual stream'
+              AND compare_method='spearman' AND {where}
+        """, conn)
+        if not nsd_early.empty:
+            nsd_early = nsd_early[nsd_early["rn"] == 1].drop(columns=["rn"])
+            early_mean = nsd_early["score"].mean()
+
+            early_run_ids = nsd_early["run_id"].unique().tolist()
+            early_ph = ",".join(f"'{r}'" for r in early_run_ids)
+            early_boots = pd.read_sql(f"""
+                SELECT bd.run_id, bd.scores
+                FROM bootstrap_distributions bd
+                WHERE bd.run_id IN ({early_ph})
+                  AND bd.compare_method='spearman'
+            """, conn)
+            early_boots = early_boots.merge(
+                nsd_early[["run_id", "seed", "subject_idx"]], on="run_id"
+            )
+
+            if not early_boots.empty:
+                early_seed_boots = []
+                for seed, sdf in early_boots.groupby("seed"):
+                    arrays = [np.array(json.loads(s)) for s in sdf["scores"].values]
+                    arrays = [a for a in arrays if len(a) == 1000]
+                    if len(arrays) < 2:
+                        continue
+                    early_seed_boots.append(np.vstack(arrays).mean(axis=0))
+                early_all = np.vstack(early_seed_boots).mean(axis=0) if early_seed_boots else None
+                if early_all is not None:
+                    e_ci_low, e_ci_high = np.percentile(early_all, [2.5, 97.5])
+                else:
+                    sem = nsd_early["score"].std() / np.sqrt(len(nsd_early))
+                    e_ci_low = early_mean - 1.96 * sem
+                    e_ci_high = early_mean + 1.96 * sem
+            else:
+                sem = nsd_early["score"].std() / np.sqrt(len(nsd_early))
+                e_ci_low = early_mean - 1.96 * sem
+                e_ci_high = early_mean + 1.96 * sem
+
+            rows.append({
+                "dataset": "imagenet-full", "condition": cond, "benchmark": "nsd_early",
+                "score": early_mean, "ci_low": e_ci_low, "ci_high": e_ci_high,
+            })
+
+    conn.close()
+    return pd.DataFrame(rows)
 
 
-def _draw_rdm(ax, rdm, title, subtitle, block_boundaries, n, super_cats_used,
-              subtitle_italic=False):
-    """Draw a single RDM panel with super-category sidebars."""
-    im = ax.imshow(rdm, cmap="magma", interpolation="nearest", aspect="equal",
-                   rasterized=True, vmin=0, vmax=1)
-    ax.set_title(title, fontsize=11.5, fontweight="bold", pad=18,
-                 fontfamily="sans-serif")
-    if subtitle:
-        style = "italic" if subtitle_italic else "normal"
-        ax.text(0.5, 1.013, subtitle, transform=ax.transAxes,
-                ha="center", va="bottom", fontsize=9, color="#555555",
-                fontstyle=style)
+# ── Plotting ─────────────────────────────────────────────────────────────
 
-    ax.set_xticks([])
-    ax.set_yticks([])
-    for spine in ax.spines.values():
-        spine.set_visible(False)
+def plot_panel(ax, data, benchmark):
+    """Line plot for one benchmark panel."""
+    x_positions = np.arange(len(DATASETS))
+    x_map = {ds: i for i, ds in enumerate(DATASETS)}
 
-    cat_colors = [SUPER_PALETTE[c] for c in super_cats_used]
-    cat_to_idx = {c: i for i, c in enumerate(super_cats_used)}
+    for cond in CONDITIONS:
+        cdf = data[data["condition"] == cond]
+        if cdf.empty:
+            continue
 
-    draw_boundary_lines(ax, block_boundaries, n, color="white",
-                        lw=0.45, alpha=0.80)
-    draw_category_sidebar(ax, block_boundaries, n, cat_colors, cat_to_idx,
-                          side="left", width_frac=0.028, gap_frac=0.005)
-    draw_category_sidebar(ax, block_boundaries, n, cat_colors, cat_to_idx,
-                          side="bottom", width_frac=0.028, gap_frac=0.005)
-    return im
+        xs, ys, errs_lo, errs_hi = [], [], [], []
+        for ds in DATASETS:
+            row = cdf[cdf["dataset"] == ds]
+            if row.empty:
+                continue
+            r = row.iloc[0]
+            xs.append(x_map[ds])
+            ys.append(r["score"])
+            errs_lo.append(r["score"] - r["ci_low"])
+            errs_hi.append(r["ci_high"] - r["score"])
+
+        label = f"{cond}-class"
+        ax.errorbar(xs, ys, yerr=[errs_lo, errs_hi],
+                    fmt="none", ecolor=COLORS[cond], capsize=3,
+                    linewidth=1.0, capthick=0.8, alpha=0.65, zorder=2)
+        ax.plot(xs, ys, marker=MARKERS[cond], color=COLORS[cond],
+                markersize=7, linewidth=2.0, markeredgecolor="white",
+                markeredgewidth=0.7, label=label, zorder=3)
+
+    ax.set_xticks(x_positions)
+    ax.set_xticklabels([DATASET_LABELS[ds] for ds in DATASETS], fontsize=9)
+    ax.set_xlabel("Training images", fontsize=10, labelpad=6)
+    ax.set_ylabel(BENCHMARKS[benchmark]["ylabel"], fontsize=10, labelpad=6)
+    ax.set_title(BENCHMARKS[benchmark]["title"], fontsize=11, fontweight="bold", pad=10)
+    ax.yaxis.grid(True, which="major", color="#ECECEC", linewidth=0.5, zorder=0)
+    ax.set_axisbelow(True)
+    ax.margins(x=0.08)
+    ax.tick_params(axis="both", which="major", direction="out", length=4, width=0.8)
+    ax.yaxis.set_minor_locator(AutoMinorLocator(2))
+    ax.tick_params(axis="y", which="minor", direction="out", length=2.5, width=0.5)
+    ax.yaxis.set_major_formatter(FuncFormatter(
+        lambda v, _: f"{v:.2f}".rstrip("0").rstrip(".")))
+    sns.despine(ax=ax, right=True, top=True, offset=5)
 
 
 def main():
     setup_style()
-    plt.rcParams.update({
-        "axes.labelsize": 11,
-        "axes.titlesize": 12,
-        "xtick.labelsize": 9.5,
-        "ytick.labelsize": 9.5,
-        "axes.linewidth": 0.8,
-        "xtick.major.width": 0.8,
-        "ytick.major.width": 0.8,
-    })
 
-    print("Computing THINGS data for per-concept analysis...")
-    precomputed = compute_things_data()
+    csv_data = load_csv_data()
+    full_data = load_full_imagenet()
+    data = pd.concat([csv_data, full_data], ignore_index=True)
 
-    # ── Build super-category-sorted RDMs ─────────────────────────────
-    fine_sort_idx = precomputed["sort_idx"]
-    unsort = np.argsort(fine_sort_idx)
-    rdms_ranked = precomputed["rdms_ranked"]
-
-    rdm_behav_orig = rdms_ranked["Behavioral"][np.ix_(unsort, unsort)]
-    rdm_clip8_orig = rdms_ranked["CLIP 8-class"][np.ix_(unsort, unsort)]
-    rdm_1k_orig = rdms_ranked["1000-class"][np.ix_(unsort, unsort)]
-
-    fine_categories = load_categories()
-    super_sort_idx, super_boundaries = _build_super_sort_order(
-        fine_categories, rdm_behav_orig
-    )
-
-    super_cats_used = [scat for _, scat, _ in super_boundaries]
-
-    rdm_behav_super = rdm_behav_orig[np.ix_(super_sort_idx, super_sort_idx)]
-    rdm_clip8_super = rdm_clip8_orig[np.ix_(super_sort_idx, super_sort_idx)]
-    rdm_1k_super = rdm_1k_orig[np.ix_(super_sort_idx, super_sort_idx)]
-    n = rdm_behav_super.shape[0]
-
-    rsa_scores = precomputed["rsa_scores"]
-
-    # ── Figure layout ─────────────────────────────────────────────────
-    fig = plt.figure(figsize=(14.5, 13.2))
+    fig = plt.figure(figsize=(12, 3.5))
     fig.patch.set_facecolor("white")
 
-    gs_outer = gridspec.GridSpec(
-        3, 1, figure=fig,
-        height_ratios=[1.0, 0.04, 1.10],
-        hspace=0.08,
-        left=0.05, right=0.96, top=0.96, bottom=0.05,
-    )
+    gs = gridspec.GridSpec(1, 3, figure=fig, wspace=0.35,
+                           left=0.06, right=0.97, top=0.85, bottom=0.15)
 
-    # ── Row 1: Three RDMs + colorbar ─────────────────────────────────
-    gs_rdm = gridspec.GridSpecFromSubplotSpec(
-        3, 4, subplot_spec=gs_outer[0],
-        width_ratios=[1, 1, 1, 0.035],
-        height_ratios=[0.08, 0.84, 0.08],
-        wspace=0.12, hspace=0,
-    )
-    ax_rdm_behav = fig.add_subplot(gs_rdm[0:3, 0])
-    ax_rdm_clip8 = fig.add_subplot(gs_rdm[0:3, 1])
-    ax_rdm_1k = fig.add_subplot(gs_rdm[0:3, 2])
-    ax_cb = fig.add_subplot(gs_rdm[1, 3])
+    # Panel A: NSD (Early Visual Stream)
+    ax_early = fig.add_subplot(gs[0, 0])
+    plot_panel(ax_early, data[data["benchmark"] == "nsd_early"], "nsd_early")
 
-    im = _draw_rdm(ax_rdm_behav, rdm_behav_super, "Behavioral",
-                    "(ground truth)", super_boundaries, n, super_cats_used,
-                    subtitle_italic=True)
-    _draw_rdm(ax_rdm_clip8, rdm_clip8_super, "CLIP 8-class",
-              f"$\\rho_s$ = {rsa_scores['CLIP 8-class']:.3f}",
-              super_boundaries, n, super_cats_used)
-    _draw_rdm(ax_rdm_1k, rdm_1k_super, "1000-class",
-              f"$\\rho_s$ = {rsa_scores['1000-class']:.3f}",
-              super_boundaries, n, super_cats_used)
+    # Panel B: NSD (Ventral Stream)
+    ax_nsd = fig.add_subplot(gs[0, 1])
+    plot_panel(ax_nsd, data[data["benchmark"] == "nsd"], "nsd")
 
-    # Shared colorbar
-    cb = plt.colorbar(im, cax=ax_cb)
-    cb.ax.tick_params(labelsize=8, length=3, width=0.5, pad=3)
-    cb.outline.set_linewidth(0.5)
-    cb.ax.yaxis.set_major_locator(mticker.FixedLocator([0, 0.5, 1.0]))
-    cb.set_label("Dissimilarity (rank)", fontsize=8.5, labelpad=8)
+    # Panel C: THINGS (Behavioral)
+    ax_things = fig.add_subplot(gs[0, 2])
+    plot_panel(ax_things, data[data["benchmark"] == "things"], "things")
 
-    # ── Category legend row ──────────────────────────────────────────
-    ax_legend = fig.add_subplot(gs_outer[1])
-    ax_legend.axis("off")
+    # Panel labels
+    for ax, label, x_off in zip(
+        [ax_early, ax_nsd, ax_things],
+        ["A", "B", "C"],
+        [-0.14, -0.14, -0.14],
+    ):
+        ax.text(x_off, 1.12, label, transform=ax.transAxes,
+                fontsize=14, fontweight="bold", va="top", ha="left",
+                family="sans-serif")
 
-    legend_handles = []
-    for scat in super_cats_used:
-        legend_handles.append(mpatches.Patch(
-            facecolor=SUPER_PALETTE[scat], edgecolor="#aaaaaa",
-            linewidth=0.5, label=scat))
-
-    leg_cat = ax_legend.legend(
-        handles=legend_handles, loc="center", fontsize=8,
-        frameon=False, ncol=len(super_cats_used), columnspacing=1.0,
-        handlelength=1.1, handleheight=0.75, labelspacing=0.35,
-        handletextpad=0.4,
-    )
-    leg_cat._legend_box.sep = 3
-
-    # ── Row 2: Scatter + Histogram ───────────────────────────────────
-    gs_bottom = gridspec.GridSpecFromSubplotSpec(
-        1, 2, subplot_spec=gs_outer[2],
-        width_ratios=[1.1, 1.0],
-        wspace=0.28,
-    )
-    ax_scatter = fig.add_subplot(gs_bottom[0, 0])
-    ax_hist = fig.add_subplot(gs_bottom[0, 1])
-
-    plot_scatter_panel(ax_scatter, ax_hist, precomputed)
-
-    # Override scatter title padding for this layout
-    ax_scatter.set_title("Per-Concept Alignment", fontsize=12.5,
-                         fontweight="semibold", pad=14)
-
-    # Override histogram formatting for standalone display
-    ax_hist.set_xlabel(
-        r"$\Delta\rho_s$ (CLIP 8-class $-$ 1000-class)", fontsize=11)
-    ax_hist.set_ylabel("Count", fontsize=11)
-    ax_hist.tick_params(axis="both", labelsize=9.5, length=4, width=0.8)
-    ax_hist.set_title("Per-Concept Advantage", fontsize=12.5,
-                      fontweight="semibold", pad=14)
-    sns.despine(ax=ax_hist, offset=5)
-
-    # ── Panel labels ─────────────────────────────────────────────────
-    ax_rdm_behav.text(-0.07, 1.12, "A", transform=ax_rdm_behav.transAxes,
-                      fontsize=18, fontweight="bold", va="top", ha="left",
-                      family="sans-serif")
-    ax_scatter.text(-0.11, 1.07, "B", transform=ax_scatter.transAxes,
-                    fontsize=18, fontweight="bold", va="top", ha="left",
-                    family="sans-serif")
-    ax_hist.text(-0.11, 1.07, "C", transform=ax_hist.transAxes,
-                 fontsize=18, fontweight="bold", va="top", ha="left",
-                 family="sans-serif")
+    # Legend in bottom-right of Panel A
+    handles = [
+        Line2D([], [], marker=MARKERS[c], color=COLORS[c], markersize=7,
+               linewidth=2.0, markeredgecolor="white", markeredgewidth=0.8,
+               label=f"{c}-class")
+        for c in CONDITIONS if c in data["condition"].unique()
+    ]
+    ax_early.legend(handles=handles, loc="lower right", ncol=1,
+                    frameon=True, fontsize=8, fancybox=False,
+                    edgecolor="#DDDDDD", framealpha=0.9,
+                    handletextpad=0.4, labelspacing=0.3)
 
     out = f"{OUTPUT_DIR}/figure5.png"
-    fig.savefig(out, dpi=600, bbox_inches="tight", facecolor="white",
+    fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white",
                 edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()

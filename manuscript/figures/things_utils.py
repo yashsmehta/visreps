@@ -1,7 +1,7 @@
 """Shared THINGS plotting utilities for manuscript figures.
 
-Extracted from fig5/figure5.py so that both fig4 (THINGS behavioral)
-and fig5 (summary overview) can reuse the same data loading and panel
+Extracted from fig5/figure5.py so that both fig3 (THINGS behavioral)
+and fig4 (per-concept analysis) can reuse the same data loading and panel
 drawing functions.
 """
 

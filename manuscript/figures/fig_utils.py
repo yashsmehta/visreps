@@ -1,7 +1,7 @@
 """Shared constants and helpers for manuscript figure scripts.
 
 Centralizes style, data config, and common drawing functions used by
-fig3/figure3.py, fig4/figure4.py, and fig5/figure5.py.
+fig2/figure2.py, fig3/figure3.py, and fig4/figure4.py.
 """
 
 import sqlite3

@@ -329,24 +329,16 @@ def main():
             pcs_2way_pretrained, pcs_2way_trained, labels_2way, 2)
         inset_idx_2 = select_inset_indices(pcs_2way_trained, labels_2way, 2)
 
-    # ── Figure layout: 2 rows x 3 columns ──
-    fig = plt.figure(figsize=(14, 9))
-    gs = gridspec.GridSpec(
-        2, 3, figure=fig,
-        hspace=0.35, wspace=0.30,
-        left=0.05, right=0.97, top=0.94, bottom=0.04,
-    )
+    # ══════════════════════════════════════════════════════════════════════
+    # Figure 1a: Label space (2-way, 4-way, 1000-way)
+    # ══════════════════════════════════════════════════════════════════════
+    fig_a, axes_a = plt.subplots(1, 3, figsize=(14, 4))
 
-    # ── Top row: shared PCA scatter ──
-    ax_top = [fig.add_subplot(gs[0, i]) for i in range(3)]
-
-    # Panel A: 2-way
-    plot_top_panel(ax_top[0], top_pcs, labels_2, 2, PALETTE_2, "2-way",
+    plot_top_panel(axes_a[0], top_pcs, labels_2, 2, PALETTE_2, "2-way",
                    show_ylabel=True,
                    decision_lines=[{"type": "vline", "pos": med_pc1}])
 
-    # Panel B: 4-way
-    plot_top_panel(ax_top[1], top_pcs, labels_4, 4, PALETTE_4, "4-way",
+    plot_top_panel(axes_a[1], top_pcs, labels_4, 4, PALETTE_4, "4-way",
                    show_ylabel=False,
                    decision_lines=[
                        {"type": "vline", "pos": med_pc1},
@@ -356,7 +348,6 @@ def main():
                         "x": [med_pc1, xlim_top[1]], "pos": med_pc2_right},
                    ])
 
-    # Panel C: 1000-way (unique color per class)
     rng_colors = np.random.RandomState(7)
     base_cmap = plt.cm.tab20
     colors_1k = []
@@ -366,70 +357,46 @@ def main():
         base[:3] = np.clip(base[:3] + jitter, 0, 1)
         colors_1k.append(tuple(base))
     rng_colors.shuffle(colors_1k)
-    plot_top_panel(ax_top[2], top_pcs, top_class_labels, 1000, colors_1k,
+    plot_top_panel(axes_a[2], top_pcs, top_class_labels, 1000, colors_1k,
                    "1000-way", point_size=20, alpha=0.70, show_ylabel=False)
 
-    # ── Bottom row: learned representation PC scatter ──
-    ax_bot = [fig.add_subplot(gs[1, i]) for i in range(3)]
+    fig_a.subplots_adjust(wspace=0.30, left=0.05, right=0.97, top=0.90, bottom=0.10)
 
-    # Panel D: 2-way model
-    if has_2way:
-        plot_bottom_panel(
-            ax_bot[0], pcs_2way_trained, labels_2way, 2, REPR_COLORS_2,
-            "2-way model",
-            img_paths=img_paths, inset_indices=inset_idx_2,
-            point_size=0.8, alpha=0.25, inset_zoom=0.40,
-            show_ylabel=True,
-        )
-    else:
-        ax_bot[0].text(0.5, 0.5, "2-way data not available\n(run run_analysis.py)",
-                       ha="center", va="center", transform=ax_bot[0].transAxes,
-                       fontsize=9, color="#999", fontstyle="italic")
-        ax_bot[0].set_title("2-way model", fontsize=11, fontweight="bold", pad=6)
-        for spine in ax_bot[0].spines.values():
-            spine.set_visible(False)
-        ax_bot[0].set_xticks([])
-        ax_bot[0].set_yticks([])
+    out_a = os.path.join(SCRIPT_DIR, "figure1a.png")
+    fig_a.savefig(out_a, dpi=300, bbox_inches="tight", facecolor="white",
+                  edgecolor="none")
+    print(f"Saved -> {out_a}")
+    plt.close(fig_a)
 
-    # Panel E: 4-way model
+    # ══════════════════════════════════════════════════════════════════════
+    # Figure 1b: Learned representations (4-way vs 1000-way, stacked)
+    # ══════════════════════════════════════════════════════════════════════
+    fig_b, axes_b = plt.subplots(2, 1, figsize=(8, 10))
+
     plot_bottom_panel(
-        ax_bot[1], pcs_4way_trained, labels_4way, 4, REPR_COLORS_4,
+        axes_b[0], pcs_4way_trained, labels_4way, 4, REPR_COLORS_4,
         "4-way model",
         img_paths=img_paths, inset_indices=inset_idx_4,
         point_size=0.8, alpha=0.25, inset_zoom=0.40,
-        show_ylabel=False,
+        show_ylabel=True,
     )
 
-    # Panel F: 1000-way (pretrained) model — colored by 4-way labels
-    # to show that the fine-grained model does NOT separate coarse categories
+    # 1000-way (pretrained) model — colored by 4-way labels
     plot_bottom_panel(
-        ax_bot[2], pcs_pretrained_aligned, labels_4way, 4, REPR_COLORS_4,
+        axes_b[1], pcs_pretrained_aligned, labels_4way, 4, REPR_COLORS_4,
         "1000-way model",
         img_paths=img_paths, inset_indices=inset_idx_4,
         point_size=0.8, alpha=0.25, inset_zoom=0.40,
-        show_ylabel=False,
+        show_ylabel=True,
     )
 
-    # ── Panel labels ──
-    panel_labels = ["A", "B", "C", "D", "E", "F"]
-    all_axes = ax_top + ax_bot
-    for ax, label in zip(all_axes, panel_labels):
-        ax.text(-0.08, 1.08, label, transform=ax.transAxes,
-                fontsize=15, fontweight="bold", va="top", ha="left",
-                fontfamily="sans-serif")
+    fig_b.subplots_adjust(hspace=0.35, left=0.10, right=0.95, top=0.95, bottom=0.05)
 
-    # ── Row labels ──
-    fig.text(0.01, 0.72, "Label space", fontsize=12, fontweight="semibold",
-             rotation=90, va="center", ha="center", color="#555555")
-    fig.text(0.01, 0.30, "Learned\nrepresentations", fontsize=12,
-             fontweight="semibold", rotation=90, va="center", ha="center",
-             color="#555555")
-
-    # ── Save ──
-    fig.savefig(OUTPUT, dpi=600, bbox_inches="tight", facecolor="white",
-                edgecolor="none")
-    print(f"Saved -> {OUTPUT}")
-    plt.close(fig)
+    out_b = os.path.join(SCRIPT_DIR, "figure1b.png")
+    fig_b.savefig(out_b, dpi=300, bbox_inches="tight", facecolor="white",
+                  edgecolor="none")
+    print(f"Saved -> {out_b}")
+    plt.close(fig_b)
 
 
 if __name__ == "__main__":

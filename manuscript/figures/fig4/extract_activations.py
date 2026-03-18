@@ -3,7 +3,7 @@
 Saves post-ReLU activations for both layers, concept-averaged over THINGS images.
 
 Usage (from project root):
-    python manuscript/figures/fig5/extract_activations.py
+    python manuscript/figures/fig4/extract_activations.py
 """
 
 import os
