@@ -152,6 +152,7 @@ def nsd_encoding_results():
     overrides = [
         "mode=eval",
         "cfg_id=1000", "seed=1",
+        "checkpoint_dir=/data/ymehta3/default",
         "checkpoint_model=checkpoint_epoch_20.pth",
         "neural_dataset=nsd",
         "analysis=encoding_score",
@@ -190,6 +191,7 @@ def tvsd_encoding_results():
     overrides = [
         "mode=eval",
         "cfg_id=1000", "seed=1",
+        "checkpoint_dir=/data/ymehta3/default",
         "checkpoint_model=checkpoint_epoch_20.pth",
         "neural_dataset=tvsd",
         "analysis=encoding_score",

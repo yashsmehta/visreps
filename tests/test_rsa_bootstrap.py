@@ -1643,6 +1643,7 @@ class TestEndToEndRSA:
         """NSD RSA with bootstrap: score, CIs, layer hierarchy, DB storage."""
         results = self._run_eval([
             "mode=eval", "cfg_id=1000", "seed=1",
+            "checkpoint_dir=/data/ymehta3/default",
             "checkpoint_model=checkpoint_epoch_20.pth",
             "neural_dataset=nsd", "analysis=rsa", "compare_method=spearman",
             "subject_idx=0", "region=ventral visual stream",
@@ -1707,6 +1708,7 @@ class TestEndToEndRSA:
         """TVSD RSA with bootstrap: score, CIs, layer hierarchy, DB storage."""
         results = self._run_eval([
             "mode=eval", "cfg_id=1000", "seed=1",
+            "checkpoint_dir=/data/ymehta3/default",
             "checkpoint_model=checkpoint_epoch_20.pth",
             "neural_dataset=tvsd", "analysis=rsa", "compare_method=spearman",
             "subject_idx=0", "region=IT",
