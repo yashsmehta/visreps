@@ -27,6 +27,8 @@ from visreps.analysis.sparse_random_projection import get_srp_transformer
 # For deep models, layers are evenly subsampled to keep memory bounded.
 TORCHVISION_RETURN_NODES = {
     "AlexNet":  ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2"],
+    "CustomCNN":     ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2"],
+    "TinyCustomCNN": ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2"],
     "VGG16":    ["conv2", "conv4", "conv7", "conv10", "conv13", "fc1", "fc2", "fc3"],
     "ResNet18": ["conv1", "block1", "block2", "block3", "block4",
                  "block5", "block6", "block7", "block8", "fc1"],
@@ -303,13 +305,11 @@ def configure_feature_extractor(cfg, model, verbose=False):
         rprint(f"  ✓ {len(return_nodes)} extraction points", style="success")
         return model
 
-    extract_pre_and_post = cfg.get("extract_pre_and_post", True)
     model.eval()
-    extractor = FeatureExtractor(model, return_nodes,
-                                 extract_pre_and_post=extract_pre_and_post)
+    extractor = FeatureExtractor(model, return_nodes, extract_pre_and_post=True)
     n_points = len(extractor.return_nodes)
     n_layers = len(return_nodes)
-    suffix = f" ({n_layers} layers × pre/post)" if extract_pre_and_post else ""
+    suffix = f" ({n_layers} layers × pre/post)"
     rprint(f"  ✓ {n_points} extraction points{suffix}", style="success")
     if verbose:
         rprint(f"    Layers: {list(return_nodes.keys())}", style="info")

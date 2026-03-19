@@ -711,17 +711,6 @@ class ConfigVerifier:
             # uses "pearson" consistently.
             self.cfg.compare_method = "pearson"
 
-        # Model layers validation
-        if not hasattr(self.cfg.return_nodes, "__iter__"):
-            self.rprint(
-                f"[red]return_nodes must be a list-like object[/red]", style="error"
-            )
-            raise AssertionError("return_nodes must be a list-like object")
-
-        if not self.cfg.return_nodes:
-            self.rprint("[red]return_nodes list cannot be empty[/red]", style="error")
-            raise AssertionError("return_nodes list cannot be empty")
-
         # Model loading validation
         if self.cfg.load_model_from not in self.VALID_MODEL_SOURCES:
             self.rprint(
