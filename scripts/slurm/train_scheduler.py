@@ -51,9 +51,11 @@ def get_checkpoint_dir(model_name, params):
 
     Standard architectures prepend the model name:
         ResNet50 + "pca_labels_clip" -> "resnet50_clip_pca"
+        ResNet50 + pca_labels=False  -> "resnet50_default"
 
     CustomCNN (custom_model) keeps the existing convention:
         "pca_labels_clip" -> "clip_pca"
+        pca_labels=False  -> "default"
     """
     if params.get("pca_labels"):
         folder = params.get("pca_labels_folder", "")
@@ -61,6 +63,8 @@ def get_checkpoint_dir(model_name, params):
         if model_name:
             return f"{model_name.lower()}_{base}_pca"
         return f"{base}_pca"
+    if model_name:
+        return f"{model_name.lower()}_{DEFAULT_CHECKPOINT_DIR}"
     return DEFAULT_CHECKPOINT_DIR
 
 
