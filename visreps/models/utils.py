@@ -29,14 +29,14 @@ TORCHVISION_RETURN_NODES = {
     "AlexNet":  ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2"],
     "CustomCNN":     ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2"],
     "TinyCustomCNN": ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2"],
-    "VGG16":    ["conv2", "conv4", "conv7", "conv10", "conv13", "fc1", "fc2", "fc3"],
+    "VGG16":    ["conv2", "conv4", "conv7", "conv10", "conv13", "fc1", "fc2"],
     "ResNet18": ["conv1", "block1", "block2", "block3", "block4",
-                 "block5", "block6", "block7", "block8", "fc1"],
-    "ResNet50": ["conv1"] + [f"block{i}" for i in range(1, 17, 2)] + ["block16", "fc1"],
-    "ViTBase":  [f"block{i}" for i in range(1, 13)] + ["head"],
+                 "block5", "block6", "block7", "block8"],
+    "ResNet50": ["conv1"] + [f"block{i}" for i in range(1, 17, 2)] + ["block16"],
+    "ViTBase":  [f"block{i}" for i in range(1, 13)],
     "ConvNeXt_Base":    ["block3", "block6",  # last of stage 1, 2
                          "block9", "block14", "block19", "block24", "block29", "block33",  # stage 3
-                         "block36", "fc1"],  # last of stage 4 + classifier
+                         "block36"],  # last of stage 4
     "CLIP_ViT_B32":     ["block1"] + [f"block{i}" for i in range(2, 13, 2)],
     "CLIP_ViT_L14":     ["block1"] + [f"block{i}" for i in range(4, 25, 4)],
     "DINOv1_ResNet50":  None,  # filled below (same as ResNet50)
@@ -309,7 +309,7 @@ def configure_feature_extractor(cfg, model, verbose=False):
     extractor = FeatureExtractor(model, return_nodes, extract_pre_and_post=True)
     n_points = len(extractor.return_nodes)
     n_layers = len(return_nodes)
-    suffix = f" ({n_layers} layers × pre/post)"
+    suffix = f" ({n_layers} layers × pre/post)" if n_points > n_layers else ""
     rprint(f"  ✓ {n_points} extraction points{suffix}", style="success")
     if verbose:
         rprint(f"    Layers: {list(return_nodes.keys())}", style="info")
