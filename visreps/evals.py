@@ -89,11 +89,10 @@ def eval(cfg):
     # ── CONFIG & DEVICE ─────────────────────────────────
     if cfg.load_model_from == "checkpoint":
         cfg = _load_cfg(cfg)
-        cfg.return_nodes = mutils.TORCHVISION_RETURN_NODES[cfg.model_name]
     elif cfg.load_model_from == "torchvision":
         cfg.epoch = -1
         cfg.cfg_id = "untrained" if cfg.get("pretrained_dataset", "none") == "none" else "pretrained"
-        cfg.return_nodes = mutils.TORCHVISION_RETURN_NODES[cfg.model_name]
+    cfg.return_nodes = list(mutils.TORCHVISION_RETURN_NODES[cfg.model_name])
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     dataset = cfg.neural_dataset.lower()

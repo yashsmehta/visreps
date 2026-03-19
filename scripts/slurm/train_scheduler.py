@@ -19,9 +19,7 @@ MODEL_CONFIGS = {
 
 PARAM_GRID = {
     "seed": [1],
-    "pca_labels": [True],
-    "pca_n_classes": [8, 32],
-    "pca_labels_folder": ["pca_labels_clip"],
+    "pca_labels": [False],
     "log_checkpoints": [True],
 }
 
