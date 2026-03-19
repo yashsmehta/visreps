@@ -63,7 +63,8 @@ packages = ["visreps"]
 
 [tool.pytest.ini_options]
 markers = [
-    "slow: marks tests as slow (end-to-end with real data, deselect with '-m \"not slow\"')",
+    "slow: marks tests as slow RSA (end-to-end with real data)",
+    "slow_encoding: marks slow encoding score tests (run with '-m slow_encoding')",
 ]
 filterwarnings = [
     "ignore:Solving ridge is slower than solving kernel ridge:UserWarning",
