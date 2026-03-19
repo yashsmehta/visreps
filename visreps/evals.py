@@ -40,27 +40,40 @@ def _load_cfg(cfg):
     return OmegaConf.merge(base, cfg)
 
 
-def _build_header(cfg):
-    """Build a compact one-line summary header for eval output."""
+def _print_header(cfg, n_subjects=None, n_regions=None):
+    """Print a styled header block for eval output."""
     analysis = cfg.get("analysis", "rsa").upper()
+    method = cfg.get("compare_method", "spearman").capitalize()
     seed = cfg.get("seed", "?")
     seed_letter = get_seed_letter(seed) if isinstance(seed, int) else "?"
     cfg_id = cfg.get("cfg_id", "?")
     epoch = cfg.get("epoch", "?")
     neural_dataset = cfg.get("neural_dataset", "?").upper()
-    region = cfg.get("region", "")
-    subject_idx = cfg.get("subject_idx", "")
 
-    parts = [f"{analysis} eval"]
-    parts.append(f"cfg{cfg_id}{seed_letter} epoch {epoch}")
-    if region and str(region).upper() != "N/A":
-        parts.append(f"{neural_dataset} {region}")
-    else:
-        parts.append(neural_dataset)
-    if subject_idx != "" and str(subject_idx).upper() != "N/A":
-        parts.append(f"subj {subject_idx}")
-    parts.append(f"seed {seed}")
-    return " | ".join(parts)
+    title = f"{analysis} · {method}"
+    rprint(f"\n  ── {title} {'─' * max(1, 42 - len(title))}", style="highlight")
+    rprint(f"  cfg{cfg_id}{seed_letter} · seed {seed} · epoch {epoch}", style="info")
+
+    parts = [neural_dataset]
+    if n_subjects is not None and n_regions is not None:
+        parts.append(f"{n_subjects} subjects × {n_regions} regions")
+    rprint(f"  {' · '.join(parts)}", style="info")
+    rprint("")
+
+
+def _print_region_results(region, scores, layers, subjects, bootstrap=False,
+                          ci_lows=None, ci_highs=None):
+    """Print per-subject scores for a region with mean summary."""
+    rprint(f"\n  ── {region} {'─' * max(1, 42 - len(region))}", style="info")
+    for i, subj in enumerate(subjects):
+        msg = f"    S{subj:<3} {layers[i]:<7} {scores[i]:.4f}"
+        if bootstrap and ci_lows and ci_highs:
+            msg += f"  [{ci_lows[i]:.4f}, {ci_highs[i]:.4f}]"
+        rprint(msg, style="highlight")
+    mean = np.mean(scores)
+    std = np.std(scores)
+    rprint(f"    {'─' * 34}", style="info")
+    rprint(f"    Mean{' ' * 5}{mean:.4f} ± {std:.4f}", style="highlight")
 
 
 def _listify(val):
@@ -203,8 +216,10 @@ def _reextract_and_score(model, cfg, dev, test_stimuli, test_ids,
 
     # Score per (region, subject)
     all_results = []
+    region_means = {}
     for region in regions:
-        rprint(f"\n  -- Region: {region} --", style="info")
+        region_scores, region_layers = [], []
+        region_ci_lows, region_ci_highs = [], []
         for subj in subjects:
             best_layer = best_layers[region][subj]
 
@@ -242,12 +257,25 @@ def _reextract_and_score(model, cfg, dev, test_stimuli, test_ids,
                 save_results(pd.DataFrame([result]), save_cfg)
 
             all_results.append(result)
-
-            msg = (f"    subj {subj} | {method.capitalize():<10}"
-                   f"| {best_layer} = {score:.4f}")
+            region_scores.append(score)
+            region_layers.append(best_layer)
             if bootstrap:
-                msg += f"  [95% CI: {ci_low:.4f}, {ci_high:.4f}]"
-            rprint(msg, style="highlight")
+                region_ci_lows.append(ci_low)
+                region_ci_highs.append(ci_high)
+
+        _print_region_results(
+            region, region_scores, region_layers, subjects,
+            bootstrap=bootstrap,
+            ci_lows=region_ci_lows if bootstrap else None,
+            ci_highs=region_ci_highs if bootstrap else None,
+        )
+        region_means[region] = np.mean(region_scores)
+
+    # Final summary across regions
+    if len(regions) > 1:
+        rprint(f"\n  {'═' * 46}", style="highlight")
+        for region, mean in region_means.items():
+            rprint(f"  {region:<30} {mean:.4f}", style="highlight")
 
     return pd.DataFrame(all_results)
 
@@ -274,7 +302,7 @@ def eval(cfg):
 
     # ── THINGS-BEHAVIOR: 80/20 concept-level train/test RSA ──
     if dataset == "things-behavior":
-        rprint(f"\n  {_build_header(cfg)}\n", style="info")
+        _print_header(cfg)
         model = mutils.load_model(cfg, dev, verbose=verbose)
         model = mutils.configure_feature_extractor(cfg, model, verbose=verbose)
 
@@ -366,26 +394,21 @@ def eval(cfg):
     if dataset == "nsd_synthetic":
         subjects = _listify(cfg.subject_idx)
         regions = _listify(cfg.region)
-        seed_letter = get_seed_letter(cfg.seed) if isinstance(cfg.seed, int) else "?"
-        rprint(
-            f"\n  RSA eval (NSD Synthetic) | cfg{cfg.get('cfg_id', '?')}{seed_letter} "
-            f"epoch {cfg.get('epoch', '?')} | {len(subjects)} subjects x {len(regions)} regions | "
-            f"seed {cfg.seed}\n",
-            style="info",
-        )
+        _print_header(cfg, len(subjects), len(regions))
         return _eval_rsa_nsd_synthetic(cfg, subjects, regions, dev, verbose)
+
+    # ── CUSACK 2025: dedicated RSA path (reuses NSD layer selection) ──
+    if dataset == "cusack":
+        age_groups = _listify(cfg.subject_idx)
+        regions = _listify(cfg.region)
+        _print_header(cfg, len(age_groups), len(regions))
+        return _eval_rsa_cusack(cfg, age_groups, regions, dev, verbose)
 
     # ── NSD / TVSD: unified multi-subject path ──────────
     subjects = _listify(cfg.subject_idx)
     regions = _listify(cfg.region)
 
-    seed_letter = get_seed_letter(cfg.seed) if isinstance(cfg.seed, int) else "?"
-    rprint(
-        f"\n  {cfg.get('analysis', 'rsa').upper()} eval | cfg{cfg.get('cfg_id', '?')}{seed_letter} "
-        f"epoch {cfg.get('epoch', '?')} | {cfg.neural_dataset.upper()} | "
-        f"{len(subjects)} subjects x {len(regions)} regions | seed {cfg.seed}\n",
-        style="info",
-    )
+    _print_header(cfg, len(subjects), len(regions))
 
     # Load model once
     model = mutils.load_model(cfg, dev, verbose=verbose)
@@ -520,6 +543,44 @@ def _eval_rsa_nsd_synthetic(cfg, subjects, regions, dev, verbose):
     )
 
 
+# ──────────────── Cusack 2025 RSA helper ─────────────────
+_CUSACK_TO_NSD_REGION = {"evc": "early visual stream", "vvc": "ventral visual stream"}
+
+
+def _lookup_cusack_best_layers(cfg, regions, age_groups):
+    """Mode of best layer across 8 NSD subjects, for each Cusack region."""
+    from collections import Counter
+    nsd_regions = [_CUSACK_TO_NSD_REGION[r] for r in regions]
+    nsd_layers = _lookup_nsd_best_layers(cfg, list(range(8)), nsd_regions)
+    layers = {}
+    for cusack_r, nsd_r in zip(regions, nsd_regions):
+        mode_layer = Counter(nsd_layers[nsd_r].values()).most_common(1)[0][0]
+        layers[cusack_r] = {ag: mode_layer for ag in age_groups}
+        rprint(f"    {cusack_r} → {nsd_r}: mode layer = {mode_layer}", style="info")
+    return layers
+
+
+def _eval_rsa_cusack(cfg, age_groups, regions, dev, verbose):
+    """RSA on Cusack: reuse mode layer from NSD, score on 36 infant stimuli."""
+    import os, pickle
+    best_layers = _lookup_cusack_best_layers(cfg, regions, age_groups)
+
+    with open("datasets/neural/cusack2025/fmri_responses.pkl", "rb") as f:
+        fmri = pickle.load(f)
+    test_ids = sorted(fmri[regions[0]][age_groups[0]].keys())
+    neural = {r: {ag: fmri[r][ag] for ag in age_groups} for r in regions}
+    stimuli = {sid: os.path.join("datasets/neural/cusack2025/display_images", f"{sid}.png")
+               for sid in test_ids}
+
+    model = mutils.load_model(cfg, dev, verbose=verbose)
+    model = mutils.configure_feature_extractor(cfg, model, verbose=verbose)
+
+    return _reextract_and_score(
+        model, cfg, dev, stimuli, test_ids, neural,
+        best_layers, regions, age_groups, verbose=verbose,
+    )
+
+
 # ──────────────── encoding score helper ─────────────────
 def _eval_encoding(cfg, model, acts, ids, all_data, subjects, regions, verbose):
     """Per-(region, subject) encoding score using SRP activations.
@@ -529,8 +590,9 @@ def _eval_encoding(cfg, model, acts, ids, all_data, subjects, regions, verbose):
     neural = all_data["neural"]
 
     all_results = []
+    region_means = {}
     for region in regions:
-        rprint(f"\n  -- Region: {region} --", style="info")
+        region_scores, region_layers = [], []
 
         for subj in subjects:
             subj_neural = neural[region][subj]
@@ -540,7 +602,8 @@ def _eval_encoding(cfg, model, acts, ids, all_data, subjects, regions, verbose):
             )
 
             alignment_scores = compute_traintest_alignment(
-                cfg, train_data, test_data, verbose=verbose, re_extract_fn=None
+                cfg, train_data, test_data, verbose=verbose, re_extract_fn=None,
+                quiet=True,
             )
 
             # Free per-subject alignment data
@@ -557,6 +620,20 @@ def _eval_encoding(cfg, model, acts, ids, all_data, subjects, regions, verbose):
                 r["region"] = region
                 r["subject_idx"] = subj
             all_results.extend(alignment_scores)
+
+            # Collect for per-region summary
+            for r in alignment_scores:
+                region_scores.append(r["score"])
+                region_layers.append(r["layer"])
+
+        _print_region_results(region, region_scores, region_layers, subjects)
+        region_means[region] = np.mean(region_scores)
+
+    # Final summary across regions
+    if len(regions) > 1:
+        rprint(f"\n  {'═' * 46}", style="highlight")
+        for region, mean in region_means.items():
+            rprint(f"  {region:<30} {mean:.4f}", style="highlight")
 
     # Free bulk activations and model
     del acts, model

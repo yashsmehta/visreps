@@ -516,7 +516,7 @@ class ConfigVerifier:
     VALID_MODEL_SOURCES = {"checkpoint", "torchvision"}
     VALID_ANALYSES = {"rsa", "encoding_score"}
     VALID_COMPARE_METHODS = {"spearman", "kendall"}
-    VALID_NEURAL_DATASETS = {"nsd", "things-behavior", "tvsd", "nsd_synthetic"}
+    VALID_NEURAL_DATASETS = {"nsd", "things-behavior", "tvsd", "nsd_synthetic", "cusack"}
     def __init__(self, cfg: OmegaConf):
         """Initialize verifier with configuration."""
         self.cfg = cfg
@@ -679,6 +679,25 @@ class ConfigVerifier:
                         f"Invalid region for TVSD: {r}. Must be one of {valid_regions}"
                     )
 
+        if self.cfg.neural_dataset.lower() == "cusack":
+            # Normalize subject_idx (age groups) to list
+            subj = self.cfg.get("subject_idx", ["2month", "9month"])
+            if isinstance(subj, str):
+                subj = [subj]
+            self.cfg.subject_idx = list(subj)
+            valid_age_groups = {"2month", "9month"}
+            for s in self.cfg.subject_idx:
+                if s not in valid_age_groups:
+                    raise AssertionError(
+                        f"Invalid age group for Cusack: {s}. Must be one of {valid_age_groups}"
+                    )
+
+            # Normalize region to list
+            region = self.cfg.get("region", ["evc", "vvc"])
+            if isinstance(region, str):
+                region = [region]
+            self.cfg.region = list(region)
+
         compare_method = self.cfg.get("compare_method", "spearman").lower()
         if compare_method not in self.VALID_COMPARE_METHODS:
             self.rprint(
@@ -705,6 +724,11 @@ class ConfigVerifier:
                 raise AssertionError(
                     "analysis=encoding_score is not supported for nsd_synthetic. "
                     "Use analysis=rsa instead."
+                )
+            if self.cfg.neural_dataset.lower() == "cusack":
+                raise AssertionError(
+                    "analysis=encoding_score is not supported for cusack "
+                    "(only 36 stimuli). Use analysis=rsa instead."
                 )
             # Encoding metric is always Pearson r — override whatever the user set
             # (compare_method is an RSA concept). This also ensures run_id hashing
