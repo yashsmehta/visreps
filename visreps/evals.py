@@ -76,6 +76,13 @@ def _get_eval_transform(cfg):
     return get_transform(ds_stats=stats)
 
 
+def _set_torchvision_cfg(cfg):
+    """Set epoch and cfg_id for torchvision-loaded models."""
+    cfg.epoch = -1
+    cfg.cfg_id = "untrained" if cfg.get("pretrained_dataset", "none") == "none" else "pretrained"
+    return cfg
+
+
 # ───────────────────────── eval ──────────────────────────
 def eval(cfg):
     """Unified evaluation: one forward pass, per-subject per-region results.
@@ -90,8 +97,7 @@ def eval(cfg):
     if cfg.load_model_from == "checkpoint":
         cfg = _load_cfg(cfg)
     elif cfg.load_model_from == "torchvision":
-        cfg.epoch = -1
-        cfg.cfg_id = "untrained" if cfg.get("pretrained_dataset", "none") == "none" else "pretrained"
+        cfg = _set_torchvision_cfg(cfg)
     cfg.return_nodes = list(mutils.TORCHVISION_RETURN_NODES[cfg.model_name])
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
