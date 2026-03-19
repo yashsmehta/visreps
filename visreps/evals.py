@@ -22,7 +22,7 @@ from visreps.analysis.alignment import (
     _align_stimulus_level,
 )
 from visreps.analysis.rsa import _concept_average_exact
-from visreps.analysis.rsa import compute_rdm, compute_rdm_correlation
+from visreps.analysis.rsa import compute_rdm, compute_rdm_correlation, score_rdm_pair
 from visreps.analysis.reconstruct_from_pcs import reconstruct_from_pcs
 import numpy as np
 
@@ -81,6 +81,175 @@ def _set_torchvision_cfg(cfg):
     cfg.epoch = -1
     cfg.cfg_id = "untrained" if cfg.get("pretrained_dataset", "none") == "none" else "pretrained"
     return cfg
+
+
+# ──────────────── shared RSA helpers ─────────────────────
+def _make_rsa_result(layer, method, score, ci_low, ci_high,
+                     selection_scores, bootstrap_scores=None):
+    """Build standardized RSA result dict."""
+    result = {
+        "layer": layer,
+        "compare_method": method,
+        "score": score,
+        "ci_low": ci_low,
+        "ci_high": ci_high,
+        "analysis": "rsa",
+        "layer_selection_scores": selection_scores,
+    }
+    if bootstrap_scores is not None:
+        result["bootstrap_scores"] = bootstrap_scores
+    return result
+
+
+def _select_rsa_layers(acts, ids, neural, subjects, regions,
+                       method, n_select=1000, verbose=False):
+    """Per-(subject, region) layer selection using SRP activations.
+
+    Returns:
+        per_region_layers: {region: {subj: best_layer_name}}
+        per_region_scores: {region: {subj: [{layer, score}]}}
+    """
+    per_region_layers = {}
+    per_region_scores = {}
+
+    for region in regions:
+        per_region_layers[region] = {}
+        per_region_scores[region] = {}
+        for subj in subjects:
+            train_acts, train_neural, _ = _align_stimulus_level(
+                acts, neural[region][subj]["train"], ids
+            )
+
+            n_train = train_neural.size(0)
+            if n_select is not None and n_select < n_train:
+                sel_idx = np.random.RandomState(42).choice(
+                    n_train, size=n_select, replace=False
+                )
+            else:
+                sel_idx = np.arange(n_train)
+
+            neural_rdm = compute_rdm(train_neural[sel_idx])
+
+            best_layer, best_score = None, -float("inf")
+            scores = []
+            for layer, layer_acts in train_acts.items():
+                flat = (layer_acts[sel_idx].flatten(start_dim=1)
+                        if layer_acts.ndim > 2 else layer_acts[sel_idx])
+                score = compute_rdm_correlation(
+                    compute_rdm(flat), neural_rdm,
+                    correlation=method.capitalize(),
+                )
+                scores.append({"layer": layer, "score": score})
+                if score > best_score:
+                    best_score, best_layer = score, layer
+
+            per_region_layers[region][subj] = best_layer
+            per_region_scores[region][subj] = scores
+
+            if verbose:
+                rprint(
+                    f"    {region} subj {subj}: {best_layer} ({best_score:.4f}), "
+                    f"{len(sel_idx)} stimuli for selection",
+                    style="info",
+                )
+
+            del train_acts, train_neural
+
+    return per_region_layers, per_region_scores
+
+
+def _reextract_and_score(model, cfg, dev, test_stimuli, test_ids,
+                         test_neural, best_layers, regions, subjects,
+                         selection_scores=None, verbose=False):
+    """Re-extract unique best layers without SRP, score per (region, subject).
+
+    Args:
+        test_stimuli: {sid: image} for building test dataloader.
+        test_ids: ordered list of test stimulus IDs.
+        test_neural: {region: {subj: {sid: response}}} — test-only responses.
+        best_layers: {region: {subj: layer_name}}.
+        selection_scores: {region: {subj: [{layer, score}]}} or None.
+
+    Returns:
+        pd.DataFrame with one row per (region, subject).
+    """
+    method = cfg.get("compare_method", "spearman").lower()
+    bootstrap = cfg.get("bootstrap", False)
+    n_bootstrap = cfg.get("n_bootstrap", 1000)
+    pca_k = cfg.get("pca_k", 1)
+
+    # Build test dataloader
+    transform = _get_eval_transform(cfg)
+    dl_test = _make_loader(test_stimuli, transform, cfg.batchsize, cfg.num_workers)
+    rprint(f"  Test dataloader: {len(test_stimuli)} stimuli", style="success")
+
+    # Re-extract unique best layers without SRP
+    unique_layers = {l for rl in best_layers.values() for l in rl.values()}
+    model_rdms = {}
+    for layer in sorted(unique_layers):
+        rprint(f"  Re-extracting {layer} without SRP...", style="info")
+        exact_acts, _ = mutils.extract_single_layer(
+            model, dl_test, dev, layer, test_ids
+        )
+        if cfg.get("reconstruct_from_pcs"):
+            exact_acts = reconstruct_from_pcs({layer: exact_acts}, pca_k)[layer]
+            rprint(f"    Reconstructed from {pca_k} PCs", style="info")
+        flat = exact_acts.flatten(start_dim=1) if exact_acts.ndim > 2 else exact_acts
+        model_rdms[layer] = compute_rdm(flat)
+        del exact_acts
+
+    del model, dl_test
+    torch.cuda.empty_cache()
+
+    # Score per (region, subject)
+    all_results = []
+    for region in regions:
+        rprint(f"\n  -- Region: {region} --", style="info")
+        for subj in subjects:
+            best_layer = best_layers[region][subj]
+
+            # Build neural RDM
+            responses = [
+                test_neural[region][subj][sid]
+                for sid in test_ids
+                if sid in test_neural[region][subj]
+            ]
+            neural_tensor = torch.as_tensor(
+                np.stack(responses).squeeze(), dtype=torch.float32
+            )
+            neural_rdm = compute_rdm(neural_tensor)
+
+            # Score + bootstrap
+            score, ci_low, ci_high, boot_scores = score_rdm_pair(
+                model_rdms[best_layer], neural_rdm, method,
+                bootstrap=bootstrap, n_bootstrap=n_bootstrap,
+            )
+
+            # Build and save result
+            sel_scores = (selection_scores[region][subj]
+                          if selection_scores else [])
+            result = _make_rsa_result(
+                best_layer, method, score, ci_low, ci_high,
+                sel_scores, boot_scores,
+            )
+            result["region"] = region
+            result["subject_idx"] = subj
+
+            if cfg.get("log_expdata"):
+                save_cfg = OmegaConf.merge(
+                    cfg, {"subject_idx": subj, "region": region}
+                )
+                save_results(pd.DataFrame([result]), save_cfg)
+
+            all_results.append(result)
+
+            msg = (f"    subj {subj} | {method.capitalize():<10}"
+                   f"| {best_layer} = {score:.4f}")
+            if bootstrap:
+                msg += f"  [95% CI: {ci_low:.4f}, {ci_high:.4f}]"
+            rprint(msg, style="highlight")
+
+    return pd.DataFrame(all_results)
 
 
 # ───────────────────────── eval ──────────────────────────
@@ -259,184 +428,32 @@ def eval(cfg):
 
 # ──────────────────── RSA helper ────────────────────────
 def _eval_rsa(cfg, model, acts, ids, all_data, subjects, regions, dev, verbose):
-    """Two-phase RSA: layer selection with SRP, then re-extract without SRP.
-
-    Phase 1: Per-(region, subject) layer selection using SRP activations.
-    Phase 2: Re-extract unique best layers without SRP for exact test RDMs,
-             then compute per-subject point estimates and optional bootstrap CIs.
-    """
+    """Two-phase RSA: layer selection with SRP, then re-extract without SRP."""
     method = cfg.get("compare_method", "spearman").lower()
-    bootstrap = cfg.get("bootstrap", False)
-    n_bootstrap = cfg.get("n_bootstrap", 1000)
-
-    dataset = cfg.neural_dataset.lower()
-    # Subsample train stimuli for layer selection to keep RDM computation fast.
-    # Default 1,000 for both NSD (~9k train) and TVSD (~22k train).
     n_select = cfg.get("n_select", 1000)
-
     neural = all_data["neural"]
-    shared_test_ids = all_data["shared_test_ids"]
-    stimuli = all_data["stimuli"]
 
-    # ══════════════════════════════════════════════════════
-    # PHASE 1: Layer selection (uses SRP acts)
-    # ══════════════════════════════════════════════════════
+    # Phase 1: layer selection
     rprint("\n  Phase 1: Per-subject layer selection", style="info")
-    per_region_layers = {}       # {region: {subj: best_layer}}
-    per_region_scores = {}       # {region: {subj: [{"layer": ..., "score": ...}]}}
-
-    for region in regions:
-        per_region_layers[region] = {}
-        per_region_scores[region] = {}
-        for subj in subjects:
-            subj_neural_train = neural[region][subj]["train"]
-            train_acts, train_neural, _ = _align_stimulus_level(
-                acts, subj_neural_train, ids
-            )
-
-            n_train_subj = train_neural.size(0)
-            if n_select is not None and n_select < n_train_subj:
-                rng_sel = np.random.RandomState(42)
-                sel_idx = rng_sel.choice(n_train_subj, size=n_select, replace=False)
-            else:
-                sel_idx = np.arange(n_train_subj)
-            neural_rdm_sel = compute_rdm(train_neural[sel_idx])
-
-            best_layer, best_score = None, -float("inf")
-            subj_scores = []
-            for layer, layer_acts in train_acts.items():
-                flat = layer_acts[sel_idx].flatten(start_dim=1) if layer_acts.ndim > 2 else layer_acts[sel_idx]
-                layer_rdm = compute_rdm(flat)
-                score = compute_rdm_correlation(layer_rdm, neural_rdm_sel, correlation=method.capitalize())
-                subj_scores.append({"layer": layer, "score": score})
-                if score > best_score:
-                    best_score = score
-                    best_layer = layer
-
-            per_region_layers[region][subj] = best_layer
-            per_region_scores[region][subj] = subj_scores
-
-            if verbose:
-                rprint(
-                    f"    {region} subj {subj}: {best_layer} ({best_score:.4f}), "
-                    f"{len(sel_idx)} stimuli for selection",
-                    style="info",
-                )
-
-            del train_acts, train_neural
-
-    # ══════════════════════════════════════════════════════
-    # FREE BULK ACTIVATIONS
-    # ══════════════════════════════════════════════════════
+    per_region_layers, per_region_scores = _select_rsa_layers(
+        acts, ids, neural, subjects, regions, method, n_select, verbose
+    )
     del acts
     torch.cuda.empty_cache()
     rprint("  Freed bulk SRP activations", style="success")
 
-    # ══════════════════════════════════════════════════════
-    # PHASE 2: Re-extract unique layers for test stimuli
-    # ══════════════════════════════════════════════════════
+    # Phase 2: re-extract and score
     rprint("\n  Phase 2: Test evaluation", style="info")
-
-    # Small test-only dataloader
+    stimuli = all_data["stimuli"]
+    shared_test_ids = all_data["shared_test_ids"]
     test_stimuli = {sid: stimuli[sid] for sid in shared_test_ids if sid in stimuli}
-    transform = _get_eval_transform(cfg)
-    dl_test = _make_loader(test_stimuli, transform, cfg.batchsize, cfg.num_workers)
-    rprint(f"  Test dataloader: {len(test_stimuli)} stimuli", style="success")
+    test_neural = {r: {s: neural[r][s]["test"] for s in subjects} for r in regions}
 
-    # Collect unique best layers across all (region, subject) pairs
-    all_unique_layers = set()
-    for region_layers in per_region_layers.values():
-        all_unique_layers.update(region_layers.values())
-
-    # Re-extract each unique layer without SRP -> build model RDMs
-    pca_k = cfg.get("pca_k", 1)
-    model_rdms = {}
-    for layer in sorted(all_unique_layers):
-        rprint(f"  Re-extracting {layer} without SRP...", style="info")
-        exact_acts, _ = mutils.extract_single_layer(model, dl_test, dev, layer, shared_test_ids)
-        if cfg.get("reconstruct_from_pcs"):
-            exact_acts = reconstruct_from_pcs({layer: exact_acts}, pca_k)[layer]
-            rprint(f"    Reconstructed from {pca_k} PCs", style="info")
-        flat = exact_acts.flatten(start_dim=1) if exact_acts.ndim > 2 else exact_acts
-        model_rdms[layer] = compute_rdm(flat)
-        del exact_acts
-
-    # Free model (no longer needed)
-    del model, dl_test
-    torch.cuda.empty_cache()
-
-    # ══════════════════════════════════════════════════════
-    # Per-(region, subject) scoring + save
-    # ══════════════════════════════════════════════════════
-    all_results = []
-    for region in regions:
-        rprint(f"\n  -- Region: {region} --", style="info")
-
-        for subj in subjects:
-            best_layer = per_region_layers[region][subj]
-            selection_scores = per_region_scores[region][subj]
-
-            # Build neural RDM for this subject's test responses
-            test_neural_dict = neural[region][subj]["test"]
-            responses = [test_neural_dict[sid] for sid in shared_test_ids if sid in test_neural_dict]
-            neural_tensor = torch.as_tensor(np.stack(responses).squeeze(), dtype=torch.float32)
-            neural_rdm = compute_rdm(neural_tensor)
-
-            # Point estimate
-            point_estimate = compute_rdm_correlation(
-                model_rdms[best_layer], neural_rdm, correlation=method.capitalize()
-            )
-
-            # Bootstrap (optional)
-            ci_low, ci_high = None, None
-            bootstrap_scores_list = None
-
-            if bootstrap:
-                rng = np.random.RandomState(42)
-                n_test = neural_rdm.size(0)
-                n_sub = int(n_test * 0.9)
-                bootstrap_scores = np.empty(n_bootstrap, dtype=np.float64)
-
-                for i in range(n_bootstrap):
-                    idx = torch.from_numpy(
-                        rng.choice(n_test, size=n_sub, replace=False)
-                    ).to(neural_rdm.device)
-                    m = model_rdms[best_layer][idx][:, idx]
-                    n = neural_rdm[idx][:, idx]
-                    bootstrap_scores[i] = compute_rdm_correlation(
-                        m, n, correlation=method.capitalize()
-                    )
-
-                ci_low = float(np.percentile(bootstrap_scores, 2.5))
-                ci_high = float(np.percentile(bootstrap_scores, 97.5))
-                bootstrap_scores_list = bootstrap_scores.tolist()
-
-            msg = f"    subj {subj} | {method.capitalize():<10}| {best_layer} = {point_estimate:.4f}"
-            if bootstrap:
-                msg += f"  [95% CI: {ci_low:.4f}, {ci_high:.4f}]"
-            rprint(msg, style="highlight")
-
-            result = {
-                "layer": best_layer,
-                "compare_method": method,
-                "score": point_estimate,
-                "ci_low": ci_low,
-                "ci_high": ci_high,
-                "analysis": "rsa",
-                "layer_selection_scores": selection_scores,
-            }
-            if bootstrap_scores_list is not None:
-                result["bootstrap_scores"] = bootstrap_scores_list
-
-            results_df = pd.DataFrame([result])
-
-            if cfg.get("log_expdata"):
-                save_cfg = OmegaConf.merge(cfg, {"subject_idx": subj, "region": region})
-                save_results(results_df, save_cfg)
-
-            all_results.append(result)
-
-    return pd.DataFrame(all_results)
+    return _reextract_and_score(
+        model, cfg, dev, test_stimuli, shared_test_ids,
+        test_neural, per_region_layers, regions, subjects,
+        per_region_scores, verbose,
+    )
 
 
 # ───────────── NSD Synthetic RSA helper ──────────────────
@@ -479,112 +496,28 @@ def _lookup_nsd_best_layers(cfg, subjects, regions):
 
 
 def _eval_rsa_nsd_synthetic(cfg, subjects, regions, dev, verbose):
-    """RSA on NSD Synthetic: reuse best layers from NSD, score on synthetic stimuli.
-
-    Skips layer selection entirely — looks up the best layer per (subject, region)
-    from the regular NSD evaluation in results.db. Then extracts those layers
-    without SRP on the 220 synthetic test stimuli and computes RDM correlations.
-    """
-    method = cfg.get("compare_method", "spearman").lower()
-    bootstrap = cfg.get("bootstrap", False)
-    n_bootstrap = cfg.get("n_bootstrap", 1000)
-
-    # Reuse best layers from regular NSD evaluation
+    """RSA on NSD Synthetic: reuse best layers from NSD, score on synthetic stimuli."""
     best_layers = _lookup_nsd_best_layers(cfg, subjects, regions)
     if verbose:
         for region in regions:
             for subj in subjects:
-                rprint(f"    {region} subj {subj}: reusing layer {best_layers[region][subj]} from NSD", style="info")
+                rprint(
+                    f"    {region} subj {subj}: reusing layer "
+                    f"{best_layers[region][subj]} from NSD",
+                    style="info",
+                )
 
-    # Load synthetic test data only (220 stimuli)
     test_data = load_nsd_synthetic_test_data(cfg, subjects=subjects, regions=regions)
-    test_ids = test_data["test_ids"]
-    stimuli = test_data["stimuli"]
-    neural = test_data["neural"]
-    rprint(f"  Loaded {len(test_ids)} synthetic test stimuli", style="success")
+    rprint(f"  Loaded {len(test_data['test_ids'])} synthetic test stimuli", style="success")
 
-    # Load model, extract unique best layers without SRP
     model = mutils.load_model(cfg, dev, verbose=verbose)
     model = mutils.configure_feature_extractor(cfg, model, verbose=verbose)
 
-    transform = _get_eval_transform(cfg)
-    dl_test = _make_loader(stimuli, transform, cfg.batchsize, cfg.num_workers)
-
-    unique_layers = {l for rl in best_layers.values() for l in rl.values()}
-    pca_k = cfg.get("pca_k", 1)
-    model_rdms = {}
-    for layer in sorted(unique_layers):
-        rprint(f"  Extracting {layer} without SRP...", style="info")
-        exact_acts, _ = mutils.extract_single_layer(model, dl_test, dev, layer, test_ids)
-        if cfg.get("reconstruct_from_pcs"):
-            exact_acts = reconstruct_from_pcs({layer: exact_acts}, pca_k)[layer]
-        flat = exact_acts.flatten(start_dim=1) if exact_acts.ndim > 2 else exact_acts
-        model_rdms[layer] = compute_rdm(flat)
-        del exact_acts
-
-    del model, dl_test
-    torch.cuda.empty_cache()
-
-    # Score per (region, subject)
-    all_results = []
-    for region in regions:
-        rprint(f"\n  -- Region: {region} --", style="info")
-        for subj in subjects:
-            best_layer = best_layers[region][subj]
-            test_neural = neural[region][subj]
-            responses = [test_neural[sid] for sid in test_ids]
-            neural_tensor = torch.as_tensor(np.stack(responses).squeeze(), dtype=torch.float32)
-            neural_rdm = compute_rdm(neural_tensor)
-
-            point_estimate = compute_rdm_correlation(
-                model_rdms[best_layer], neural_rdm, correlation=method.capitalize()
-            )
-
-            ci_low, ci_high = None, None
-            bootstrap_scores_list = None
-            if bootstrap:
-                rng = np.random.RandomState(42)
-                n_test = neural_rdm.size(0)
-                n_sub = int(n_test * 0.9)
-                bootstrap_scores = np.empty(n_bootstrap, dtype=np.float64)
-                for i in range(n_bootstrap):
-                    idx = torch.from_numpy(
-                        rng.choice(n_test, size=n_sub, replace=False)
-                    ).to(neural_rdm.device)
-                    m = model_rdms[best_layer][idx][:, idx]
-                    n = neural_rdm[idx][:, idx]
-                    bootstrap_scores[i] = compute_rdm_correlation(
-                        m, n, correlation=method.capitalize()
-                    )
-                ci_low = float(np.percentile(bootstrap_scores, 2.5))
-                ci_high = float(np.percentile(bootstrap_scores, 97.5))
-                bootstrap_scores_list = bootstrap_scores.tolist()
-
-            msg = f"    subj {subj} | {method.capitalize():<10}| {best_layer} = {point_estimate:.4f}"
-            if bootstrap:
-                msg += f"  [95% CI: {ci_low:.4f}, {ci_high:.4f}]"
-            rprint(msg, style="highlight")
-
-            result = {
-                "layer": best_layer,
-                "compare_method": method,
-                "score": point_estimate,
-                "ci_low": ci_low,
-                "ci_high": ci_high,
-                "analysis": "rsa",
-                "layer_selection_scores": [],
-            }
-            if bootstrap_scores_list is not None:
-                result["bootstrap_scores"] = bootstrap_scores_list
-
-            results_df = pd.DataFrame([result])
-            if cfg.get("log_expdata"):
-                save_cfg = OmegaConf.merge(cfg, {"subject_idx": subj, "region": region})
-                save_results(results_df, save_cfg)
-
-            all_results.append(result)
-
-    return pd.DataFrame(all_results)
+    return _reextract_and_score(
+        model, cfg, dev,
+        test_data["stimuli"], test_data["test_ids"], test_data["neural"],
+        best_layers, regions, subjects, verbose=verbose,
+    )
 
 
 # ──────────────── encoding score helper ─────────────────
@@ -620,6 +553,9 @@ def _eval_encoding(cfg, model, acts, ids, all_data, subjects, regions, verbose):
                 save_cfg = OmegaConf.merge(cfg, {"subject_idx": subj, "region": region})
                 save_results(results_df, save_cfg)
 
+            for r in alignment_scores:
+                r["region"] = region
+                r["subject_idx"] = subj
             all_results.extend(alignment_scores)
 
     # Free bulk activations and model

@@ -129,6 +129,74 @@ def compute_rdm_correlation(
         return float("nan")
 
 
+def score_rdm_pair(
+    model_rdm: torch.Tensor,
+    neural_rdm: torch.Tensor,
+    method: str,
+    bootstrap: bool = False,
+    n_bootstrap: int = 1000,
+    seed: int = 42,
+    show_progress: bool = False,
+) -> tuple:
+    """Score a model-RDM vs neural-RDM pair with optional bootstrap CIs.
+
+    Args:
+        model_rdm: (n, n) model RDM.
+        neural_rdm: (n, n) neural RDM.
+        method: Correlation method ("spearman" or "kendall").
+        bootstrap: Whether to compute 95% CIs via 90% subsampling.
+        n_bootstrap: Number of bootstrap iterations.
+        seed: Random seed for bootstrap.
+        show_progress: Show rich progress bar during bootstrap.
+
+    Returns:
+        (score, ci_low, ci_high, bootstrap_scores_list).
+        ci_low/ci_high/bootstrap_scores_list are None when bootstrap=False.
+    """
+    score = compute_rdm_correlation(
+        model_rdm, neural_rdm, correlation=method.capitalize()
+    )
+
+    ci_low, ci_high, bootstrap_scores_list = None, None, None
+    if bootstrap:
+        rng = np.random.RandomState(seed)
+        n = neural_rdm.size(0)
+        n_sub = int(n * 0.9)
+        scores = np.empty(n_bootstrap, dtype=np.float64)
+
+        if show_progress:
+            progress = Progress(
+                TextColumn("  Bootstrap             "),
+                BarColumn(),
+                MofNCompleteColumn(),
+                TextColumn("iters"),
+                TimeElapsedColumn(),
+                console=console,
+            )
+            progress.start()
+            task = progress.add_task("bootstrap", total=n_bootstrap)
+
+        for i in range(n_bootstrap):
+            idx = torch.from_numpy(
+                rng.choice(n, size=n_sub, replace=False)
+            ).to(neural_rdm.device)
+            scores[i] = compute_rdm_correlation(
+                model_rdm[idx][:, idx], neural_rdm[idx][:, idx],
+                correlation=method.capitalize(),
+            )
+            if show_progress:
+                progress.advance(task)
+
+        if show_progress:
+            progress.stop()
+
+        ci_low = float(np.percentile(scores, 2.5))
+        ci_high = float(np.percentile(scores, 97.5))
+        bootstrap_scores_list = scores.tolist()
+
+    return score, ci_low, ci_high, bootstrap_scores_list
+
+
 def compute_rsa(
     cfg: Dict,
     selection: "AlignmentData",
@@ -220,45 +288,15 @@ def compute_rsa(
     test_neural_rdm = compute_rdm(evaluation.neural)
     test_model_rdm = compute_rdm(test_acts_flat)
 
-    point_estimate = compute_rdm_correlation(
-        test_model_rdm, test_neural_rdm, correlation=method.capitalize()
+    # ── 3. Score + optional bootstrap ────────────────────────────
+    point_estimate, ci_low, ci_high, bootstrap_scores_list = score_rdm_pair(
+        test_model_rdm, test_neural_rdm, method,
+        bootstrap=bootstrap, n_bootstrap=n_bootstrap, seed=seed,
+        show_progress=True,
     )
+
     if verbose:
         rprint(f"  Test RSA = {point_estimate:.4f}", style="highlight")
-
-    # ── 3. Bootstrap on the test set (optional) ──────────────────
-    ci_low, ci_high = None, None
-    bootstrap_scores_list = None
-
-    if bootstrap:
-        n_subsample = int(n_test * 0.9)
-        bootstrap_scores = np.empty(n_bootstrap, dtype=np.float64)
-
-        progress = Progress(
-            TextColumn("  Bootstrap             "),
-            BarColumn(),
-            MofNCompleteColumn(),
-            TextColumn("iters"),
-            TimeElapsedColumn(),
-            console=console,
-        )
-        progress.start()
-        boot_task = progress.add_task("bootstrap", total=n_bootstrap)
-        for i in range(n_bootstrap):
-            boot_idx = torch.from_numpy(
-                rng.choice(n_test, size=n_subsample, replace=False)
-            ).to(test_neural_rdm.device)
-            rdm_brain_boot = test_neural_rdm[boot_idx][:, boot_idx]
-            rdm_model_boot = test_model_rdm[boot_idx][:, boot_idx]
-            bootstrap_scores[i] = compute_rdm_correlation(
-                rdm_model_boot, rdm_brain_boot, correlation=method.capitalize()
-            )
-            progress.advance(boot_task)
-        progress.stop()
-
-        ci_low = float(np.percentile(bootstrap_scores, 2.5))
-        ci_high = float(np.percentile(bootstrap_scores, 97.5))
-        bootstrap_scores_list = bootstrap_scores.tolist()
 
     rprint("")
     msg = f"  {method.capitalize():<10}| {best_layer} = {point_estimate:.4f}"
