@@ -680,23 +680,9 @@ class ConfigVerifier:
                     )
 
         if self.cfg.neural_dataset.lower() == "cusack":
-            # Normalize subject_idx (age groups) to list
-            subj = self.cfg.get("subject_idx", ["2month", "9month"])
-            if isinstance(subj, str):
-                subj = [subj]
-            self.cfg.subject_idx = list(subj)
-            valid_age_groups = {"2month", "9month"}
-            for s in self.cfg.subject_idx:
-                if s not in valid_age_groups:
-                    raise AssertionError(
-                        f"Invalid age group for Cusack: {s}. Must be one of {valid_age_groups}"
-                    )
-
-            # Normalize region to list
-            region = self.cfg.get("region", ["evc", "vvc"])
-            if isinstance(region, str):
-                region = [region]
-            self.cfg.region = list(region)
+            # Cusack always evaluates both age groups on evc + vvc
+            self.cfg.subject_idx = ["2month", "9month"]
+            self.cfg.region = ["evc", "vvc"]
 
         compare_method = self.cfg.get("compare_method", "spearman").lower()
         if compare_method not in self.VALID_COMPARE_METHODS:
