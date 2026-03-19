@@ -709,3 +709,221 @@ class TestEvalConfigHandling:
         for model_name, nodes in TORCHVISION_RETURN_NODES.items():
             assert nodes is not None, f"{model_name} has None return_nodes"
             assert len(nodes) > 0, f"{model_name} has empty return_nodes"
+
+
+# ═══════════════════════════════════════════════════════════════
+# 6. REGRESSION TESTS — RUN PIPELINE, COMPARE TO HARDCODED VALUES
+# ═══════════════════════════════════════════════════════════════
+
+def _check_nsd_prerequisites():
+    """Skip if GPU or checkpoint not available."""
+    if not torch.cuda.is_available():
+        pytest.skip("No GPU available")
+    checkpoint = "/data/ymehta3/default/cfg1000a/checkpoint_epoch_20.pth"
+    if not os.path.exists(checkpoint):
+        pytest.skip(f"Checkpoint not found: {checkpoint}")
+
+
+def _run_nsd_eval(analysis):
+    """Run the full NSD eval pipeline (8 subjects × 2 regions) and return results DataFrame.
+
+    Uses log_expdata=false so the DB is never modified.
+    """
+    _check_nsd_prerequisites()
+    from dotenv import load_dotenv
+    load_dotenv()
+    import visreps.utils as utils
+    import visreps.evals as evals
+
+    overrides = [
+        "mode=eval", "cfg_id=1000", "seed=1",
+        "checkpoint_model=checkpoint_epoch_20.pth",
+        "neural_dataset=nsd", f"analysis={analysis}",
+        "subject_idx=[0,1,2,3,4,5,6,7]",
+        'region=["early visual stream","ventral visual stream"]',
+        "log_expdata=false",
+        "bootstrap=true", "n_bootstrap=1000",
+        "verbose=false", "batchsize=64", "num_workers=4",
+    ]
+    if analysis == "rsa":
+        overrides.append("compare_method=spearman")
+
+    cfg = utils.load_config("configs/eval/base.json", overrides)
+    cfg = utils.validate_config(cfg)
+
+    try:
+        return evals.eval(cfg)
+    except torch.cuda.OutOfMemoryError:
+        torch.cuda.empty_cache()
+        pytest.skip("CUDA OOM — need more GPU memory for NSD eval")
+
+
+# Module-scoped fixtures: run the pipeline ONCE, share across all tests
+@pytest.fixture(scope="module")
+def nsd_rsa_results():
+    """Run full NSD RSA eval once for all regression tests."""
+    return _run_nsd_eval("rsa")
+
+
+@pytest.fixture(scope="module")
+def nsd_encoding_results():
+    """Run full NSD encoding score eval once for all regression tests."""
+    return _run_nsd_eval("encoding_score")
+
+
+class TestRegressionNSD:
+    """Regression tests that run the actual eval pipeline and compare to hardcoded values.
+
+    These run CustomCNN (cfg1000, seed=1, epoch=20) through the full pipeline:
+    model loading → feature extraction → SRP → alignment → RSA/encoding → bootstrap.
+    Results are compared against known-good values extracted from results.db.
+    If any pipeline change silently alters scores, these tests catch it BEFORE
+    new results are written to the database.
+
+    Requires: GPU, checkpoint at /data/ymehta3/default/cfg1000a/,
+    and NSD data at the configured paths.
+    """
+
+    # ── Reference values (from results.db, verified correct) ──
+
+    # RSA (Spearman), per-subject: best layer + score + 95% CI
+    RSA_REFERENCE = {
+        "early visual stream": {
+            0: {"layer": "conv4_post", "score": 0.283807, "ci_low": 0.277237, "ci_high": 0.290410},
+            1: {"layer": "conv4_post", "score": 0.257360, "ci_low": 0.250987, "ci_high": 0.263742},
+            2: {"layer": "conv4_post", "score": 0.185048, "ci_low": 0.178360, "ci_high": 0.192240},
+            3: {"layer": "conv4_post", "score": 0.221631, "ci_low": 0.214673, "ci_high": 0.228809},
+            4: {"layer": "conv4_post", "score": 0.208494, "ci_low": 0.201636, "ci_high": 0.215888},
+            5: {"layer": "conv4_post", "score": 0.197265, "ci_low": 0.191166, "ci_high": 0.203559},
+            6: {"layer": "conv4_post", "score": 0.172151, "ci_low": 0.166054, "ci_high": 0.178110},
+            7: {"layer": "conv4_post", "score": 0.164997, "ci_low": 0.159017, "ci_high": 0.171145},
+        },
+        "ventral visual stream": {
+            0: {"layer": "fc1_pre", "score": 0.271445, "ci_low": 0.265292, "ci_high": 0.278051},
+            1: {"layer": "fc1_pre", "score": 0.289824, "ci_low": 0.282874, "ci_high": 0.297340},
+            2: {"layer": "fc1_pre", "score": 0.234739, "ci_low": 0.227607, "ci_high": 0.241645},
+            3: {"layer": "fc1_pre", "score": 0.210587, "ci_low": 0.204193, "ci_high": 0.217172},
+            4: {"layer": "fc1_pre", "score": 0.285522, "ci_low": 0.278116, "ci_high": 0.293158},
+            5: {"layer": "fc1_pre", "score": 0.207548, "ci_low": 0.200576, "ci_high": 0.213844},
+            6: {"layer": "fc1_pre", "score": 0.234645, "ci_low": 0.227940, "ci_high": 0.240810},
+            7: {"layer": "fc1_pre", "score": 0.165668, "ci_low": 0.159732, "ci_high": 0.171415},
+        },
+    }
+
+    # Encoding score (Pearson r), per-subject: best layer + score + 95% CI
+    ENCODING_REFERENCE = {
+        "early visual stream": {
+            0: {"layer": "conv4_pre", "score": 0.358053, "ci_low": 0.354905, "ci_high": 0.360814},
+            1: {"layer": "conv4_pre", "score": 0.361185, "ci_low": 0.358330, "ci_high": 0.363798},
+            2: {"layer": "conv4_pre", "score": 0.286033, "ci_low": 0.281982, "ci_high": 0.289617},
+            3: {"layer": "conv4_pre", "score": 0.284923, "ci_low": 0.281310, "ci_high": 0.288799},
+            4: {"layer": "fc1_pre",   "score": 0.373636, "ci_low": 0.370035, "ci_high": 0.377171},
+            5: {"layer": "conv4_pre", "score": 0.295879, "ci_low": 0.291526, "ci_high": 0.299653},
+            6: {"layer": "conv4_pre", "score": 0.272785, "ci_low": 0.269039, "ci_high": 0.276719},
+            7: {"layer": "conv4_pre", "score": 0.217214, "ci_low": 0.213466, "ci_high": 0.221238},
+        },
+        "ventral visual stream": {
+            0: {"layer": "fc2_post", "score": 0.201005, "ci_low": 0.198956, "ci_high": 0.203083},
+            1: {"layer": "fc2_post", "score": 0.239025, "ci_low": 0.236436, "ci_high": 0.241524},
+            2: {"layer": "fc1_pre",  "score": 0.167504, "ci_low": 0.164944, "ci_high": 0.169979},
+            3: {"layer": "fc2_post", "score": 0.176737, "ci_low": 0.174192, "ci_high": 0.179441},
+            4: {"layer": "fc2_post", "score": 0.241251, "ci_low": 0.238894, "ci_high": 0.243437},
+            5: {"layer": "fc2_post", "score": 0.156355, "ci_low": 0.153771, "ci_high": 0.158831},
+            6: {"layer": "fc2_post", "score": 0.177915, "ci_low": 0.175671, "ci_high": 0.180101},
+            7: {"layer": "fc2_post", "score": 0.116887, "ci_low": 0.114250, "ci_high": 0.119764},
+        },
+    }
+
+    # ── Helper to look up a result row ──────────────────────
+
+    @staticmethod
+    def _find_result(results_df, region, subj, analysis):
+        """Find the result row for a specific (region, subject) in the pipeline output."""
+        mask = (
+            (results_df["region"] == region)
+            & (results_df["subject_idx"].astype(str) == str(subj))
+        )
+        matches = results_df[mask]
+        assert len(matches) == 1, (
+            f"Expected 1 result for {region} subj {subj} ({analysis}), got {len(matches)}"
+        )
+        return matches.iloc[0]
+
+    # ── RSA regression tests ──────────────────────────────
+
+    @pytest.mark.slow
+    @pytest.mark.parametrize("region", ["early visual stream", "ventral visual stream"])
+    @pytest.mark.parametrize("subj", list(range(8)))
+    def test_rsa_result(self, nsd_rsa_results, region, subj):
+        """Fresh RSA layer, score, and CIs should match hardcoded reference."""
+        ref = self.RSA_REFERENCE[region][subj]
+        row = self._find_result(nsd_rsa_results, region, subj, "rsa")
+
+        assert row["layer"] == ref["layer"], (
+            f"Best layer changed: expected {ref['layer']}, got {row['layer']} "
+            f"(region={region}, subj={subj})"
+        )
+        assert row["score"] == pytest.approx(ref["score"], abs=1e-4), (
+            f"RSA score changed for {region} subj {subj}: "
+            f"expected {ref['score']:.6f}, got {row['score']:.6f}"
+        )
+        assert row["ci_low"] == pytest.approx(ref["ci_low"], abs=1e-4), (
+            f"RSA ci_low changed for {region} subj {subj}: "
+            f"expected {ref['ci_low']:.6f}, got {row['ci_low']:.6f}"
+        )
+        assert row["ci_high"] == pytest.approx(ref["ci_high"], abs=1e-4), (
+            f"RSA ci_high changed for {region} subj {subj}: "
+            f"expected {ref['ci_high']:.6f}, got {row['ci_high']:.6f}"
+        )
+
+    @pytest.mark.slow
+    def test_rsa_layer_selection_scores(self, nsd_rsa_results):
+        """Layer selection scores should be present and have expected top layer."""
+        row = self._find_result(nsd_rsa_results, "ventral visual stream", 0, "rsa")
+        ls = row.get("layer_selection_scores")
+        if ls is not None:
+            top_layer = max(ls, key=lambda x: x["score"])["layer"]
+            assert top_layer == "fc1_pre", f"Top selection layer: expected fc1_pre, got {top_layer}"
+
+    # ── Encoding regression tests ──────────────────────────
+
+    @pytest.mark.slow
+    @pytest.mark.parametrize("region", ["early visual stream", "ventral visual stream"])
+    @pytest.mark.parametrize("subj", list(range(8)))
+    def test_encoding_result(self, nsd_encoding_results, region, subj):
+        """Fresh encoding layer, score, and CIs should match hardcoded reference."""
+        ref = self.ENCODING_REFERENCE[region][subj]
+        row = self._find_result(nsd_encoding_results, region, subj, "encoding_score")
+
+        assert row["layer"] == ref["layer"], (
+            f"Best layer changed: expected {ref['layer']}, got {row['layer']} "
+            f"(region={region}, subj={subj})"
+        )
+        assert row["score"] == pytest.approx(ref["score"], abs=1e-4), (
+            f"Encoding score changed for {region} subj {subj}: "
+            f"expected {ref['score']:.6f}, got {row['score']:.6f}"
+        )
+        assert row["ci_low"] == pytest.approx(ref["ci_low"], abs=1e-4), (
+            f"Encoding ci_low changed for {region} subj {subj}: "
+            f"expected {ref['ci_low']:.6f}, got {row['ci_low']:.6f}"
+        )
+        assert row["ci_high"] == pytest.approx(ref["ci_high"], abs=1e-4), (
+            f"Encoding ci_high changed for {region} subj {subj}: "
+            f"expected {ref['ci_high']:.6f}, got {row['ci_high']:.6f}"
+        )
+
+    # ── Cross-analysis structural invariant ──────────────────
+
+    @pytest.mark.slow
+    def test_encoding_ci_narrower_than_rsa(self, nsd_rsa_results, nsd_encoding_results):
+        """Encoding CIs should be narrower than RSA CIs (more stable metric)."""
+        for region in ["early visual stream", "ventral visual stream"]:
+            for subj in range(8):
+                rsa = self._find_result(nsd_rsa_results, region, subj, "rsa")
+                enc = self._find_result(nsd_encoding_results, region, subj, "encoding_score")
+                rsa_width = rsa["ci_high"] - rsa["ci_low"]
+                enc_width = enc["ci_high"] - enc["ci_low"]
+                assert enc_width < rsa_width, (
+                    f"Encoding CI wider than RSA for {region} subj {subj}: "
+                    f"{enc_width:.6f} >= {rsa_width:.6f}"
+                )
