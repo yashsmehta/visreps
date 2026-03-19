@@ -1,14 +1,14 @@
 {
-  "neural_dataset": "things-behavior",
+  "neural_dataset": "cusack",
   "reconstruct_from_pcs": false,
   "pca_k": 1,
-  "load_model_from": "checkpoint",
+  "load_model_from": "torchvision",
   "seed": 1,
   "cfg_id": 8,
   "checkpoint":
   {
-    "checkpoint_dir": "/data/ymehta3/resnet50_clip_pca",
-    "checkpoint_model": "checkpoint_epoch_70.pth"
+    "checkpoint_dir": "/data/ymehta3/clip_pca",
+    "checkpoint_model": "checkpoint_epoch_20.pth"
   },
   "torchvision":
   {
@@ -23,7 +23,7 @@
   "bootstrap": false,
   "batchsize": 128,
   "num_workers": 32,
-  "log_expdata": true,
+  "log_expdata": false,
   "verbose": false,
   "notes": ""
 }
