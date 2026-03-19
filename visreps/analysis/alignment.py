@@ -77,12 +77,14 @@ def compute_traintest_alignment(
     test: AlignmentData,
     verbose: bool = False,
     re_extract_fn=None,
+    quiet: bool = False,
 ) -> List[dict]:
     """Dispatch to RSA or encoding score based on cfg.analysis.
 
     Args:
         re_extract_fn: Optional callback ``(layer_name, stimulus_ids=None) -> (tensor, ids)``
             for re-extracting a single layer without SRP. Passed to RSA only.
+        quiet: If True, suppress per-result summary prints (caller handles printing).
     """
     analysis = cfg.get("analysis", "rsa").lower()
     bootstrap = cfg.get("bootstrap", True)
@@ -101,6 +103,7 @@ def compute_traintest_alignment(
             n_select=n_select, bootstrap=bootstrap,
             n_bootstrap=n_bootstrap, verbose=verbose,
             re_extract_fn=re_extract_fn,
+            quiet=quiet,
         )
     elif analysis == "encoding_score":
         pca_k = cfg.get("pca_k", 1) if cfg.get("reconstruct_from_pcs") else None
@@ -109,6 +112,7 @@ def compute_traintest_alignment(
             bootstrap=bootstrap, n_bootstrap=n_bootstrap,
             verbose=verbose,
             reconstruct_pca_k=pca_k,
+            quiet=quiet,
         )
     else:
         raise ValueError(f"Unknown analysis method: {analysis}")

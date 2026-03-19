@@ -207,6 +207,7 @@ def compute_rsa(
     seed: int = 42,
     verbose: bool = False,
     re_extract_fn=None,
+    quiet: bool = False,
 ) -> List[Dict]:
     """Train/test RSA: select best layer on train data, evaluate on the test set.
 
@@ -298,11 +299,12 @@ def compute_rsa(
     if verbose:
         rprint(f"  Test RSA = {point_estimate:.4f}", style="highlight")
 
-    rprint("")
-    msg = f"  {method.capitalize():<10}| {best_layer} = {point_estimate:.4f}"
-    if bootstrap:
-        msg += f"  [95% CI: {ci_low:.4f}, {ci_high:.4f}]"
-    rprint(msg, style="highlight")
+    if not quiet:
+        rprint("")
+        msg = f"  {best_layer:<7} {point_estimate:.4f}"
+        if bootstrap:
+            msg += f"  [{ci_low:.4f}, {ci_high:.4f}]"
+        rprint(msg, style="highlight")
 
     result = {
         "layer": best_layer,
