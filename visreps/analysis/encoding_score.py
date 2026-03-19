@@ -70,6 +70,7 @@ def compute_encoding_score(
     seed: int = 42,
     verbose: bool = False,
     reconstruct_pca_k: int | None = None,
+    quiet: bool = False,
 ) -> List[Dict]:
     """Train/test encoding score: select best layer on train, evaluate on test.
 
@@ -239,11 +240,12 @@ def compute_encoding_score(
         ci_high = float(np.percentile(bootstrap_scores, 97.5))
         bootstrap_scores_list = bootstrap_scores.tolist()
 
-    rprint("")
-    msg = f"  Encoding  | {best_layer} = {point_estimate:.4f}"
-    if bootstrap:
-        msg += f"  [95% CI: {ci_low:.4f}, {ci_high:.4f}]"
-    rprint(msg, style="highlight")
+    if not quiet:
+        rprint("")
+        msg = f"  {best_layer:<7} {point_estimate:.4f}"
+        if bootstrap:
+            msg += f"  [{ci_low:.4f}, {ci_high:.4f}]"
+        rprint(msg, style="highlight")
 
     result = {
         "layer": best_layer,
