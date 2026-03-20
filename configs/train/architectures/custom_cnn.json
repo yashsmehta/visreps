@@ -11,6 +11,7 @@
       "batchnorm": true
     }
   },
+  "label_smoothing": 0.0,
   "optimizer": "adamw",
   "learning_rate": 0.0005,
   "weight_decay": 0.001,
@@ -18,6 +19,5 @@
   "lr_scheduler": "cosineannealinglr",
   "num_epochs": 20,
   "warmup_epochs": 2,
-  "use_amp": true,
-  "augment_type": "mild"
+  "use_amp": true
 }

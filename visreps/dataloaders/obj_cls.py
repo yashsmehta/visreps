@@ -290,7 +290,7 @@ def prepare_imgnet_data(cfg, pca_labels, shuffle, preprocess, train_test_split):
 
     for split in splits_to_load:
         augment = cfg.get("data_augment", False) and split == "train" and shuffle and preprocess
-        augment_type = cfg.get("augment_type", "standard")
+        augment_type = "mild" if cfg.get("model_class") == "custom_model" else "standard"
         tfms = get_transform(ds_stats="imgnet", data_augment=augment, image_size=224,
                              preprocess=preprocess, augment_type=augment_type)
         
