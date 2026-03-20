@@ -1,0 +1,16 @@
+{
+  "model_class": "standard_model",
+  "standard_model": {
+    "model_name": "ConvNeXt_Base",
+    "pretrained_dataset": "none"
+  },
+  "optimizer": "adamw",
+  "learning_rate": 0.0003,
+  "weight_decay": 0.05,
+  "grad_clip": 0,
+  "lr_scheduler": "cosineannealinglr",
+  "label_smoothing": 0.1,
+  "num_epochs": 60,
+  "warmup_epochs": 5,
+  "use_amp": true
+}

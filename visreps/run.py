@@ -10,7 +10,8 @@ import visreps.utils as utils
 def main():
     parser = argparse.ArgumentParser(description="Training and evaluation script")
     parser.add_argument("--mode", choices=["train", "eval"], default="eval")
-    parser.add_argument("--config", default=None)
+    parser.add_argument("--config", nargs="+", default=None,
+                        help="Config file(s), merged left-to-right (e.g. base.json arch.json)")
     parser.add_argument("--override", nargs="*", default=[])
     parser.add_argument("--verbose", "-v", action="store_true")
 
@@ -20,7 +21,7 @@ def main():
         overrides.append("verbose=true")
     overrides.append(f"mode={args.mode}")
     cfg = utils.load_config(
-        args.config or f"configs/{args.mode}/base.json", overrides
+        args.config or [f"configs/{args.mode}/base.json"], overrides
     )
     cfg = utils.validate_config(cfg)
 

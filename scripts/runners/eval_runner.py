@@ -28,7 +28,7 @@ class EvalRunner(ExperimentRunner):
 
 
 GRID_DIR = "configs/grids"
-VALID_DATASETS = ["nsd", "tvsd", "things", "nsd_synthetic"]
+VALID_DATASETS = ["nsd", "tvsd", "things", "nsd_synthetic", "cusack"]
 
 
 def main():

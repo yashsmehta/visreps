@@ -15,12 +15,16 @@ class ExperimentRunner:
 
     def __init__(
         self,
-        base_config: str,
+        base_config,
         param_grids: List[Dict[str, Any]],
         mode: str,
         extra_overrides: Optional[Dict[str, Any]] = None
     ):
-        self.base_config = base_config
+        # Accept a single path or list of paths
+        if isinstance(base_config, str):
+            self.base_config = [base_config]
+        else:
+            self.base_config = list(base_config)
         self.param_grids = param_grids
         self.mode = mode
         self.extra_overrides = extra_overrides or {}
@@ -99,7 +103,7 @@ class ExperimentRunner:
             "-m",
             "visreps.run",
             "--config",
-            self.base_config,
+        ] + self.base_config + [
             "--override",
         ] + overrides
 

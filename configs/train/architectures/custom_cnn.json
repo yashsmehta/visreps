@@ -1,0 +1,23 @@
+{
+  "model_class": "custom_model",
+  "custom_model": {
+    "model_name": "CustomCNN",
+    "arch": {
+      "nonlinearity": "relu",
+      "conv_trainable": "11111",
+      "fc_trainable": "111",
+      "pooling_type": "max",
+      "dropout": 0.5,
+      "batchnorm": true
+    }
+  },
+  "optimizer": "adamw",
+  "learning_rate": 0.0005,
+  "weight_decay": 0.001,
+  "grad_clip": 1.0,
+  "lr_scheduler": "cosineannealinglr",
+  "num_epochs": 20,
+  "warmup_epochs": 2,
+  "use_amp": true,
+  "augment_type": "mild"
+}
