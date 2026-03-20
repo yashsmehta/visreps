@@ -160,7 +160,7 @@ def main():
     parser = argparse.ArgumentParser(description="Extract features from a trained model.")
     # --- Argument Parsing (Keep as is) ---
     parser.add_argument('--dataset', type=str, required=False, default='imagenet-mini-50',
-                        choices=['tiny-imagenet', 'imagenet', 'imagenet-mini-50'],
+                        choices=['imagenet', 'imagenet-mini-50'],
                         help='Dataset to extract features from (default: imagenet-mini-50)')
     parser.add_argument('--pretrained_dataset', type=str, default='imagenet1k', choices=['imagenet1k', 'none'],
                         help="Specify weights source for standard AlexNet: 'imagenet1k' (pretrained) or 'none' (random). Used only if load_from is standard.")
@@ -221,8 +221,7 @@ def main():
     output_filename = None
     base_output_dir = None
 
-    if args.dataset == "tiny-imagenet": num_classes = 200
-    elif args.dataset in ["imagenet", "imagenet-mini-50"]: num_classes = 1000
+    if args.dataset in ["imagenet", "imagenet-mini-50"]: num_classes = 1000
     else: raise ValueError(f"[Error] Unsupported dataset for class number determination: {args.dataset}")
 
     if args.load_from == 'standard':

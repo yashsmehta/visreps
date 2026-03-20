@@ -9,22 +9,17 @@ _NORM_TYPES = (nn.BatchNorm2d, nn.BatchNorm1d, nn.GroupNorm)
 from visreps.models.nn_ops import GN_NUM_GROUPS
 
 
-class BaseCNN(nn.Module):
-    """Base class for custom CNN architectures."""
+class CustomCNN(nn.Module):
+    """AlexNet-style CNN for ImageNet (224x224 inputs)."""
 
-    def __init__(
-        self,
-        num_classes=1000,
-        trainable_layers=None,
-        dropout=0.5,
-        pooling_type="max",
-        norm_type="batch",
-    ):
+    def __init__(self, num_classes=1000, trainable_layers=None, dropout=0.5,
+                 pooling_type="max", norm_type="batch", conv_groups=2):
         super().__init__()
         self.num_classes = num_classes
         self.dropout = dropout
         self.pooling_type = pooling_type
         self.norm_type = norm_type
+        self.conv_groups = conv_groups
 
         self._build_architecture()
 
@@ -34,7 +29,46 @@ class BaseCNN(nn.Module):
         self._initialize_weights()
 
     def _build_architecture(self):
-        raise NotImplementedError
+        g = self.conv_groups
+        self.features = nn.Sequential(
+            # conv1: 224 -> 55 -> 27 (after pool)
+            nn.Conv2d(3, 96, kernel_size=11, stride=4, padding=2, bias=False),
+            self._norm(96),
+            nn.ReLU(inplace=True),
+            self._pool(kernel_size=3, stride=2),
+            # conv2: 27 -> 27 -> 13 (after pool)
+            nn.Conv2d(96, 256, kernel_size=5, padding=2, groups=g, bias=False),
+            self._norm(256),
+            nn.ReLU(inplace=True),
+            self._pool(kernel_size=3, stride=2),
+            # conv3: 13 -> 13
+            nn.Conv2d(256, 384, kernel_size=3, padding=1, bias=False),
+            self._norm(384),
+            nn.ReLU(inplace=True),
+            # conv4: 13 -> 13
+            nn.Conv2d(384, 384, kernel_size=3, padding=1, groups=g, bias=False),
+            self._norm(384),
+            nn.ReLU(inplace=True),
+            # conv5: 13 -> 13 -> 6 (after pool)
+            nn.Conv2d(384, 256, kernel_size=3, padding=1, groups=g, bias=False),
+            self._norm(256),
+            nn.ReLU(inplace=True),
+            self._pool(kernel_size=3, stride=2),
+        )
+
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((3, 3))
+
+        self.classifier = nn.Sequential(
+            nn.Dropout(p=self.dropout),
+            nn.Linear(256 * 3 * 3, 4096),
+            self._norm(4096, spatial=False),
+            nn.ReLU(inplace=True),
+            nn.Dropout(p=self.dropout),
+            nn.Linear(4096, 4096),
+            self._norm(4096, spatial=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(4096, self.num_classes),
+        )
 
     def _pool(self, kernel_size=3, stride=2):
         if self.pooling_type == "max":
@@ -114,100 +148,3 @@ class BaseCNN(nn.Module):
         x = torch.flatten(x, 1)
         x = self.classifier(x)
         return x
-
-
-class TinyCustomCNN(BaseCNN):
-    """CNN for Tiny ImageNet (64x64 inputs)."""
-
-    def __init__(self, num_classes=200, trainable_layers=None, dropout=0.3,
-                 pooling_type="max", norm_type="batch"):
-        super().__init__(num_classes, trainable_layers, dropout, pooling_type, norm_type)
-
-    def _build_architecture(self):
-        self.features = nn.Sequential(
-            # conv1: 64 -> 32 -> 16 (after pool)
-            nn.Conv2d(3, 64, kernel_size=5, stride=2, padding=2, bias=False),
-            self._norm(64),
-            nn.ReLU(inplace=True),
-            self._pool(kernel_size=2, stride=2),
-            # conv2: 16 -> 16
-            nn.Conv2d(64, 128, kernel_size=3, padding=1, bias=False),
-            self._norm(128),
-            nn.ReLU(inplace=True),
-            # conv3: 16 -> 16 -> 8 (after pool)
-            nn.Conv2d(128, 256, kernel_size=3, padding=1, bias=False),
-            self._norm(256),
-            nn.ReLU(inplace=True),
-            self._pool(kernel_size=2, stride=2),
-            # conv4: 8 -> 8
-            nn.Conv2d(256, 512, kernel_size=3, padding=1, bias=False),
-            self._norm(512),
-            nn.ReLU(inplace=True),
-            # conv5: 8 -> 8
-            nn.Conv2d(512, 512, kernel_size=3, padding=1, bias=False),
-            self._norm(512),
-            nn.ReLU(inplace=True),
-        )
-
-        self.adaptive_pool = nn.AdaptiveAvgPool2d((4, 4))
-
-        self.classifier = nn.Sequential(
-            nn.Dropout(p=self.dropout),
-            nn.Linear(512 * 4 * 4, 2048),
-            self._norm(2048, spatial=False),
-            nn.ReLU(inplace=True),
-            nn.Dropout(p=self.dropout),
-            nn.Linear(2048, 2048),
-            self._norm(2048, spatial=False),
-            nn.ReLU(inplace=True),
-            nn.Linear(2048, self.num_classes),
-        )
-
-
-class CustomCNN(BaseCNN):
-    """AlexNet-style CNN for ImageNet (224x224 inputs)."""
-
-    def __init__(self, num_classes=1000, trainable_layers=None, dropout=0.5,
-                 pooling_type="max", norm_type="batch"):
-        super().__init__(num_classes, trainable_layers, dropout, pooling_type, norm_type)
-
-    def _build_architecture(self):
-        self.features = nn.Sequential(
-            # conv1: 224 -> 55 -> 27 (after pool)
-            nn.Conv2d(3, 96, kernel_size=11, stride=4, padding=2, bias=False),
-            self._norm(96),
-            nn.ReLU(inplace=True),
-            self._pool(kernel_size=3, stride=2),
-            # conv2: 27 -> 27 -> 13 (after pool)
-            nn.Conv2d(96, 256, kernel_size=5, padding=2, bias=False),
-            self._norm(256),
-            nn.ReLU(inplace=True),
-            self._pool(kernel_size=3, stride=2),
-            # conv3: 13 -> 13
-            nn.Conv2d(256, 384, kernel_size=3, padding=1, bias=False),
-            self._norm(384),
-            nn.ReLU(inplace=True),
-            # conv4: 13 -> 13
-            nn.Conv2d(384, 384, kernel_size=3, padding=1, bias=False),
-            self._norm(384),
-            nn.ReLU(inplace=True),
-            # conv5: 13 -> 13 -> 6 (after pool)
-            nn.Conv2d(384, 256, kernel_size=3, padding=1, bias=False),
-            self._norm(256),
-            nn.ReLU(inplace=True),
-            self._pool(kernel_size=3, stride=2),
-        )
-
-        self.adaptive_pool = nn.AdaptiveAvgPool2d((3, 3))
-
-        self.classifier = nn.Sequential(
-            nn.Dropout(p=self.dropout),
-            nn.Linear(256 * 3 * 3, 4096),
-            self._norm(4096, spatial=False),
-            nn.ReLU(inplace=True),
-            nn.Dropout(p=self.dropout),
-            nn.Linear(4096, 4096),
-            self._norm(4096, spatial=False),
-            nn.ReLU(inplace=True),
-            nn.Linear(4096, self.num_classes),
-        )

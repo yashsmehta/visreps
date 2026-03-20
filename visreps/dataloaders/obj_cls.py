@@ -5,7 +5,6 @@ import warnings
 from pathlib import Path
 from torch.utils.data import Dataset, DataLoader
 import torchvision.transforms as transforms
-from torchvision import datasets
 from PIL import Image
 import pandas as pd
 
@@ -16,23 +15,21 @@ warnings.filterwarnings('ignore', category=UserWarning, module='PIL.TiffImagePlu
 
 # Global normalization statistics.
 DS_MEAN = {
-    "tiny-imagenet": [0.480, 0.448, 0.398],
     "imgnet": [0.485, 0.456, 0.406],
     "clip":   [0.48145466, 0.4578275, 0.40821073],
 }
 DS_STD = {
-    "tiny-imagenet": [0.272, 0.265, 0.274],
     "imgnet": [0.229, 0.224, 0.225],
     "clip":   [0.26862954, 0.26130258, 0.27577711],
 }
 
 def get_transform(ds_stats="imgnet", data_augment=False, image_size=224, preprocess=True,
-                   val_resize_size=256):
+                   val_resize_size=256, augment_type="standard"):
     """Return a composed transform based on dataset stats and augmentation flag.
 
-    When ``data_augment=True`` (training), uses ``RandomResizedCrop`` instead of
-    ``Resize + CenterCrop`` so the model sees different scales and positions each
-    epoch — the single most impactful ImageNet augmentation.
+    ``augment_type`` controls the training augmentation strategy:
+      - ``"standard"``: RandomResizedCrop + RandomHorizontalFlip (modern ImageNet recipe)
+      - ``"mild"``: Resize + CenterCrop + RandomHorizontalFlip + RandomRotation(10)
 
     ``val_resize_size`` controls the resize dimension for validation transforms
     (default 256, but modern recipes like ResNet50-V2 / ConvNeXt use 232).
@@ -41,24 +38,25 @@ def get_transform(ds_stats="imgnet", data_augment=False, image_size=224, preproc
         return transforms.Compose([transforms.ToTensor()])
 
     if data_augment:
-        # Training: RandomResizedCrop + RandomHorizontalFlip (standard ImageNet)
-        if ds_stats == "tiny-imagenet":
-            crop_size = 64
+        if augment_type == "mild":
+            # Mild: whole-object view with light perturbation
+            tfms = [
+                transforms.Resize(val_resize_size, interpolation=transforms.InterpolationMode.BILINEAR),
+                transforms.CenterCrop(image_size),
+                transforms.RandomHorizontalFlip(),
+                transforms.RandomRotation(10),
+            ]
         else:
-            crop_size = image_size
-        tfms = [
-            transforms.RandomResizedCrop(crop_size, interpolation=transforms.InterpolationMode.BILINEAR),
-            transforms.RandomHorizontalFlip(),
-        ]
+            # Standard: RandomResizedCrop + RandomHorizontalFlip
+            tfms = [
+                transforms.RandomResizedCrop(image_size, interpolation=transforms.InterpolationMode.BILINEAR),
+                transforms.RandomHorizontalFlip(),
+            ]
     else:
         # Validation / test: deterministic Resize + CenterCrop
-        if ds_stats == "tiny-imagenet":
-            resize_size, crop_size = 64, 64
-        else:
-            resize_size, crop_size = val_resize_size, image_size
         tfms = [
-            transforms.Resize(resize_size, interpolation=transforms.InterpolationMode.BILINEAR),
-            transforms.CenterCrop(crop_size),
+            transforms.Resize(val_resize_size, interpolation=transforms.InterpolationMode.BILINEAR),
+            transforms.CenterCrop(image_size),
         ]
 
     tfms += [transforms.ToTensor(), transforms.Normalize(DS_MEAN[ds_stats], DS_STD[ds_stats])]
@@ -229,44 +227,6 @@ class ImageNetDataset(Dataset):
             print(f"Error retrieving synset for {wnid}: {e}")
             return None
 
-class TinyImageNetDataset(Dataset):
-    """
-    Loader for Tiny ImageNet using torchvision's ImageFolder.
-    Also prints dataset and transform pipeline info.
-    """
-    def __init__(self, base_path: str, split: str, transform=None):
-        self.split_folder = "train" if split == "train" else "val"
-        self.root = os.path.join(base_path, self.split_folder)
-        self.dataset = datasets.ImageFolder(self.root, transform=transform)
-        self.loader = self.dataset.loader
-        self.transform = self.dataset.transform
-        self.num_classes = len(self.dataset.classes)
-
-        class_counts = {}
-        for _, label in self.dataset.samples:
-            class_counts[label] = class_counts.get(label, 0) + 1
-
-        self.samples = [(path, label, os.path.relpath(path, self.root))
-                        for path, label in self.dataset.samples]
-        for path, label, _ in self.samples:
-            if not (0 <= label < self.num_classes):
-                raise ValueError(f"Invalid label {label} for image {path}")
-
-    def __len__(self) -> int:
-        return len(self.samples)
-
-    def __getitem__(self, idx: int):
-        path, label, _ = self.samples[idx]
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore', UserWarning)
-            image = Image.open(path).convert("RGB")
-        if self.transform:
-            image = self.transform(image)
-            if idx < 5:
-                if not (isinstance(image, torch.Tensor) and image.dim() == 3 and image.shape[0] == 3):
-                    raise ValueError(f"Unexpected image shape {image.shape} for {path}")
-        return image, label
-
 # -----------------------------------------------------------------------------
 # DataLoader helpers
 # -----------------------------------------------------------------------------
@@ -305,85 +265,23 @@ def wrap_with_pca(dataset, base_path, cfg, split):
 # -----------------------------------------------------------------------------
 # Dataset preparation functions
 # -----------------------------------------------------------------------------
-def prepare_tinyimgnet_data(cfg, pca_labels, shuffle, preprocess, train_test_split):
-    base_path = cfg.get("dataset_path", utils.get_env_var("TINY_IMAGENET_DATA_DIR"))
+def _resolve_dataset_path(cfg):
+    """Resolve the dataset base path from config or environment."""
+    dataset_name = cfg.get("dataset", "imagenet")
+    if dataset_name.startswith("imagenet-mini-"):
+        try:
+            num_images = int(dataset_name.split("-")[-1])
+        except ValueError:
+            raise ValueError(f"Invalid imagenet-mini format: {dataset_name}. Expected imagenet-mini-<number>")
+        mini_path = Path(utils.get_env_var("IMAGENET_DATA_DIR")).parent / f"imagenet-mini-{num_images}"
+        if not mini_path.exists():
+            raise ValueError(f"ImageNet mini dataset not found at {mini_path}")
+        return str(mini_path)
+    return cfg.get("dataset_path", utils.get_env_var("IMAGENET_DATA_DIR"))
 
-    # Fetch the local dir path first to trigger potential error from get_env_var
-    local_dir_path = utils.get_env_var("TINY_IMAGENET_LOCAL_DIR")
-
-    datasets, loaders = {}, {}
-
-    # Determine splits based on train_test_split flag
-    splits_to_load = ["train", "val"] if train_test_split else ["val"]
-    split_info = []
-
-    for split in splits_to_load:
-        # Determine actual folder name ('train' or 'val')
-        folder_split = "train" if split == "train" else "val"
-        
-        # Augmentation only for train split when shuffle=True and preprocessing enabled
-        augment = cfg.get("data_augment", True) and split == "train" and shuffle and preprocess
-        
-        if not preprocess:
-            transform = transforms.Compose([transforms.ToTensor()])
-        else:
-            if augment:
-                tfms = [
-                    transforms.RandomResizedCrop(64, interpolation=transforms.InterpolationMode.BILINEAR),
-                    transforms.RandomHorizontalFlip(0.5),
-                    transforms.ColorJitter(0.2, 0.2, 0.2),
-                ]
-            else:
-                tfms = [transforms.Resize(64), transforms.CenterCrop(64)]
-            tfms += [transforms.ToTensor(), transforms.Normalize(DS_MEAN["tiny-imagenet"], DS_STD["tiny-imagenet"])]
-            transform = transforms.Compose(tfms)
-        
-        # Use the folder_split to point to the correct directory
-        dataset = TinyImageNetDataset(base_path, folder_split, transform)
-
-        # Subsample training split if train_fraction < 1.0
-        train_fraction = cfg.get("train_fraction", 1.0)
-        if split == "train" and train_fraction < 1.0 and len(dataset.samples) > 0:
-            g = torch.Generator().manual_seed(42)
-            n_total = len(dataset.samples)
-            n_keep = max(1, int(n_total * train_fraction))
-            indices = torch.randperm(n_total, generator=g).tolist()[:n_keep]
-            dataset.samples = [dataset.samples[i] for i in sorted(indices)]
-            print(f"train_fraction={train_fraction}: kept {n_keep} of {n_total} train samples")
-
-        # Wrap with PCA labels if specified
-        if pca_labels:
-            pca_base_path = os.path.join("pca_labels", cfg.get("pca_labels_folder"))
-            dataset = wrap_with_pca(dataset, pca_base_path, cfg, split)
-        
-        # Use the main split name ('train' or 'val') as the key in the returned dict
-        # If not doing train/test split, rename 'val' to 'all'
-        dict_key = "all" if not train_test_split and split == "val" else split
-        datasets[dict_key] = dataset
-        loaders[dict_key] = create_dataloader(
-            dataset,
-            batch_size=cfg.get("batchsize", 32),
-            num_workers=cfg.get("num_workers", 4),
-            shuffle=shuffle
-        )
-        split_info.append(f"{dict_key}={len(dataset)}")
-
-    print(f"📊 Tiny ImageNet: {', '.join(split_info)}")
-    return datasets, loaders
-
-def prepare_imgnet_data(cfg, pca_labels, shuffle, preprocess, train_test_split, base_path=None):
-    """Prepares ImageNet or related datasets (like mini variants).
-
-    Args:
-        cfg: Configuration object.
-        pca_labels: Boolean indicating if PCA labels should be used.
-        shuffle: Boolean indicating if data should be shuffled.
-        preprocess: Boolean indicating if images should be preprocessed.
-        train_test_split: Boolean indicating whether to load train/test splits or all data.
-        base_path: Direct path to dataset. If None, uses IMAGENET_DATA_DIR env var.
-    """
-    if base_path is None:
-        base_path = cfg.get("dataset_path", utils.get_env_var("IMAGENET_DATA_DIR"))
+def prepare_imgnet_data(cfg, pca_labels, shuffle, preprocess, train_test_split):
+    """Prepares ImageNet or ImageNet-mini datasets."""
+    base_path = _resolve_dataset_path(cfg)
     datasets, loaders = {}, {}
 
     # Determine splits based on train_test_split flag
@@ -392,7 +290,9 @@ def prepare_imgnet_data(cfg, pca_labels, shuffle, preprocess, train_test_split, 
 
     for split in splits_to_load:
         augment = cfg.get("data_augment", False) and split == "train" and shuffle and preprocess
-        tfms = get_transform(ds_stats="imgnet", data_augment=augment, image_size=224, preprocess=preprocess)
+        augment_type = cfg.get("augment_type", "standard")
+        tfms = get_transform(ds_stats="imgnet", data_augment=augment, image_size=224,
+                             preprocess=preprocess, augment_type=augment_type)
         
         # Instantiate the dataset for the current split ('train', 'test', or 'all')
         train_fraction = cfg.get("train_fraction", 1.0)
@@ -417,28 +317,8 @@ def prepare_imgnet_data(cfg, pca_labels, shuffle, preprocess, train_test_split, 
 
 def get_obj_cls_loader(cfg, shuffle=True, preprocess=True, train_test_split=True):
     """Return datasets and dataloaders for object classification."""
-    dataset_name = cfg.get("dataset", "tiny-imagenet")
-    pca_labels = cfg.get("pca_labels", False)
-
-    if dataset_name == "tiny-imagenet":
-        datasets, loaders = prepare_tinyimgnet_data(cfg, pca_labels, shuffle, preprocess, train_test_split)
-    elif dataset_name == "imagenet":
-        datasets, loaders = prepare_imgnet_data(cfg, pca_labels, shuffle, preprocess, train_test_split)
-    elif dataset_name.startswith("imagenet-mini-"):
-        # Extract number of images per class from dataset name
-        try:
-            num_images = int(dataset_name.split("-")[-1])
-        except ValueError:
-            raise ValueError(f"Invalid imagenet-mini format: {dataset_name}. Expected imagenet-mini-<number>")
-        
-        # Construct path to mini dataset (sibling of main ImageNet)
-        imagenet_base = Path(utils.get_env_var("IMAGENET_DATA_DIR"))
-        mini_path = imagenet_base.parent / f"imagenet-mini-{num_images}"
-        
-        if not mini_path.exists():
-            raise ValueError(f"ImageNet mini dataset not found at {mini_path}")
-        
-        datasets, loaders = prepare_imgnet_data(cfg, pca_labels, shuffle, preprocess, train_test_split, base_path=str(mini_path))
-    else:
+    dataset_name = cfg.get("dataset", "imagenet")
+    if not (dataset_name == "imagenet" or dataset_name.startswith("imagenet-mini-")):
         raise ValueError(f"Unsupported dataset: {dataset_name}")
-    return datasets, loaders
+    pca_labels = cfg.get("pca_labels", False)
+    return prepare_imgnet_data(cfg, pca_labels, shuffle, preprocess, train_test_split)

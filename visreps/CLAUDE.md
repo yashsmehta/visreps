@@ -137,7 +137,7 @@ cfg.new_field = "value"  # Dynamic attribute assignment
 
 **Config Validation** (`ConfigVerifier`):
 - Validates `mode` in {train, eval}
-- Validates `dataset` in {imagenet, tiny-imagenet, imagenet-mini-10/50/200}
+- Validates `dataset` in {imagenet, imagenet-mini-10/50/200}
 - Validates `neural_dataset` in {nsd, things-behavior, tvsd}
 - Validates `analysis` in {rsa, encoding_score}
 - Validates `compare_method` in {spearman, kendall}
@@ -203,12 +203,7 @@ CNN architectures and model management utilities.
 ### `custom_model.py`
 **Purpose**: Custom CNN implementations (AlexNet-like architectures).
 
-**Key Classes**:
-- `BaseCNN`: Abstract base class with shared functionality
-  - Layer freezing via `trainable_layers` (e.g., `"11100"` = freeze fc layers)
-  - Flexible nonlinearities (ReLU, GELU, LeakyReLU)
-  - Configurable dropout, batch norm, pooling
-- Subclasses: `AlexNetCustom`, `TinyAlexNetCustom`, etc.
+**Key Class**: `CustomCNN` — AlexNet-style CNN with layer freezing via `trainable_layers`, configurable dropout, batch/group/layer norm, and max/avg pooling.
 
 **Architecture Control**:
 - `conv_trainable` / `fc_trainable`: Binary strings to freeze/unfreeze layers
@@ -245,7 +240,7 @@ CNN architectures and model management utilities.
 Data loading for training (ImageNet) and evaluation (neural datasets).
 
 ### `obj_cls.py`
-**Purpose**: ImageNet and TinyImageNet dataloaders with PCA label support.
+**Purpose**: ImageNet dataloaders with PCA label support.
 
 **Key Functions**:
 - `get_obj_cls_loader(cfg)`: Returns datasets and dataloaders for train/val/test splits
@@ -257,7 +252,6 @@ Data loading for training (ImageNet) and evaluation (neural datasets).
 
 **Datasets**:
 - `imagenet`: Full ImageNet (1000 classes)
-- `tiny-imagenet`: TinyImageNet (200 classes, 64×64 images)
 - `imagenet-mini-{10,50,200}`: Subsets of ImageNet
 
 ### `neural.py`

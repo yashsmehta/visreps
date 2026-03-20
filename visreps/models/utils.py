@@ -15,7 +15,7 @@ import resource                   # Added import (optional, for peak process mem
 
 from visreps.models import standard_model
 from visreps.models import custom_model
-from visreps.models.custom_model import CustomCNN, TinyCustomCNN
+from visreps.models.custom_model import CustomCNN
 
 # Backward compat: old checkpoints reference 'visreps.models.custom_cnn'
 sys.modules['visreps.models.custom_cnn'] = custom_model
@@ -28,7 +28,6 @@ from visreps.analysis.sparse_random_projection import get_srp_transformer
 TORCHVISION_RETURN_NODES = {
     "AlexNet":  ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2"],
     "CustomCNN":     ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2"],
-    "TinyCustomCNN": ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2"],
     "VGG16":    ["conv2", "conv4", "conv7", "conv10", "conv13", "fc1", "fc2"],
     "ResNet18": ["conv1", "block1", "block2", "block3", "block4",
                  "block5", "block6", "block7", "block8"],
@@ -493,10 +492,7 @@ def load_model(cfg, device, num_classes=None, verbose=False):
             'pooling_type': getattr(custom_cfg, 'pooling_type', 'max'),
             'norm_type': getattr(custom_cfg, 'norm_type', 'batch'),
         }
-        if 'tiny' in model_name.lower():
-            model = TinyCustomCNN(**model_params)
-        else:
-            model = CustomCNN(**model_params)
+        model = CustomCNN(**model_params)
         
     else:
         # Initialize standard CNN
@@ -525,8 +521,7 @@ def setup_checkpoint_dir(cfg, model):
     if getattr(cfg, 'pca_labels', False):
         cfg_num = cfg.pca_n_classes
     else:
-        # Tiny-ImageNet has 200 classes, everything else (ImageNet variants) has 1000
-        cfg_num = 200 if cfg.get('dataset') == 'tiny-imagenet' else 1000
+        cfg_num = 1000
 
     # Create checkpoint path
     subdir_name = f"cfg{cfg_num}{seed_letter}"

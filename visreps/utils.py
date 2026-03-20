@@ -475,10 +475,24 @@ def merge_nested_config(cfg, source_key):
 
 
 def load_config(config_path, overrides=None):
-    """Load config from file and apply CLI overrides."""
-    if not Path(config_path).exists():
-        raise FileNotFoundError(f"Config file not found: {config_path}")
-    cfg = OmegaConf.load(config_path)
+    """Load config from file(s) and apply CLI overrides.
+
+    ``config_path`` may be a single path string or a list of paths.
+    When multiple paths are given they are merged left-to-right so that
+    later files override earlier ones (e.g. base → architecture).
+    """
+    if isinstance(config_path, (list, tuple)):
+        paths = list(config_path)
+    else:
+        paths = [config_path]
+
+    for p in paths:
+        if not Path(p).exists():
+            raise FileNotFoundError(f"Config file not found: {p}")
+
+    cfg = OmegaConf.load(paths[0])
+    for p in paths[1:]:
+        cfg = OmegaConf.merge(cfg, OmegaConf.load(p))
 
     # First pass: Apply overrides to determine which nested config to use
     if overrides:
@@ -511,7 +525,7 @@ class ConfigVerifier:
     """Validates configuration for both training and evaluation modes."""
 
     VALID_MODES = {"train", "eval"}
-    VALID_DATASETS = {"imagenet", "tiny-imagenet", "imagenet-mini-1", "imagenet-mini-5", "imagenet-mini-10", "imagenet-mini-50", "imagenet-mini-200"}
+    VALID_DATASETS = {"imagenet", "imagenet-mini-1", "imagenet-mini-5", "imagenet-mini-10", "imagenet-mini-50", "imagenet-mini-200"}
     VALID_MODEL_CLASSES = {"custom_model", "standard_model"}
     VALID_MODEL_SOURCES = {"checkpoint", "torchvision"}
     VALID_ANALYSES = {"rsa", "encoding_score"}
@@ -587,10 +601,10 @@ class ConfigVerifier:
         """
         from omegaconf import ListConfig
 
-        # Seed validation: ensure seed is one of [1, 2, 3]
-        if getattr(self.cfg, "seed", None) not in (1, 2, 3):
+        # Seed validation: ensure seed is one of [1, 2, 3, 4]
+        if getattr(self.cfg, "seed", None) not in (1, 2, 3, 4):
             self.rprint(
-                f"[red]Invalid seed: {self.cfg.seed}. Must be one of [1, 2, 3][/red]",
+                f"[red]Invalid seed: {self.cfg.seed}. Must be one of [1, 2, 3, 4][/red]",
                 style="error",
             )
             raise AssertionError(f"Invalid seed: {self.cfg.seed}")
@@ -789,20 +803,6 @@ class ConfigVerifier:
                 )
                 raise AssertionError("fc_trainable must only contain '0's and '1's")
 
-            # Model-dataset compatibility warnings
-            if self.cfg.dataset == "imagenet" and "tiny" in self.cfg.model_name.lower():
-                self.rprint(
-                    "⚠️  Training TinyCustomCNN on ImageNet-1k. This model is designed for TinyImageNet.",
-                    style="warning",
-                )
-            elif (
-                self.cfg.dataset == "tiny-imagenet"
-                and "tiny" not in self.cfg.model_name.lower()
-            ):
-                self.rprint(
-                    "⚠️  Training CustomCNN on TinyImageNet. This model is designed for ImageNet-1k.",
-                    style="warning",
-                )
 
     def _verify_pca_config(self) -> None:
         """Verify PCA-specific configuration."""

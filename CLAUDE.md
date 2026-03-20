@@ -78,7 +78,7 @@ python scripts/runners/train_runner.py --grid configs/grids/train_default.json  
 ```
 
 **Key config options:**
-- `dataset`: "imagenet", "tiny-imagenet", "imagenet-mini-{10,50,200}"
+- `dataset`: "imagenet", "imagenet-mini-{10,50,200}"
 - `pca_labels`: true/false (use coarse labels)
 - `pca_n_classes`: 2, 4, 8, 16, 32, 64 (must be power of 2)
 - `pca_labels_folder`: "pca_labels_alexnet", "pca_labels_dino", etc.
@@ -169,14 +169,13 @@ Creates labels by projecting features onto PCs and applying median splits → 2^
 ```
 IMAGENET_DATA_DIR=/path/to/imagenet/train
 IMAGENET_LOCAL_DIR=/path/to/imagenet          # Contains folder_labels.json
-TINY_IMAGENET_DATA_DIR=/path/to/tiny-imagenet-200
 NSD_DATA_DIR=/path/to/nsd/processed
 BONNER_DATASETS_HOME=~/.cache/bonner-datasets  # TVSD uses THINGS images from here
 ```
 
 ## Models
 
-- **CustomCNN / TinyCustomCNN**: AlexNet-style, configurable layer freezing via `conv_trainable`/`fc_trainable` binary strings
+- **CustomCNN**: AlexNet-style, configurable layer freezing via `conv_trainable`/`fc_trainable` binary strings
 - **Standard models**: AlexNet, VGG16, ResNet18, ResNet50, ViTBase (torchvision wrappers)
 
 ## Evaluation Pipeline
