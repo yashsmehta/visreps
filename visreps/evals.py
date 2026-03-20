@@ -72,7 +72,7 @@ def _print_region_results(region, scores, layers, subjects, bootstrap=False,
     for i, subj in enumerate(subjects):
         msg = f"    S{subj:<3} {layers[i]:<7} {scores[i]:.4f}"
         if bootstrap and ci_lows is not None and ci_highs is not None:
-            msg += f"  [{ci_lows[i]:.4f}, {ci_highs[i]:.4f}]"
+            msg += f"  [dim]\\[{ci_lows[i]:.4f}, {ci_highs[i]:.4f}][/dim]"
         rprint(msg, style="highlight")
     mean = np.mean(scores)
     std = np.std(scores)
@@ -265,7 +265,7 @@ def _reextract_and_score(model, cfg, dev, test_stimuli, test_ids,
                 save_cfg = OmegaConf.merge(
                     cfg, {"subject_idx": subj, "region": region}
                 )
-                save_results(pd.DataFrame([result]), save_cfg)
+                save_results(pd.DataFrame([result]), save_cfg, quiet=True)
 
             all_results.append(result)
             region_scores.append(score)
@@ -280,6 +280,8 @@ def _reextract_and_score(model, cfg, dev, test_stimuli, test_ids,
             ci_lows=region_ci_lows if bootstrap else None,
             ci_highs=region_ci_highs if bootstrap else None,
         )
+        if cfg.get("log_expdata"):
+            rprint(f"    Saved {len(subjects)} results to results.db", style="success")
         region_means[region] = np.mean(region_scores)
 
     _print_cross_region_summary(region_means)
@@ -602,7 +604,7 @@ def _eval_rsa_cusack(cfg, age_groups, regions, dev, verbose):
 
             if cfg.get("log_expdata"):
                 save_cfg = OmegaConf.merge(cfg, {"subject_idx": ag, "region": region})
-                save_results(pd.DataFrame([result]), save_cfg)
+                save_results(pd.DataFrame([result]), save_cfg, quiet=True)
 
             all_results.append(result)
 
@@ -611,6 +613,8 @@ def _eval_rsa_cusack(cfg, age_groups, regions, dev, verbose):
                 marker = " ◀" if entry["layer"] == best["layer"] else ""
                 rprint(f"    {entry['layer']:12s} {entry['score']:.4f}{marker}", style="highlight")
 
+    if cfg.get("log_expdata"):
+        rprint(f"\n    Saved {len(all_results)} results to results.db", style="success")
     return pd.DataFrame(all_results)
 
 
@@ -644,7 +648,7 @@ def _eval_encoding(cfg, model, acts, ids, all_data, subjects, regions, verbose):
 
             if cfg.get("log_expdata"):
                 save_cfg = OmegaConf.merge(cfg, {"subject_idx": subj, "region": region})
-                save_results(pd.DataFrame(alignment_scores), save_cfg)
+                save_results(pd.DataFrame(alignment_scores), save_cfg, quiet=True)
 
             for r in alignment_scores:
                 r["region"] = region
@@ -654,6 +658,8 @@ def _eval_encoding(cfg, model, acts, ids, all_data, subjects, regions, verbose):
             all_results.extend(alignment_scores)
 
         _print_region_results(region, region_scores, region_layers, subjects)
+        if cfg.get("log_expdata"):
+            rprint(f"    Saved {len(subjects)} results to results.db", style="success")
         region_means[region] = np.mean(region_scores)
 
     _print_cross_region_summary(region_means)

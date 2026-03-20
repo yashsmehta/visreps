@@ -378,7 +378,7 @@ def _get_float(row, col):
     return None
 
 
-def save_results(df, cfg, timeout=60):
+def save_results(df, cfg, timeout=60, quiet=False):
     """Save evaluation results to SQLite database at results.db.
 
     Uses a normalized "long" format: each comparison metric (Spearman, Kendall)
@@ -454,7 +454,8 @@ def save_results(df, cfg, timeout=60):
 
     conn.commit()
     conn.close()
-    rprint(f"Saved {len(df)} results to {_RESULTS_DB_PATH} (run_id={run_id})", style="success")
+    if not quiet:
+        rprint(f"Saved {len(df)} results to {_RESULTS_DB_PATH}", style="success")
     return str(_RESULTS_DB_PATH)
 
 
