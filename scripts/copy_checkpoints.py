@@ -7,9 +7,14 @@ import os, subprocess
 # so we only need it for the default (1000-way) network.
 jobs = [
     {
-        "folder": "resnet50_clip_pca",
-        "subdirs": [f"cfg{n}{s}" for n in [8, 32] for s in "a"],
-        "files": ["checkpoint_epoch_70.pth", "config.json"],
+        "folder": "alexnet_pca",
+        "subdirs": [f"cfg{n}d" for n in [2, 4, 8, 16, 32, 64]],
+        "files": ["checkpoint_epoch_20.pth", "config.json"],
+    },
+    {
+        "folder": "default",
+        "subdirs": ["cfg1000d"],
+        "files": ["checkpoint_epoch_20.pth", "config.json"],
     },
 ]
 remote_base = "/scratch4/mbonner5/ymehta3/visreps/model_checkpoints"
