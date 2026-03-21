@@ -13,7 +13,7 @@ class CustomCNN(nn.Module):
     """AlexNet-style CNN for ImageNet (224x224 inputs)."""
 
     def __init__(self, num_classes=1000, trainable_layers=None, dropout=0.5,
-                 pooling_type="max", norm_type="batch", conv_groups=2):
+                 pooling_type="max", norm_type="batch", conv_groups=1):
         super().__init__()
         self.num_classes = num_classes
         self.dropout = dropout

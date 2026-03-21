@@ -7,11 +7,10 @@
       "conv_trainable": "11111",
       "fc_trainable": "111",
       "pooling_type": "max",
-      "dropout": 0.5,
+      "dropout": 0.3,
       "batchnorm": true
     }
   },
-  "label_smoothing": 0.0,
   "optimizer": "adamw",
   "learning_rate": 0.0005,
   "weight_decay": 0.001,
