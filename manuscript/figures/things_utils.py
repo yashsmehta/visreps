@@ -197,12 +197,32 @@ def plot_rdm_panels(axes, precomputed, show_difference=True, colorbar_axes=None)
 # Scatter + histogram panel
 # ═══════════════════════════════════════════════════════════════════════════
 
-def plot_scatter_panel(ax_scatter, ax_hist, precomputed):
-    """Draw per-concept scatter and histogram using precomputed data."""
+def plot_scatter_panel(ax_scatter, ax_hist, precomputed, super_config=None):
+    """Draw category-averaged scatter and per-concept histogram.
+
+    Panel B: Category-averaged scatter (8-class vs 1000-class per-concept rho).
+    Panel C: Per-concept KDE of delta rho, with category overlays.
+
+    If super_config is provided, groups by super-categories instead of the
+    27 fine THINGS categories. super_config should be a dict with:
+        - "fine_to_super": dict mapping fine category -> super category
+        - "palette": dict mapping super category -> color
+        - "kde_categories": list of super-categories to show in Panel C KDE
+    """
     categories = precomputed["categories"]
     corr_clip8 = precomputed["corr_clip8"]
     corr_1k = precomputed["corr_1k"]
     diff = corr_clip8 - corr_1k
+
+    # Map to super-categories if config provided
+    if super_config is not None:
+        fine_to_super = super_config["fine_to_super"]
+        palette = super_config["palette"]
+        kde_cats = super_config.get("kde_categories", [])
+        categories = np.array([fine_to_super.get(c, "Other") for c in categories])
+    else:
+        palette = None
+        kde_cats = []
 
     df = pd.DataFrame({
         "corr_clip8": corr_clip8,
@@ -211,166 +231,181 @@ def plot_scatter_panel(ax_scatter, ax_hist, precomputed):
         "category": categories,
     })
 
-    cat_medians = (df[df["category"] != "Other"]
-                   .groupby("category")["diff"].median()
-                   .sort_values(ascending=False))
+    cat_df = (df.groupby("category")
+              .agg(mean_clip8=("corr_clip8", "mean"),
+                   mean_1k=("corr_1k", "mean"),
+                   mean_diff=("diff", "mean"),
+                   n=("diff", "size"))
+              .reset_index())
+    cat_df = cat_df.sort_values("mean_diff", ascending=False).reset_index(
+        drop=True)
 
-    buffer_threshold = 0.05
-    positive_cats = cat_medians[cat_medians > 0].head(5).index.tolist()
-    negative_cats = (cat_medians[cat_medians < -0.05]
-                     .sort_values(ascending=True).index.tolist())
+    # ── Markers (one per category) ──
+    ALL_MARKERS = [
+        "o", "s", "^", "D", "v", "P", "*", "X", "p", "h",
+        "<", ">", "d", "8", "H",
+        (4, 1, 0), (5, 1, 0), (6, 1, 0), (6, 0, 0), (7, 0, 0),
+        (8, 0, 0), (4, 0, 45), (4, 1, 45), (7, 1, 0), (3, 0, 180),
+        (5, 0, 36), (8, 1, 0),
+    ]
+    cat_markers = {cat: ALL_MARKERS[i]
+                   for i, cat in enumerate(cat_df["category"])}
 
-    cat_style = {}
-    for i, cat in enumerate(positive_cats):
-        cat_style[cat] = (GREEN_COLORS[i], GREEN_MARKERS[i])
-    for i, cat in enumerate(negative_cats[:len(ORANGE_COLORS)]):
-        cat_style[cat] = (ORANGE_COLORS[i], ORANGE_MARKERS[i])
+    # ── Scatter (x = 8-class, y = 1000-class) ──
+    pad = 0.06
+    lims = [min(cat_df["mean_1k"].min(), cat_df["mean_clip8"].min()) - pad,
+            max(cat_df["mean_1k"].max(), cat_df["mean_clip8"].max()) + pad]
+    ax_scatter.plot(lims, lims, color="#cccccc", lw=0.8, ls="--", zorder=0.5)
 
-    # Assign per-concept style
-    colors, markers, is_highlighted = [], [], []
-    for _, row in df.iterrows():
-        if abs(row["diff"]) < buffer_threshold:
-            colors.append("#d9d9d9")
-            markers.append("o")
-            is_highlighted.append(False)
-        elif row["category"] in cat_style:
-            c, m = cat_style[row["category"]]
-            colors.append(c)
-            markers.append(m)
-            is_highlighted.append(True)
-        else:
-            colors.append("#cdcdcd")
-            markers.append("o")
-            is_highlighted.append(False)
-    df["color"] = colors
-    df["marker"] = markers
-    df["highlighted"] = is_highlighted
+    if palette is not None:
+        # Super-category mode: color by palette, all dots equal
+        for _, row in cat_df.iterrows():
+            cat = row["category"]
+            ax_scatter.scatter(
+                row["mean_clip8"], row["mean_1k"],
+                c=[palette.get(cat, "#bdbdbd")], s=140, marker=cat_markers[cat],
+                alpha=0.92, edgecolors="#333333", linewidths=1.0, zorder=3)
+    else:
+        # Legacy 27-category mode with discrete advantage coloring
+        DISC_COLORS = {
+            "dark_orange": "#e65100", "light_orange": "#f4a261",
+            "grey": "#c8c8c8", "light_green": "#a5d6a7", "dark_green": "#2e7d32",
+        }
+        def _discrete_color(val):
+            if val < -0.3: return DISC_COLORS["dark_orange"]
+            elif val < 0: return DISC_COLORS["light_orange"]
+            elif val == 0: return DISC_COLORS["grey"]
+            elif val <= 0.3: return DISC_COLORS["light_green"]
+            else: return DISC_COLORS["dark_green"]
 
-    # ── Scatter (x = 8 classes (CLIP repr.), y = 1000-class) ──
-    lims = [min(df["corr_1k"].min(), df["corr_clip8"].min()) - 0.08,
-            max(df["corr_1k"].max(), df["corr_clip8"].max()) + 0.05]
-    xx = np.linspace(lims[0], lims[1], 200)
-    # Buffer band around diagonal
-    ax_scatter.fill_between(xx, xx - buffer_threshold, xx + buffer_threshold,
-                             color="#f0f0f0", alpha=0.6, zorder=0, lw=0)
-    ax_scatter.plot(lims, lims, color="#999999", lw=0.7, ls="--", zorder=0.5)
-
-    grey_df = df[~df["highlighted"]]
-    ax_scatter.scatter(grey_df["corr_clip8"], grey_df["corr_1k"],
-                        c="#c8c8c8", s=18, marker="o",
-                        alpha=0.35, edgecolors="none", rasterized=True, zorder=1)
-
-    for cat in positive_cats + negative_cats:
-        if cat not in cat_style:
-            continue
-        cat_mask = (df["category"] == cat) & df["highlighted"]
-        subset = df[cat_mask]
-        if subset.empty:
-            continue
-        c, m = cat_style[cat]
-        ax_scatter.scatter(subset["corr_clip8"], subset["corr_1k"],
-                            c=c, s=38, marker=m, alpha=0.85,
-                            edgecolors="white", linewidths=0.5,
-                            rasterized=True, zorder=2)
+        for i, (_, row) in enumerate(cat_df.iterrows()):
+            ax_scatter.scatter(
+                row["mean_clip8"], row["mean_1k"],
+                c=[_discrete_color(row["mean_diff"])], s=90,
+                marker=cat_markers[row["category"]], alpha=0.92,
+                edgecolors="white", linewidths=0.5, zorder=2)
 
     ax_scatter.set_xlim(lims)
     ax_scatter.set_ylim(lims)
-    ax_scatter.set_xlabel(r"Per-concept $\rho_s$ (8 classes (CLIP repr.))", fontsize=10.5)
-    ax_scatter.set_ylabel(r"Per-concept $\rho_s$ (1000-class)", fontsize=10.5)
-    ax_scatter.set_title("Per-Concept Alignment", fontsize=12,
-                          fontweight="semibold", pad=10)
-    ax_scatter.tick_params(axis="both", labelsize=9, length=4, width=0.8)
+    ax_scatter.set_xlabel(
+        r"Per-category $\rho_s$ (8-class)", fontsize=11)
+    ax_scatter.set_ylabel(
+        r"Per-category $\rho_s$ (1000-class)", fontsize=11)
+    ax_scatter.set_title("Per-Category Alignment", fontsize=12.5,
+                          fontweight="bold", pad=10)
+    ax_scatter.tick_params(axis="both", labelsize=9.5, length=4, width=0.8)
     ax_scatter.set_aspect("equal")
     sns.despine(ax=ax_scatter, offset=5)
 
-    # Subtle region annotations
-    ax_scatter.text(0.92, 0.07, "8-class better",
+    # Region annotations — above/below the diagonal
+    ax_scatter.text(0.55, 0.95, "1K better",
                      transform=ax_scatter.transAxes,
-                     ha="right", va="bottom", fontsize=9.5, color="#1a7a3a",
-                     fontstyle="italic", alpha=0.65)
-    ax_scatter.text(0.05, 0.52, "1K better",
+                     ha="center", va="top", fontsize=10, color="#c62828",
+                     fontweight="bold", alpha=0.55)
+    ax_scatter.text(0.75, 0.06, "8-class better",
                      transform=ax_scatter.transAxes,
-                     ha="left", va="top", fontsize=9.5, color="#c1121f",
-                     fontstyle="italic", alpha=0.65)
+                     ha="center", va="bottom", fontsize=10, color="#2e7d32",
+                     fontweight="bold", alpha=0.55)
 
-    # Legend
-    legend_elements = []
-    legend_elements.append(Line2D([0], [0], marker="None", color="w",
-                                   label="8-class advantage"))
-    for i, cat in enumerate(positive_cats):
-        med = cat_medians[cat]
-        legend_elements.append(
-            Line2D([0], [0], marker=GREEN_MARKERS[i], color="w",
-                   markerfacecolor=GREEN_COLORS[i], markersize=7.5,
-                   markeredgecolor="white", markeredgewidth=0.4,
-                   label=f"  {short_cat_label(cat)} ({med:+.2f})"))
-    legend_elements.append(Line2D([0], [0], marker="None", color="w",
-                                   label="1K advantage"))
-    for i, cat in enumerate(negative_cats[:len(ORANGE_COLORS)]):
-        med = cat_medians[cat]
-        legend_elements.append(
-            Line2D([0], [0], marker=ORANGE_MARKERS[i], color="w",
-                   markerfacecolor=ORANGE_COLORS[i], markersize=7.5,
-                   markeredgecolor="white", markeredgewidth=0.4,
-                   label=f"  {short_cat_label(cat)} ({med:+.2f})"))
-
-    leg = ax_scatter.legend(handles=legend_elements, fontsize=8.5, frameon=True,
-                             loc="upper left", handletextpad=0.4,
-                             framealpha=0.95, edgecolor="#bbbbbb", fancybox=False,
-                             borderpad=0.5, labelspacing=0.25,
-                             handlelength=1.5, bbox_to_anchor=(0.0, 1.0))
-    leg.get_frame().set_linewidth(0.5)
-    for text in leg.get_texts():
-        label = text.get_text()
-        if label in ("8-class advantage", "1K advantage"):
-            text.set_fontweight("bold")
-            text.set_fontsize(9.0)
-
-    # ── Histogram (works as standalone or inset) ──
-    bins = np.linspace(diff.min() - 0.02, diff.max() + 0.02, 36)
-    c_green_hist = "#1a7a3a"
-    c_orange_hist = "#d95e1a"
-    bin_colors = [c_green_hist if (b_lo + b_hi) / 2 > 0 else c_orange_hist
-                  for b_lo, b_hi in zip(bins[:-1], bins[1:])]
-    _, _, patches = ax_hist.hist(diff, bins=bins, edgecolor="white", linewidth=0.4)
-    for patch, c in zip(patches, bin_colors):
-        patch.set_facecolor(c)
-        patch.set_alpha(0.85)
-
-    ax_hist.axvspan(-buffer_threshold, buffer_threshold,
-                     color="#f4f4f4", alpha=0.7, zorder=0, lw=0)
-    ax_hist.axvline(0, color="#333333", lw=0.8, ls="-", zorder=3)
-
-    # Detect if this is an inset (small axes) or standalone
-    bbox = ax_hist.get_position()
-    is_inset = (bbox.width < 0.2)  # heuristic: insets are small
-
-    if is_inset:
-        ax_hist.set_xlabel(r"$\Delta\rho_s$", fontsize=6, labelpad=2)
-        ax_hist.set_ylabel("")
-        ax_hist.tick_params(axis="both", labelsize=5, length=2, width=0.4, pad=1)
-        ax_hist.yaxis.set_major_locator(mticker.MaxNLocator(3, integer=True))
-        pct_fs = 8.5
+    # ── Legend (flat list, no section headers) ──
+    if palette is not None:
+        # Sort by mean_diff descending (same order as cat_df)
+        legend_elements = []
+        for _, row in cat_df.iterrows():
+            cat = row["category"]
+            legend_elements.append(
+                Line2D([0], [0], marker=cat_markers[cat], color="w",
+                       markerfacecolor=palette.get(cat, "#bdbdbd"),
+                       markersize=7, markeredgecolor="#222222",
+                       markeredgewidth=0.8,
+                       label=cat))
     else:
-        ax_hist.set_xlabel(r"$\Delta\rho_s$ (8 classes (CLIP repr.) $-$ 1000-class)",
-                           fontsize=10.5)
-        ax_hist.set_ylabel("Count", fontsize=10.5)
-        ax_hist.tick_params(axis="both", labelsize=9, length=4, width=0.8)
-        pct_fs = 13
+        legend_elements = []
 
-    sns.despine(ax=ax_hist, offset=2 if is_inset else 5)
+    if legend_elements:
+        leg = ax_scatter.legend(handles=legend_elements, fontsize=7.5, frameon=True,
+                                 loc="upper left", handletextpad=0.4,
+                                 framealpha=0.95, edgecolor="#bbbbbb",
+                                 fancybox=False, borderpad=0.4,
+                                 labelspacing=0.25, handlelength=1.2,
+                                 bbox_to_anchor=(0.0, 1.0))
+        leg.get_frame().set_linewidth(0.5)
 
-    # Add headroom above tallest bar
-    if not is_inset:
-        ymax = ax_hist.get_ylim()[1]
-        ax_hist.set_ylim(top=ymax * 1.12)
+    # ── KDE panel (overall + category overlays) ──
+    from scipy.stats import gaussian_kde
 
+    # Overall KDE
+    x_grid = np.linspace(diff.min() - 0.15, diff.max() + 0.15, 500)
+    kde_all = gaussian_kde(diff, bw_method="scott")
+    y_all = kde_all(x_grid)
+
+    # Split fill at zero: green (positive) and orange (negative)
+    mask_pos = x_grid >= 0
+    mask_neg = x_grid <= 0
+    ax_hist.fill_between(x_grid[mask_pos], y_all[mask_pos], alpha=0.18,
+                          color="#2e7d32", zorder=1)
+    ax_hist.fill_between(x_grid[mask_neg], y_all[mask_neg], alpha=0.18,
+                          color="#e65100", zorder=1)
+    ax_hist.plot(x_grid, y_all, color="#444444", lw=2.0, zorder=2,
+                  label="All concepts")
+
+    # Zero line
+    ax_hist.axvline(0, color="#555555", lw=0.7, ls="-", zorder=5)
+
+    # Category-specific KDEs
+    if palette is not None and kde_cats:
+        kde_config = {cat: palette.get(cat, "#bdbdbd") for cat in kde_cats}
+    else:
+        # Legacy fine-category KDEs
+        kde_config = {
+            "animal": "#2e7d32", "food": "#00897b",
+            "plant": "#8bc34a", "body part": "#c1121f",
+        }
+
+    # KDEs with sqrt-proportional scaling: heights scale by
+    # sqrt(n_cat / n_total) to preserve ordering while keeping small
+    # categories visible (same principle as bubble-chart area scaling).
+    n_total = len(diff)
+    for cat, color in kde_config.items():
+        cat_mask = df["category"] == cat
+        cat_diff = diff[cat_mask]
+        if len(cat_diff) < 5:
+            continue
+        kde_cat = gaussian_kde(cat_diff, bw_method="scott")
+        y_cat = kde_cat(x_grid)
+        weight = np.sqrt(len(cat_diff) / n_total)
+        y_cat_scaled = y_cat * weight
+        ax_hist.plot(x_grid, y_cat_scaled, color=color, ls="-", lw=2.0,
+                      zorder=3, label=f"{cat} (n={len(cat_diff)})")
+
+    # Formatting
+    ax_hist.set_xlabel(
+        r"$\Delta\rho_s$ (8-class $-$ 1000-class)", fontsize=11)
+    ax_hist.set_ylabel("")
+    ax_hist.tick_params(axis="both", labelsize=9.5, length=4, width=0.8)
+    ax_hist.yaxis.set_major_formatter(mticker.NullFormatter())
+    ax_hist.yaxis.set_ticks([])
+    sns.despine(ax=ax_hist, offset=5, left=True)
+
+    # Headroom
+    ymax = ax_hist.get_ylim()[1]
+    ax_hist.set_ylim(top=ymax * 1.18)
+
+    # Percentage annotations
     n_win = (diff > 0).sum()
     pct_win = 100 * n_win / len(diff)
     pct_lose = 100 - pct_win
-    ax_hist.text(0.78, 0.88, f"{pct_win:.0f}%",
-                  transform=ax_hist.transAxes, fontsize=pct_fs, va="top",
-                  ha="center", color=c_green_hist, fontweight="bold")
-    ax_hist.text(0.18, 0.88, f"{pct_lose:.0f}%",
-                  transform=ax_hist.transAxes, fontsize=pct_fs, va="top",
-                  ha="center", color=c_orange_hist, fontweight="bold")
+    ax_hist.text(0.80, 0.95, f"{pct_win:.0f}%",
+                  transform=ax_hist.transAxes, fontsize=14, va="top",
+                  ha="center", color="#1b5e20", fontweight="bold")
+    ax_hist.text(0.16, 0.95, f"{pct_lose:.0f}%",
+                  transform=ax_hist.transAxes, fontsize=14, va="top",
+                  ha="center", color="#c62828", fontweight="bold")
+
+    # Legend
+    leg_kde = ax_hist.legend(fontsize=8.5, frameon=True, loc="upper right",
+                              framealpha=0.95, edgecolor="#cccccc",
+                              fancybox=False, borderpad=0.4,
+                              labelspacing=0.30, handlelength=1.8,
+                              bbox_to_anchor=(1.0, 0.82))
+    leg_kde.get_frame().set_linewidth(0.4)

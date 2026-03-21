@@ -41,10 +41,12 @@ SUPER_CAT_ORDER = [
     "Living things",
     "Body & apparel",
     "Food & drink",
-    "Home",
-    "Tools & equipment",
+    "Furniture & decor",
+    "Containers",
+    "Tools & implements",
+    "Sports & recreation",
     "Vehicles",
-    "Tech & leisure",
+    "Electronics & music",
     "Other",
 ]
 
@@ -53,10 +55,12 @@ SIDEBAR_LABELS = {
     "Living things": "Living things",
     "Body & apparel": "Body & apparel",
     "Food & drink": "Food & drink",
-    "Home": "Home",
-    "Tools & equipment": "Tools & equip.",
+    "Furniture & decor": "Furn. & decor",
+    "Containers": "Containers",
+    "Tools & implements": "Tools & impl.",
+    "Sports & recreation": "Sports & rec.",
     "Vehicles": "Vehicles",
-    "Tech & leisure": "Tech & leisure",
+    "Electronics & music": "Elec. & music",
     "Other": "Other",
 }
 
@@ -67,26 +71,29 @@ FINE_TO_SUPER = {
     "food": "Food & drink", "dessert": "Food & drink",
     "drink": "Food & drink", "kitchen appliance": "Food & drink",
     "kitchen tool": "Food & drink",
-    "furniture": "Home", "home decor": "Home", "container": "Home",
-    "tool": "Tools & equipment", "sports equipment": "Tools & equipment",
-    "medical equipment": "Tools & equipment",
-    "office supply": "Tools & equipment", "weapon": "Tools & equipment",
+    "furniture": "Furniture & decor", "home decor": "Furniture & decor",
+    "container": "Containers",
+    "tool": "Tools & implements", "weapon": "Tools & implements",
+    "office supply": "Tools & implements", "medical equipment": "Tools & implements",
+    "sports equipment": "Sports & recreation", "toy": "Sports & recreation",
     "vehicle": "Vehicles", "part of car": "Vehicles",
-    "electronic device": "Tech & leisure",
-    "musical instrument": "Tech & leisure", "toy": "Tech & leisure",
+    "electronic device": "Electronics & music",
+    "musical instrument": "Electronics & music",
     "Other": "Other",
 }
 
-# Distinguishable palette for 8 super-categories
+# Distinguishable palette for 10 super-categories
 SUPER_PALETTE = {
-    "Living things":      "#2ca02c",  # green
-    "Body & apparel":     "#9467bd",  # purple
-    "Food & drink":       "#d62728",  # red
-    "Home":               "#ff7f0e",  # orange
-    "Tools & equipment":  "#1f77b4",  # blue
-    "Vehicles":           "#8c564b",  # brown
-    "Tech & leisure":     "#17becf",  # cyan
-    "Other":              "#bdbdbd",  # grey
+    "Living things":        "#2ca02c",  # green
+    "Body & apparel":       "#9467bd",  # purple
+    "Food & drink":         "#d62728",  # red
+    "Furniture & decor":    "#ff7f0e",  # orange
+    "Containers":           "#e6ab02",  # gold
+    "Tools & implements":   "#1f77b4",  # blue
+    "Sports & recreation":  "#17becf",  # cyan
+    "Vehicles":             "#8c564b",  # brown
+    "Electronics & music":  "#e377c2",  # pink
+    "Other":                "#bdbdbd",  # grey
 }
 
 
@@ -122,7 +129,7 @@ def _draw_rdm(ax, rdm, title, subtitle, block_boundaries, n, super_cats_used,
     """Draw a single RDM panel with super-category sidebars."""
     im = ax.imshow(rdm, cmap="magma", interpolation="nearest", aspect="equal",
                    rasterized=True, vmin=0, vmax=1)
-    ax.set_title(title, fontsize=12.5, fontweight="bold", pad=20,
+    ax.set_title(title, fontsize=13, fontweight="bold", pad=22,
                  fontfamily="sans-serif")
     if subtitle:
         style = "italic" if subtitle_italic else "normal"
@@ -157,7 +164,7 @@ def _draw_rdm(ax, rdm, title, subtitle, block_boundaries, n, super_cats_used,
             mid_y = start - 0.5 + size / 2
             display_label = SIDEBAR_LABELS.get(cat, cat)
             ax.text(label_x, mid_y, display_label, ha="right", va="center",
-                    fontsize=7.5, color="#222222", fontfamily="sans-serif",
+                    fontsize=7, color="#333333", fontfamily="sans-serif",
                     clip_on=False)
 
     return im
@@ -167,12 +174,13 @@ def main():
     setup_style()
     plt.rcParams.update({
         "axes.labelsize": 11,
-        "axes.titlesize": 12,
+        "axes.titlesize": 12.5,
         "xtick.labelsize": 9.5,
         "ytick.labelsize": 9.5,
         "axes.linewidth": 0.8,
         "xtick.major.width": 0.8,
         "ytick.major.width": 0.8,
+        "font.family": "sans-serif",
     })
 
     print("Computing THINGS data for per-concept analysis...")
@@ -202,20 +210,20 @@ def main():
     rsa_scores = precomputed["rsa_scores"]
 
     # ── Figure layout ─────────────────────────────────────────────────
-    fig = plt.figure(figsize=(14.5, 12.5))
+    fig = plt.figure(figsize=(14, 11.5))
     fig.patch.set_facecolor("white")
 
     gs_outer = gridspec.GridSpec(
         2, 1, figure=fig,
-        height_ratios=[1.0, 1.05],
-        hspace=0.14,
-        left=0.09, right=0.96, top=0.96, bottom=0.05,
+        height_ratios=[1.0, 1.0],
+        hspace=0.22,
+        left=0.09, right=0.96, top=0.96, bottom=0.06,
     )
 
     # ── Row 1: Three RDMs + colorbar ─────────────────────────────────
     gs_rdm = gridspec.GridSpecFromSubplotSpec(
         3, 4, subplot_spec=gs_outer[0],
-        width_ratios=[1, 1, 1, 0.035],
+        width_ratios=[1, 1, 1, 0.04],
         height_ratios=[0.08, 0.84, 0.08],
         wspace=0.10, hspace=0,
     )
@@ -236,48 +244,54 @@ def main():
 
     # Shared colorbar
     cb = plt.colorbar(im, cax=ax_cb)
-    cb.ax.tick_params(labelsize=8, length=3, width=0.5, pad=3)
+    cb.ax.tick_params(labelsize=8.5, length=3, width=0.5, pad=4)
     cb.outline.set_linewidth(0.5)
     cb.ax.yaxis.set_major_locator(mticker.FixedLocator([0, 0.5, 1.0]))
-    cb.set_label("Dissimilarity (rank)", fontsize=9, labelpad=10)
+    cb.ax.yaxis.set_major_formatter(mticker.FixedFormatter(["0", "0.5", "1.0"]))
+    cb.set_label("Dissimilarity (rank)", fontsize=9.5, labelpad=10)
 
     # ── Row 2: Scatter + Histogram ───────────────────────────────────
     gs_bottom = gridspec.GridSpecFromSubplotSpec(
         1, 2, subplot_spec=gs_outer[1],
-        width_ratios=[1.1, 1.0],
-        wspace=0.25,
+        width_ratios=[1.05, 1.0],
+        wspace=0.22,
     )
     ax_scatter = fig.add_subplot(gs_bottom[0, 0])
     ax_hist = fig.add_subplot(gs_bottom[0, 1])
 
-    plot_scatter_panel(ax_scatter, ax_hist, precomputed)
+    super_config = {
+        "fine_to_super": FINE_TO_SUPER,
+        "palette": SUPER_PALETTE,
+        "kde_categories": [
+            "Living things", "Body & apparel",
+        ],
+    }
+    plot_scatter_panel(ax_scatter, ax_hist, precomputed, super_config=super_config)
 
     # Override scatter title padding for this layout
-    ax_scatter.set_title("Per-Concept Alignment", fontsize=12.5,
-                         fontweight="semibold", pad=14)
+    ax_scatter.set_title("Per-Category Alignment", fontsize=13,
+                         fontweight="bold", pad=12)
 
-    # Override histogram formatting for standalone display
+    # Override KDE panel formatting for standalone display
     ax_hist.set_xlabel(
-        r"$\Delta\rho_s$ (8 classes (CLIP repr.) $-$ 1000-class)", fontsize=11)
-    ax_hist.set_ylabel("Count", fontsize=11)
-    ax_hist.tick_params(axis="both", labelsize=9.5, length=4, width=0.8)
-    ax_hist.set_title("Per-Concept Advantage", fontsize=12.5,
-                      fontweight="semibold", pad=14)
-    sns.despine(ax=ax_hist, offset=5)
+        r"$\Delta\rho_s$ (8-class $-$ 1000-class)", fontsize=11)
+    ax_hist.tick_params(axis="x", labelsize=9.5, length=4, width=0.8)
+    ax_hist.set_title("Per-Concept Advantage", fontsize=13,
+                      fontweight="bold", pad=12)
+    sns.despine(ax=ax_hist, offset=5, left=True)
 
     # ── Panel labels ─────────────────────────────────────────────────
-    ax_rdm_behav.text(-0.18, 1.12, "A", transform=ax_rdm_behav.transAxes,
-                      fontsize=18, fontweight="bold", va="top", ha="left",
-                      family="sans-serif")
-    ax_scatter.text(-0.11, 1.07, "B", transform=ax_scatter.transAxes,
-                    fontsize=18, fontweight="bold", va="top", ha="left",
+    label_kw = dict(fontsize=20, fontweight="bold", va="top", ha="left",
                     family="sans-serif")
-    ax_hist.text(-0.11, 1.07, "C", transform=ax_hist.transAxes,
-                 fontsize=18, fontweight="bold", va="top", ha="left",
-                 family="sans-serif")
+    ax_rdm_behav.text(-0.18, 1.10, "A", transform=ax_rdm_behav.transAxes,
+                      **label_kw)
+    ax_scatter.text(-0.12, 1.08, "B", transform=ax_scatter.transAxes,
+                    **label_kw)
+    ax_hist.text(-0.08, 1.08, "C", transform=ax_hist.transAxes,
+                 **label_kw)
 
     out = f"{OUTPUT_DIR}/figure4.png"
-    fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white",
+    fig.savefig(out, dpi=200, bbox_inches="tight", facecolor="white",
                 edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()

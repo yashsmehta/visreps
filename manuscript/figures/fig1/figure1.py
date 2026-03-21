@@ -560,18 +560,10 @@ def main():
 
     # Plot panels without titles — we'll draw a unified header instead
     plot_top_panel(axes_a[0], top_pcs, labels_2, 2, PALETTE_2, "",
-                   show_ylabel=True,
-                   decision_lines=[{"type": "vline", "pos": med_pc1}])
+                   show_ylabel=True)
 
     plot_top_panel(axes_a[1], top_pcs, labels_4, 4, PALETTE_4, "",
-                   show_ylabel=False,
-                   decision_lines=[
-                       {"type": "vline", "pos": med_pc1},
-                       {"type": "hline_segment",
-                        "x": [xlim_top[0], med_pc1], "pos": med_pc2_left},
-                       {"type": "hline_segment",
-                        "x": [med_pc1, xlim_top[1]], "pos": med_pc2_right},
-                   ])
+                   show_ylabel=False)
 
     rng_colors = np.random.RandomState(7)
     base_cmap = plt.cm.tab20
