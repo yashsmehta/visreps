@@ -263,6 +263,10 @@ def _fetch_pretrained_data():
           AND cfg_id = 'pretrained'
     """, conn)
     conn.close()
+    # Drop duplicates: keep the row with CIs when available
+    pretrained_df = (pretrained_df
+                     .sort_values("ci_low", na_position="last")
+                     .drop_duplicates("model_name", keep="first"))
     scores = pretrained_df.set_index("model_name")
 
     all_points = []
@@ -311,7 +315,7 @@ def plot_comparison_panel(ax, ref_ax=None):
         "Self-supervised": 5.0,
         "Vision-language": 8.0,
     }
-    jitter_spread = 0.30
+    jitter_spread = 0.22
 
     # ── Dashed reference line for coarse-grain 8-way ──
     if not np.isnan(best_coarse["mean"]):
@@ -348,27 +352,51 @@ def plot_comparison_panel(ax, ref_ax=None):
         ax.scatter(x_jit, pt["score"], marker=pt["marker"], c=pt["color"],
                    s=sz, edgecolors="white", linewidths=1.0, zorder=5)
 
-    # ── Model name labels ──
-    fs_model = 8.75
-    x_offset = 0.38
-    min_gap = 0.035
+    # ── Model name labels with repulsion ──
+    fs_model = 7.5
+    min_gap = 0.024
+    # Label column anchored to group center + fixed offset (balanced distance)
+    group_label_x = {g: gx + 0.55 for g, gx in group_positions.items()}
+
     for group_name in PRETRAINED_GROUPS:
         group_pts = sorted(
             [p for p in all_points if p["group"] == group_name],
             key=lambda p: p["score"], reverse=True)
-        used_y = []
-        for pt in group_pts:
-            y = pt["score"]
-            for uy in used_y:
-                if abs(y - uy) < min_gap:
-                    y = uy - min_gap
-            used_y.append(y)
-            ax.text(pt["x_plot"] + x_offset, y, pt["display"],
-                    ha="left", va="center", fontsize=fs_model, color="#333333",
-                    fontstyle="italic", zorder=10)
+        # Start labels at their data y-positions
+        label_ys = [pt["score"] for pt in group_pts]
+        # Iterative bidirectional repulsion
+        for _ in range(80):
+            moved = False
+            for i in range(len(label_ys)):
+                for j in range(i + 1, len(label_ys)):
+                    diff = label_ys[i] - label_ys[j]
+                    if abs(diff) < min_gap:
+                        push = (min_gap - abs(diff)) * 0.5
+                        if diff >= 0:
+                            label_ys[i] += push
+                            label_ys[j] -= push
+                        else:
+                            label_ys[i] -= push
+                            label_ys[j] += push
+                        moved = True
+            if not moved:
+                break
+
+        lx = group_label_x[group_name]
+        for pt, ly in zip(group_pts, label_ys):
+            # Subtle straight connector
+            if abs(ly - pt["score"]) > 0.005:
+                ax.annotate("", xy=(pt["x_plot"] + 0.13, pt["score"]),
+                            xytext=(lx - 0.03, ly),
+                            arrowprops=dict(arrowstyle="-", color="#cccccc",
+                                            lw=0.4, shrinkA=1, shrinkB=1),
+                            zorder=2)
+            ax.text(lx, ly, pt["display"],
+                    ha="left", va="center", fontsize=fs_model, color="#444444",
+                    zorder=10)
 
     # ── Axis formatting ──
-    xlim_right = list(group_positions.values())[-1] + 2.4
+    xlim_right = list(group_positions.values())[-1] + 2.8
     ax.set_xlim(-0.5, xlim_right)
     ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=9.5, labelpad=5)
     ax.set_title("Model Comparison",
