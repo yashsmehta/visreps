@@ -25,15 +25,15 @@ MODELS = {
 EXPERIMENTS = [
     {
         "name": "coarsegrain",
-        "models": ["CustomCNN"],
-        "seeds": [4],
-        "pca_n_classes": [2, 4, 8, 16, 32, 64],
-        "pca_labels_folder": "pca_labels_alexnet",
+        "models": ["ResNet50", "ViTBase"],
+        "seeds": [1],
+        "pca_n_classes": [32],
+        "pca_labels_folder": "pca_labels_clip",
     },
     {
         "name": "standard",
-        "models": ["CustomCNN"],
-        "seeds": [4],
+        "models": ["ResNet50", "ViTBase"],
+        "seeds": [1],
     },
 ]
 
@@ -44,7 +44,7 @@ SLURM_CONFIG = {
     "ntasks": "1",
     "cpus-per-task": "32",
     "gres": "gpu:1",
-    "time": "8:00:00",
+    "time": "20:00:00",
     "partition": "a100",
     "qos": "qos_gpu",
     "account": "mbonner5_gpu",
