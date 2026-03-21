@@ -1,14 +1,14 @@
 {
-  "neural_dataset": "cusack",
+  "neural_dataset": "things-behavior",
   "reconstruct_from_pcs": false,
   "pca_k": 1,
   "load_model_from": "checkpoint",
   "seed": 1,
-  "cfg_id": 16,
+  "cfg_id": 32,
   "checkpoint":
   {
-    "checkpoint_dir": "/data/ymehta3/alexnet_pca",
-    "checkpoint_model": "checkpoint_epoch_20.pth"
+    "checkpoint_dir": "/data/ymehta3/vitbase_clip_pca",
+    "checkpoint_model": "checkpoint_epoch_80.pth"
   },
   "torchvision":
   {

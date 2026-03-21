@@ -72,7 +72,7 @@ def _print_region_results(region, scores, layers, subjects, bootstrap=False,
     for i, subj in enumerate(subjects):
         msg = f"    S{subj:<3} {layers[i]:<7} {scores[i]:.4f}"
         if bootstrap and ci_lows is not None and ci_highs is not None:
-            msg += f"  [dim]\\[{ci_lows[i]:.4f}, {ci_highs[i]:.4f}][/dim]"
+            msg += f"  [not bold grey50]\\[{ci_lows[i]:.4f}, {ci_highs[i]:.4f}][/not bold grey50]"
         rprint(msg, style="highlight")
     mean = np.mean(scores)
     std = np.std(scores)
