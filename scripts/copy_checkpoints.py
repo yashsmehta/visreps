@@ -5,14 +5,16 @@ import os, subprocess
 # Each job specifies a folder, which subdirs to copy, and which files to grab.
 jobs = [
     {
-        "folder": "vitbase_default",
+        "folder": "convnext_base_default",
         "subdirs": ["cfg1000a"],
-        "files": ["checkpoint_epoch_90.pth", "config.json"],
+        "files": ["checkpoint_epoch_10.pth", "checkpoint_epoch_20.pth", "checkpoint_epoch_30.pth", 
+        "checkpoint_epoch_40.pth", "checkpoint_epoch_50.pth", "checkpoint_epoch_60.pth", "config.json"],
     },
     {
-        "folder": "vitbase_clip_pca",
+        "folder": "convnext_base_clip_pca",
         "subdirs": ["cfg32a"],
-        "files": ["checkpoint_epoch_90.pth", "config.json"],
+        "files": ["checkpoint_epoch_10.pth", "checkpoint_epoch_20.pth", "checkpoint_epoch_30.pth", 
+        "checkpoint_epoch_40.pth", "checkpoint_epoch_50.pth", "checkpoint_epoch_60.pth", "config.json"],
     },
 ]
 remote_base = "/scratch4/mbonner5/ymehta3/visreps/model_checkpoints"
