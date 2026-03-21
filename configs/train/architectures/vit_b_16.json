@@ -6,11 +6,11 @@
   },
   "optimizer": "adamw",
   "learning_rate": 0.0003,
-  "weight_decay": 0.3,
+  "weight_decay": 0.05,
   "grad_clip": 1.0,
   "lr_scheduler": "cosineannealinglr",
   "label_smoothing": 0.1,
-  "num_epochs": 90,
-  "warmup_epochs": 5,
+  "num_epochs": 20,
+  "warmup_epochs": 2,
   "use_amp": true
 }
