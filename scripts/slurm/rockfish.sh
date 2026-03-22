@@ -4,7 +4,7 @@
 #               from the local machine over SSH.
 #
 # Usage:
-#   ./scripts/slurm/rockfish.sh submit [train|eval]   Push, pull, submit jobs
+#   ./scripts/slurm/rockfish.sh submit                 Push, pull, submit train jobs
 #   ./scripts/slurm/rockfish.sh jobs                   Show running/pending jobs
 #   ./scripts/slurm/rockfish.sh history [N]            Last N completed jobs (default 20)
 #   ./scripts/slurm/rockfish.sh log <job_id>           Tail the output log
@@ -25,8 +25,23 @@ ssh_rf() { ssh "$REMOTE" "$@"; }
 
 die() { echo "Error: $*" >&2; exit 1; }
 
+SLURM_FILES=(
+    "scripts/slurm/"
+    "configs/train/"
+)
+
 ensure_synced() {
-    echo "── Pushing local changes..."
+    # Auto-commit only Slurm-related files, then push + pull on Rockfish
+    local changed
+    changed="$(git -C "$LOCAL_REPO" diff --name-only -- "${SLURM_FILES[@]}")"
+    if [ -n "$changed" ]; then
+        echo "── Committing Slurm-related changes..."
+        git -C "$LOCAL_REPO" add -- "${SLURM_FILES[@]}"
+        git -C "$LOCAL_REPO" commit -m "🔧 Update Slurm configs for submission"
+        echo ""
+    fi
+
+    echo "── Pushing to remote..."
     git -C "$LOCAL_REPO" push || die "git push failed"
 
     echo "── Pulling on Rockfish..."
@@ -37,17 +52,10 @@ ensure_synced() {
 # ── Commands ─────────────────────────────────────────────────
 
 cmd_submit() {
-    local scheduler="${1:-train}"
-    case "$scheduler" in
-        train) script="scripts/slurm/train_scheduler.py" ;;
-        eval)  script="scripts/slurm/eval_scheduler.py" ;;
-        *)     die "Unknown scheduler: $scheduler (use 'train' or 'eval')" ;;
-    esac
-
     ensure_synced
 
-    echo "── Submitting jobs via $script..."
-    ssh_rf "cd $REMOTE_REPO && source .venv/bin/activate && python $script"
+    echo "── Submitting training jobs..."
+    ssh_rf "cd $REMOTE_REPO && source .venv/bin/activate && python scripts/slurm/train_scheduler.py"
 }
 
 cmd_jobs() {
@@ -129,7 +137,7 @@ cmd="${1:-}"
 shift || true
 
 case "$cmd" in
-    submit)  cmd_submit "$@" ;;
+    submit)  cmd_submit ;;
     jobs)    cmd_jobs ;;
     history) cmd_history "$@" ;;
     log)     cmd_log "$@" ;;
@@ -139,7 +147,7 @@ case "$cmd" in
         echo "Usage: rockfish.sh <command> [args]"
         echo ""
         echo "Commands:"
-        echo "  submit [train|eval]   Push, pull on Rockfish, submit Slurm jobs"
+        echo "  submit                Push, pull on Rockfish, submit train jobs"
         echo "  jobs                  Show running/pending jobs"
         echo "  history [N]           Last N completed jobs (default 20)"
         echo "  log <job_id>          Tail stdout log"
