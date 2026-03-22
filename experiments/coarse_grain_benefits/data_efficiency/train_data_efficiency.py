@@ -3,11 +3,12 @@ Train CustomCNN on imagenet-mini subsets for the data efficiency experiment.
 Tests whether coarse-grained supervision produces more aligned representations
 than fine-grained supervision, even with limited data.
 
-Trains 5 conditions (8, 16, 32, 64 CLIP classes + 1000-class) on 3 datasets.
+Trains 5 conditions (8, 16, 32, 64 coarse classes + 1000-class) on 3 datasets.
 Skips models whose final checkpoint already exists.
 
 Usage (from project root):
     python experiments/coarse_grain_benefits/data_efficiency/train_data_efficiency.py
+    python experiments/coarse_grain_benefits/data_efficiency/train_data_efficiency.py --pca_labels alexnet
     python experiments/coarse_grain_benefits/data_efficiency/train_data_efficiency.py --datasets imagenet-mini-5
     python experiments/coarse_grain_benefits/data_efficiency/train_data_efficiency.py --conditions 16 32 64
 """
@@ -25,20 +26,10 @@ load_dotenv(os.path.join(PROJECT_ROOT, '.env'))
 
 from visreps.trainer import Trainer
 from visreps.utils import load_config, validate_config
-
-SEED = 1
-SEED_LETTER = "a"
-NUM_EPOCHS = 200
-
-DATASETS = ["imagenet-mini-5", "imagenet-mini-10", "imagenet-mini-50"]
-
-CONDITIONS = {
-    8:    {"pca_labels": True, "pca_n_classes": 8,  "pca_labels_folder": "pca_labels_clip"},
-    16:   {"pca_labels": True, "pca_n_classes": 16, "pca_labels_folder": "pca_labels_clip"},
-    32:   {"pca_labels": True, "pca_n_classes": 32, "pca_labels_folder": "pca_labels_clip"},
-    64:   {"pca_labels": True, "pca_n_classes": 64, "pca_labels_folder": "pca_labels_clip"},
-    1000: {"pca_labels": False, "pca_n_classes": 1000},
-}
+from experiments.coarse_grain_benefits.data_efficiency.shared import (
+    SEED, SEED_LETTER, NUM_EPOCHS, DEFAULT_PCA_LABELS, DATASETS,
+    get_conditions, get_checkpoint_dir,
+)
 
 TRAINING_PARAMS = {
     "batchsize": 256,
@@ -53,18 +44,19 @@ TRAINING_PARAMS = {
 }
 
 
-def checkpoint_exists(dataset, n_classes):
+def checkpoint_exists(dataset, n_classes, pca_labels):
     """Check if the final checkpoint for this condition already exists."""
-    checkpoint_dir = f"model_checkpoints/data_efficiency_{dataset}"
-    path = os.path.join(checkpoint_dir, f"cfg{n_classes}{SEED_LETTER}",
+    checkpoint_dir = get_checkpoint_dir(dataset, pca_labels)
+    path = os.path.join("model_checkpoints", checkpoint_dir,
+                        f"cfg{n_classes}{SEED_LETTER}",
                         f"checkpoint_epoch_{NUM_EPOCHS}.pth")
     return os.path.exists(path)
 
 
-def train_condition(n_classes, dataset):
+def train_condition(n_classes, dataset, conditions, pca_labels):
     """Train a single condition."""
-    condition = CONDITIONS[n_classes]
-    checkpoint_dir = f"data_efficiency_{dataset}"
+    condition = conditions[n_classes]
+    checkpoint_dir = get_checkpoint_dir(dataset, pca_labels)
     print(f"\n{'='*60}")
     print(f"Training {n_classes}-class model on {dataset}")
     print(f"Checkpoints: model_checkpoints/{checkpoint_dir}/")
@@ -76,7 +68,7 @@ def train_condition(n_classes, dataset):
     for k, v in params.items():
         overrides.append(f"{k}={v}")
 
-    cfg = load_config("configs/train/base.json", overrides)
+    cfg = load_config(["configs/train/base.json", "configs/train/architectures/custom_cnn.json"], overrides)
     cfg = validate_config(cfg)
     Trainer(cfg).train()
     print(f"\n{n_classes}-class training on {dataset} complete.")
@@ -84,26 +76,30 @@ def train_condition(n_classes, dataset):
 
 def main():
     parser = argparse.ArgumentParser(description="Train models for data efficiency experiment")
+    parser.add_argument("--pca_labels", type=str, default=DEFAULT_PCA_LABELS,
+                        help="PCA labels source, e.g. 'clip' or 'alexnet' (default: clip)")
     parser.add_argument("--datasets", type=str, nargs="+", default=DATASETS,
                         choices=DATASETS, help="Datasets to train on")
-    parser.add_argument("--conditions", type=int, nargs="+",
-                        default=list(CONDITIONS.keys()),
-                        choices=list(CONDITIONS.keys()),
-                        help="Which conditions to train")
+    parser.add_argument("--conditions", type=int, nargs="+", default=None,
+                        help="Which conditions to train (default: all)")
     parser.add_argument("--force", action="store_true",
                         help="Train even if checkpoint exists")
     args = parser.parse_args()
+
+    conditions = get_conditions(args.pca_labels)
+    if args.conditions is None:
+        args.conditions = list(conditions.keys())
 
     total = len(args.datasets) * len(args.conditions)
     skipped = 0
 
     for dataset in args.datasets:
         for n_classes in args.conditions:
-            if not args.force and checkpoint_exists(dataset, n_classes):
+            if not args.force and checkpoint_exists(dataset, n_classes, args.pca_labels):
                 print(f"[SKIP] {n_classes}-class on {dataset} — checkpoint exists")
                 skipped += 1
                 continue
-            train_condition(n_classes, dataset)
+            train_condition(n_classes, dataset, conditions, args.pca_labels)
 
     print(f"\nTraining complete. {total - skipped}/{total} runs executed, {skipped} skipped.")
     print("Run eval_data_efficiency.py to evaluate.")

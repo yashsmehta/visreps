@@ -6,11 +6,13 @@ Saves results to data_efficiency_results.csv with benchmark="nsd_early".
 
 Usage (from project root):
     python experiments/coarse_grain_benefits/data_efficiency/eval_early_visual.py
+    python experiments/coarse_grain_benefits/data_efficiency/eval_early_visual.py --pca_labels alexnet
 """
 
 import gc
 import os
 import sys
+import argparse
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.insert(0, PROJECT_ROOT)
@@ -23,30 +25,21 @@ import torch
 import pandas as pd
 import visreps.evals as evals
 from visreps.utils import load_config, validate_config
-
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-CSV_PATH = os.path.join(SCRIPT_DIR, "data_efficiency_results.csv")
-
-SEED = 1
-DATASETS = ["imagenet-mini-5", "imagenet-mini-10", "imagenet-mini-50"]
-CONDITIONS = {
-    8:    {"pca_labels": True, "pca_n_classes": 8,  "pca_labels_folder": "pca_labels_clip"},
-    16:   {"pca_labels": True, "pca_n_classes": 16, "pca_labels_folder": "pca_labels_clip"},
-    32:   {"pca_labels": True, "pca_n_classes": 32, "pca_labels_folder": "pca_labels_clip"},
-    64:   {"pca_labels": True, "pca_n_classes": 64, "pca_labels_folder": "pca_labels_clip"},
-    1000: {"pca_labels": False, "pca_n_classes": 1000},
-}
+from experiments.coarse_grain_benefits.data_efficiency.shared import (
+    SEED, DEFAULT_PCA_LABELS, DATASETS,
+    get_conditions, get_checkpoint_dir, get_csv_path, save_results,
+)
 
 
-def get_best_ventral_epochs():
+def get_best_ventral_epochs(csv_path, conditions):
     """Read existing CSV and find best ventral epoch per (dataset, condition)."""
-    df = pd.read_csv(CSV_PATH)
+    df = pd.read_csv(csv_path)
     nsd = df[df["benchmark"] == "nsd"]
 
     best_epochs = {}
     for ds in DATASETS:
         dsdf = nsd[nsd["dataset"] == ds]
-        for cond in CONDITIONS:
+        for cond in conditions:
             cdf = dsdf[dsdf["condition"] == cond]
             if cdf.empty:
                 continue
@@ -57,14 +50,14 @@ def get_best_ventral_epochs():
     return best_epochs
 
 
-def eval_early_visual(dataset, condition_id, epoch):
+def eval_early_visual(dataset, condition_id, epoch, conditions, pca_labels):
     """Run NSD early visual stream eval, return per-subject result rows."""
     print(f"\n{'='*60}")
     print(f"Early visual stream: {condition_id}-class | {dataset} | epoch {epoch}")
     print(f"{'='*60}")
 
-    cond = CONDITIONS[condition_id]
-    checkpoint_dir = f"model_checkpoints/data_efficiency_{dataset}"
+    cond = conditions[condition_id]
+    checkpoint_dir = f"model_checkpoints/{get_checkpoint_dir(dataset, pca_labels)}"
 
     overrides = [
         f"seed={SEED}",
@@ -107,54 +100,39 @@ def eval_early_visual(dataset, condition_id, epoch):
     return rows
 
 
-def save_results(rows):
-    """Append result rows to the combined CSV, deduplicating."""
-    new_df = pd.DataFrame(rows)
-    if os.path.exists(CSV_PATH):
-        existing = pd.read_csv(CSV_PATH)
-        for _, row in new_df.iterrows():
-            mask = (
-                (existing["dataset"] == row["dataset"]) &
-                (existing["condition"] == row["condition"]) &
-                (existing["epoch"] == row["epoch"]) &
-                (existing["benchmark"] == row["benchmark"]) &
-                (existing["subject_idx"] == row["subject_idx"])
-            )
-            existing = existing[~mask]
-        combined = pd.concat([existing, new_df], ignore_index=True)
-    else:
-        combined = new_df
-
-    combined = combined.sort_values(
-        ["benchmark", "dataset", "condition", "epoch", "subject_idx"]
-    ).reset_index(drop=True)
-    combined.to_csv(CSV_PATH, index=False)
-    print(f"  Saved to {CSV_PATH}")
-
-
 def main():
-    best_epochs = get_best_ventral_epochs()
+    parser = argparse.ArgumentParser(
+        description="Evaluate data efficiency models on NSD early visual stream")
+    parser.add_argument("--pca_labels", type=str, default=DEFAULT_PCA_LABELS,
+                        help="PCA labels source, e.g. 'clip' or 'alexnet' (default: clip)")
+    parser.add_argument("--force", action="store_true",
+                        help="Re-evaluate even if result exists in CSV")
+    args = parser.parse_args()
+
+    conditions = get_conditions(args.pca_labels)
+    csv_path = get_csv_path(args.pca_labels)
+    best_epochs = get_best_ventral_epochs(csv_path, conditions)
 
     print("Best ventral epochs (will evaluate early visual stream at these):")
     for (ds, cond), epoch in sorted(best_epochs.items()):
         print(f"  {ds} / {cond}-class -> epoch {epoch}")
 
     # Check which are already done
-    if os.path.exists(CSV_PATH):
-        df = pd.read_csv(CSV_PATH)
+    if os.path.exists(csv_path):
+        df = pd.read_csv(csv_path)
         existing = set(zip(df["dataset"], df["condition"], df["epoch"], df["benchmark"]))
     else:
         existing = set()
 
     completed, skipped = 0, 0
     for (ds, cond), epoch in sorted(best_epochs.items()):
-        if (ds, cond, epoch, "nsd_early") in existing:
+        if not args.force and (ds, cond, epoch, "nsd_early") in existing:
             print(f"[SKIP] {cond}-class {ds} epoch {epoch} — already evaluated")
             skipped += 1
             continue
 
-        rows = eval_early_visual(ds, cond, epoch)
-        save_results(rows)
+        rows = eval_early_visual(ds, cond, epoch, conditions, args.pca_labels)
+        save_results(rows, csv_path)
         completed += 1
 
         gc.collect()

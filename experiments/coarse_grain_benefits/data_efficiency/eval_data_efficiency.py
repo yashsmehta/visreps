@@ -4,9 +4,11 @@ NSD ventral visual stream, and TVSD IT. Uses the standard two-phase RSA
 pipeline (layer selection on train, re-extract best layer on test).
 
 Results are saved to a single combined CSV: data_efficiency_results.csv
+(or data_efficiency_{pca_labels}_results.csv for non-default PCA labels).
 
 Usage (from project root):
     python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py
+    python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py --pca_labels alexnet
     python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py --datasets imagenet-mini-50
     python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py --conditions 16 32
     python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py --benchmarks things
@@ -30,26 +32,16 @@ import torch
 import pandas as pd
 import visreps.evals as evals
 from visreps.utils import load_config, validate_config
-
-SEED = 1
-DATASETS = ["imagenet-mini-5", "imagenet-mini-10", "imagenet-mini-50"]
-CONDITIONS = {
-    8:    {"pca_labels": True, "pca_n_classes": 8,  "pca_labels_folder": "pca_labels_clip"},
-    16:   {"pca_labels": True, "pca_n_classes": 16, "pca_labels_folder": "pca_labels_clip"},
-    32:   {"pca_labels": True, "pca_n_classes": 32, "pca_labels_folder": "pca_labels_clip"},
-    64:   {"pca_labels": True, "pca_n_classes": 64, "pca_labels_folder": "pca_labels_clip"},
-    1000: {"pca_labels": False, "pca_n_classes": 1000},
-}
-EPOCHS = [100, 200]
-
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-CSV_PATH = os.path.join(SCRIPT_DIR, "data_efficiency_results.csv")
+from experiments.coarse_grain_benefits.data_efficiency.shared import (
+    SEED, DEFAULT_PCA_LABELS, DATASETS, EPOCHS,
+    get_conditions, get_checkpoint_dir, get_csv_path, save_results,
+)
 
 
-def build_overrides(dataset, condition_id, epoch, benchmark):
+def build_overrides(dataset, condition_id, epoch, benchmark, conditions, pca_labels):
     """Build config overrides for a single eval run."""
-    cond = CONDITIONS[condition_id]
-    checkpoint_dir = f"model_checkpoints/data_efficiency_{dataset}"
+    cond = conditions[condition_id]
+    checkpoint_dir = f"model_checkpoints/{get_checkpoint_dir(dataset, pca_labels)}"
 
     overrides = [
         f"seed={SEED}",
@@ -83,11 +75,11 @@ def build_overrides(dataset, condition_id, epoch, benchmark):
     return overrides
 
 
-def load_existing_results():
+def load_existing_results(csv_path):
     """Load existing CSV once and return set of completed (dataset, condition, epoch, benchmark) tuples."""
-    if not os.path.exists(CSV_PATH):
+    if not os.path.exists(csv_path):
         return set()
-    df = pd.read_csv(CSV_PATH)
+    df = pd.read_csv(csv_path)
     return set(zip(df["dataset"], df["condition"], df["epoch"], df["benchmark"]))
 
 
@@ -96,134 +88,54 @@ def result_exists(completed, dataset, condition_id, epoch, benchmark):
     return (dataset, condition_id, epoch, benchmark) in completed
 
 
-def checkpoint_exists(dataset, condition_id, epoch):
+def checkpoint_exists(dataset, condition_id, epoch, pca_labels):
     """Check if the checkpoint file exists."""
-    checkpoint_dir = f"model_checkpoints/data_efficiency_{dataset}"
+    checkpoint_dir = get_checkpoint_dir(dataset, pca_labels)
     seed_letter = "a"  # seed=1
-    path = os.path.join(checkpoint_dir, f"cfg{condition_id}{seed_letter}",
+    path = os.path.join("model_checkpoints", checkpoint_dir,
+                        f"cfg{condition_id}{seed_letter}",
                         f"checkpoint_epoch_{epoch}.pth")
     return os.path.exists(path)
 
 
-def save_results(rows):
-    """Append result rows to the combined CSV, deduplicating."""
-    new_df = pd.DataFrame(rows)
-    if os.path.exists(CSV_PATH):
-        existing = pd.read_csv(CSV_PATH)
-        for _, row in new_df.iterrows():
-            mask = (
-                (existing["dataset"] == row["dataset"]) &
-                (existing["condition"] == row["condition"]) &
-                (existing["epoch"] == row["epoch"]) &
-                (existing["benchmark"] == row["benchmark"]) &
-                (existing["subject_idx"] == row["subject_idx"])
-            )
-            existing = existing[~mask]
-        combined = pd.concat([existing, new_df], ignore_index=True)
-    else:
-        combined = new_df
-
-    combined = combined.sort_values(
-        ["benchmark", "dataset", "condition", "epoch", "subject_idx"]
-    ).reset_index(drop=True)
-    combined.to_csv(CSV_PATH, index=False)
-    print(f"  Saved to {CSV_PATH}")
+def _make_result_rows(result_df, dataset, condition_id, epoch, benchmark):
+    """Convert eval result DataFrame to list of row dicts for the CSV."""
+    rows = []
+    for i, (_, r) in enumerate(result_df.iterrows()):
+        rows.append({
+            "dataset": dataset,
+            "condition": condition_id,
+            "epoch": epoch,
+            "benchmark": benchmark,
+            "subject_idx": "N/A" if benchmark == "things" else i,
+            "layer": r["layer"],
+            "score": round(r["score"], 4),
+            "ci_low": round(r["ci_low"], 4) if r.get("ci_low") is not None else None,
+            "ci_high": round(r["ci_high"], 4) if r.get("ci_high") is not None else None,
+        })
+    return rows
 
 
-def eval_run(dataset, condition_id, epoch, benchmark):
+def eval_benchmark(dataset, condition_id, epoch, benchmark, conditions, pca_labels):
     """Run a single evaluation and return result rows."""
     print(f"\n{'='*60}")
     print(f"Evaluating: {condition_id}-class | {dataset} | epoch {epoch} | {benchmark}")
     print(f"{'='*60}")
 
-    overrides = build_overrides(dataset, condition_id, epoch, benchmark)
+    overrides = build_overrides(dataset, condition_id, epoch, benchmark, conditions, pca_labels)
     cfg = load_config("configs/eval/base.json", overrides)
     cfg = validate_config(cfg)
     result_df = evals.eval(cfg)
-
-    rows = []
-    for _, r in result_df.iterrows():
-        row = {
-            "dataset": dataset,
-            "condition": condition_id,
-            "epoch": epoch,
-            "benchmark": benchmark,
-            "subject_idx": "N/A" if benchmark == "things" else r.get("subject_idx", "N/A"),
-            "layer": r["layer"],
-            "score": round(r["score"], 4),
-            "ci_low": round(r["ci_low"], 4) if r.get("ci_low") is not None else None,
-            "ci_high": round(r["ci_high"], 4) if r.get("ci_high") is not None else None,
-        }
-        rows.append(row)
-
-    return rows
+    return _make_result_rows(result_df, dataset, condition_id, epoch, benchmark)
 
 
-def eval_nsd(dataset, condition_id, epoch):
-    """Run NSD eval — returns per-subject rows with subject_idx populated."""
-    print(f"\n{'='*60}")
-    print(f"Evaluating: {condition_id}-class | {dataset} | epoch {epoch} | nsd")
-    print(f"{'='*60}")
-
-    overrides = build_overrides(dataset, condition_id, epoch, "nsd")
-    cfg = load_config("configs/eval/base.json", overrides)
-    cfg = validate_config(cfg)
-    result_df = evals.eval(cfg)
-
-    # The eval returns one row per (subject, region) pair.
-    # We need to figure out subject_idx from the order (0-7).
-    rows = []
-    for i, (_, r) in enumerate(result_df.iterrows()):
-        rows.append({
-            "dataset": dataset,
-            "condition": condition_id,
-            "epoch": epoch,
-            "benchmark": "nsd",
-            "subject_idx": i,
-            "layer": r["layer"],
-            "score": round(r["score"], 4),
-            "ci_low": round(r["ci_low"], 4) if r.get("ci_low") is not None else None,
-            "ci_high": round(r["ci_high"], 4) if r.get("ci_high") is not None else None,
-        })
-
-    return rows
-
-
-def eval_tvsd(dataset, condition_id, epoch):
-    """Run TVSD IT eval — returns per-subject rows (2 monkeys)."""
-    print(f"\n{'='*60}")
-    print(f"Evaluating: {condition_id}-class | {dataset} | epoch {epoch} | tvsd")
-    print(f"{'='*60}")
-
-    overrides = build_overrides(dataset, condition_id, epoch, "tvsd")
-    cfg = load_config("configs/eval/base.json", overrides)
-    cfg = validate_config(cfg)
-    result_df = evals.eval(cfg)
-
-    rows = []
-    for i, (_, r) in enumerate(result_df.iterrows()):
-        rows.append({
-            "dataset": dataset,
-            "condition": condition_id,
-            "epoch": epoch,
-            "benchmark": "tvsd",
-            "subject_idx": i,
-            "layer": r["layer"],
-            "score": round(r["score"], 4),
-            "ci_low": round(r["ci_low"], 4) if r.get("ci_low") is not None else None,
-            "ci_high": round(r["ci_high"], 4) if r.get("ci_high") is not None else None,
-        })
-
-    return rows
-
-
-def print_summary(datasets, conditions, benchmarks):
+def print_summary(datasets, conditions, benchmarks, csv_path):
     """Print results summary table."""
-    if not os.path.exists(CSV_PATH):
+    if not os.path.exists(csv_path):
         print("No results CSV found.")
         return
 
-    df = pd.read_csv(CSV_PATH)
+    df = pd.read_csv(csv_path)
 
     for bench in benchmarks:
         bdf = df[df["benchmark"] == bench]
@@ -260,11 +172,12 @@ def print_summary(datasets, conditions, benchmarks):
 def main():
     parser = argparse.ArgumentParser(
         description="Evaluate data efficiency models on THINGS, NSD, and TVSD")
+    parser.add_argument("--pca_labels", type=str, default=DEFAULT_PCA_LABELS,
+                        help="PCA labels source, e.g. 'clip' or 'alexnet' (default: clip)")
     parser.add_argument("--datasets", type=str, nargs="+", default=DATASETS,
                         choices=DATASETS)
-    parser.add_argument("--conditions", type=int, nargs="+",
-                        default=list(CONDITIONS.keys()),
-                        choices=list(CONDITIONS.keys()))
+    parser.add_argument("--conditions", type=int, nargs="+", default=None,
+                        help="Which conditions to evaluate (default: all)")
     parser.add_argument("--epochs", type=int, nargs="+", default=EPOCHS)
     parser.add_argument("--benchmarks", type=str, nargs="+",
                         default=["things", "nsd", "tvsd"],
@@ -275,20 +188,25 @@ def main():
     parser.add_argument("--print_only", action="store_true")
     args = parser.parse_args()
 
+    conditions = get_conditions(args.pca_labels)
+    if args.conditions is None:
+        args.conditions = list(conditions.keys())
+    csv_path = get_csv_path(args.pca_labels)
+
     if args.print_only:
-        print_summary(args.datasets, args.conditions, args.benchmarks)
+        print_summary(args.datasets, args.conditions, args.benchmarks, csv_path)
         return
 
     total = len(args.datasets) * len(args.conditions) * len(args.epochs) * len(args.benchmarks)
     completed, skipped = 0, 0
-    existing = load_existing_results()
+    existing = load_existing_results(csv_path)
 
     for dataset in args.datasets:
         for condition_id in args.conditions:
             for epoch in args.epochs:
                 for benchmark in args.benchmarks:
                     # Skip if checkpoint doesn't exist
-                    if not checkpoint_exists(dataset, condition_id, epoch):
+                    if not checkpoint_exists(dataset, condition_id, epoch, args.pca_labels):
                         print(f"[SKIP] {condition_id}-class {dataset} epoch {epoch} "
                               f"— checkpoint not found")
                         skipped += 1
@@ -301,14 +219,9 @@ def main():
                         skipped += 1
                         continue
 
-                    if benchmark == "things":
-                        rows = eval_run(dataset, condition_id, epoch, benchmark)
-                    elif benchmark == "nsd":
-                        rows = eval_nsd(dataset, condition_id, epoch)
-                    elif benchmark == "tvsd":
-                        rows = eval_tvsd(dataset, condition_id, epoch)
-
-                    save_results(rows)
+                    rows = eval_benchmark(dataset, condition_id, epoch, benchmark,
+                                          conditions, args.pca_labels)
+                    save_results(rows, csv_path)
                     completed += 1
 
                     # Release file handles between runs to avoid "Too many open files"
@@ -316,7 +229,7 @@ def main():
                     torch.cuda.empty_cache()
 
     print(f"\nEvaluation complete. {completed}/{total} runs executed, {skipped} skipped.")
-    print_summary(args.datasets, args.conditions, args.benchmarks)
+    print_summary(args.datasets, args.conditions, args.benchmarks, csv_path)
 
 
 if __name__ == "__main__":
