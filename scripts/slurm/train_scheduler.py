@@ -29,12 +29,7 @@ EXPERIMENTS = [
         "seeds": [1],
         "pca_n_classes": [2, 4, 8, 16, 64],
         "pca_labels_folder": "pca_labels_clip",
-    },
-    {
-        "name": "standard",
-        "models": ["ResNet50", "ConvNeXt_Base", "ViTBase"],
-        "seeds": [1],
-    },
+    }
 ]
 
 SLURM_CONFIG = {
