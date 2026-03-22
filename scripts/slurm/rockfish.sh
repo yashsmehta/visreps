@@ -54,6 +54,29 @@ ensure_synced() {
 cmd_submit() {
     ensure_synced
 
+    # Dry-run to enumerate jobs (parses TOTAL=N from train_scheduler.py --dry-run)
+    echo "── Checking jobs to submit..."
+    local dry_output
+    dry_output="$(ssh_rf "cd $REMOTE_REPO && source .venv/bin/activate && python scripts/slurm/train_scheduler.py --dry-run")"
+
+    local total
+    total="$(echo "$dry_output" | grep '^TOTAL=' | cut -d= -f2)"
+
+    if [ -z "$total" ] || [ "$total" -eq 0 ]; then
+        echo "No jobs to submit."
+        return
+    fi
+
+    echo ""
+    echo "$dry_output" | grep -v '^TOTAL='
+    echo ""
+    read -rp "Submit $total job(s) to Rockfish? [y/N] " confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+        echo "Aborted."
+        return
+    fi
+
+    echo ""
     echo "── Submitting training jobs..."
     ssh_rf "cd $REMOTE_REPO && source .venv/bin/activate && python scripts/slurm/train_scheduler.py"
 }

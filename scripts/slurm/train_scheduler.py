@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 import subprocess
@@ -136,10 +137,22 @@ def build_jobs(experiments):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dry-run", action="store_true", help="List jobs without submitting")
+    args = parser.parse_args()
+
+    jobs = build_jobs(EXPERIMENTS)
+
+    if args.dry_run:
+        # Output contract (parsed by rockfish.sh): job lines then "TOTAL=N"
+        for job_num, (exp_name, model_name, arch_config, overrides, job_name) in enumerate(jobs, 1):
+            print(f"  {job_num}. {job_name} | {exp_name} | {model_name}")
+        print(f"\nTOTAL={len(jobs)}")
+        return
+
     Path("scripts/slurm/slurm_logs").mkdir(parents=True, exist_ok=True)
     Path("scripts/slurm/tmp").mkdir(parents=True, exist_ok=True)
 
-    jobs = build_jobs(EXPERIMENTS)
     print(f"Submitting {len(jobs)} SLURM jobs\n")
 
     for job_num, (exp_name, model_name, arch_config, overrides, job_name) in enumerate(jobs, 1):
