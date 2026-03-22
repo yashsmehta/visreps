@@ -39,6 +39,7 @@ MODELS = {
 }
 
 DATASETS = ["imagenet-mini-10", "imagenet-mini-100"]
+WALL_TIMES = {"imagenet-mini-10": "2:30:00", "imagenet-mini-100": "10:00:00"}
 PCA_LABELS_CHOICES = ["clip", "alexnet"]
 
 COARSE_CLASSES = [8, 16, 32, 64]
@@ -52,6 +53,7 @@ SHARED_OVERRIDES = {
     "num_epochs": NUM_EPOCHS,
     "warmup_epochs": 10,
     "checkpoint_interval": 50,
+    "log_interval": 50,
     "log_checkpoints": True,
     "use_wandb": False,
 }
@@ -63,7 +65,7 @@ SLURM_CONFIG = {
     "ntasks": "1",
     "cpus-per-task": "32",
     "gres": "gpu:1",
-    "time": "10:00:00",
+    "time": "10:00:00",  # overridden per-dataset by WALL_TIMES
     "partition": "a100",
     "qos": "qos_gpu",
     "account": "mbonner5_gpu",
@@ -106,9 +108,9 @@ def make_job_name(model_name, dataset, n_classes, pca_labels):
     return f"de_{tag}_{pca_tag}_{ds_tag}_c{n_classes}"
 
 
-def generate_slurm_script(base_config, arch_config, overrides, job_name):
+def generate_slurm_script(base_config, arch_config, overrides, job_name, dataset):
     """Generate SLURM batch script content."""
-    slurm_config = {**SLURM_CONFIG, "job-name": job_name}
+    slurm_config = {**SLURM_CONFIG, "job-name": job_name, "time": WALL_TIMES[dataset]}
     lines = ["#!/bin/bash"]
     lines += [f"#SBATCH --{k}={v}" for k, v in slurm_config.items()]
     lines += [
@@ -201,7 +203,7 @@ def main():
         script_path = f"scripts/slurm/tmp/data_eff_{i}.sh"
 
         with open(script_path, "w") as f:
-            f.write(generate_slurm_script(BASE_CONFIG, arch_config, overrides, job_name))
+            f.write(generate_slurm_script(BASE_CONFIG, arch_config, overrides, job_name, dataset))
 
         print(f"  [{i}/{len(jobs)}] {job_name}  ({model}, {dataset}, {n_classes}-class)")
 
