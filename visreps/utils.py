@@ -395,7 +395,8 @@ def save_results(df, cfg, timeout=60, quiet=False):
         (run_id, config_json),
     )
 
-    # ── results ──────────────────────────────────────────────
+    # ── results (clear stale rows so re-runs with a different best layer replace cleanly)
+    conn.execute("DELETE FROM results WHERE run_id = ?", (run_id,))
     for _, row in df.iterrows():
         method = row.get("compare_method", cfg.get("compare_method", "spearman"))
         layer = row.get("layer")
