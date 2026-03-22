@@ -33,9 +33,9 @@ visreps/                   # Main package
 └── dataloaders/           # obj_cls.py (ImageNet), neural.py (NSD/THINGS/TVSD)
 
 configs/                   # JSON configs (train/, eval/, grids/)
+runners/                   # Local experiment runners (use these on this machine)
 scripts/
 ├── slurm/                 # Slurm schedulers (Rockfish cluster only, not used here)
-├── runners/               # Local experiment runners (use these on this machine)
 ├── coarsegrain/           # PCA label generation
 └── extract_representations/  # Feature extraction from pretrained models
 
@@ -74,7 +74,7 @@ logs/                      # Evaluation results (SQLite DB + legacy CSVs)
 
 ```bash
 python -m visreps.run --mode train --override pca_labels=true pca_n_classes=32 seed=1
-python scripts/runners/train_runner.py --grid configs/grids/train_default.json  # Grid sweep (local)
+python runners/train_runner.py --grid configs/grids/train_default.json  # Grid sweep (local)
 ```
 
 **Key config options:**
@@ -93,10 +93,10 @@ There is a single unified `eval` mode (no separate aggregate mode). For NSD/TVSD
 
 ```bash
 python -m visreps.run --mode eval --override cfg_id=32 seed=1 analysis=rsa neural_dataset=nsd
-python scripts/runners/eval_runner.py --grid configs/grids/eval_default.json  # Grid sweep (local)
+python runners/eval_runner.py --grid configs/grids/eval_default.json  # Grid sweep (local)
 ```
 
-**Note:** `scripts/slurm/eval_scheduler.py` is for the Rockfish Slurm cluster only. This machine is a local lab GPU cluster — always use `scripts/runners/eval_runner.py` instead, which loads grid configs from `configs/grids/` via `--grid`.
+**Note:** `scripts/slurm/eval_scheduler.py` is for the Rockfish Slurm cluster only. This machine is a local lab GPU cluster — always use `runners/eval_runner.py` instead, which loads grid configs from `configs/grids/` via `--grid`.
 
 **Key config options:**
 - `load_model_from`: "checkpoint" or "torchvision"
@@ -180,7 +180,7 @@ BONNER_DATASETS_HOME=~/.cache/bonner-datasets  # TVSD uses THINGS images from he
 
 ## Evaluation Pipeline
 
-Use `scripts/runners/eval_runner.py` with JSON grid configs (`configs/grids/`) for running evaluations — **not** `scripts/slurm/eval_scheduler.py` (which is Slurm-only with hardcoded param grids). Always check the JSON configs in `configs/grids/` before running experiments.
+Use `runners/eval_runner.py` with JSON grid configs (`configs/grids/`) for running evaluations — **not** `scripts/slurm/eval_scheduler.py` (which is Slurm-only with hardcoded param grids). Always check the JSON configs in `configs/grids/` before running experiments.
 
 ## Model Checkpoints
 

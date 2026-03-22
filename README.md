@@ -46,7 +46,7 @@ Train models with different label granularities:
 python -m visreps.run --mode train --override pca_labels=true pca_n_classes=32 seed=1
 
 # Grid search over multiple configurations
-python scripts/runners/train_runner.py --grid configs/grids/train_default.json
+python runners/train_runner.py --grid configs/grids/train_default.json
 ```
 
 ### Evaluation
@@ -59,7 +59,7 @@ python -m visreps.run --mode eval --override cfg_id=32 seed=1 analysis=rsa neura
 python -m visreps.run --mode eval --override cfg_id=32 seed=1 analysis=encoding_score neural_dataset=things
 
 # Grid search over evaluation configurations
-python scripts/runners/eval_runner.py --grid configs/grids/eval_default.json
+python runners/eval_runner.py --grid configs/grids/eval_default.json
 ```
 
 Configuration files are in `configs/train/` and `configs/eval/`. Use `--override` to modify parameters from the command line.

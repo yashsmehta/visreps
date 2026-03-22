@@ -4,9 +4,9 @@ Evaluates a range of pretrained models (supervised, self-supervised, vision-lang
 and saves RSA results to results.db.
 
 Usage:
-    python scripts/runners/pretrained_eval_runner.py --dry-run
-    python scripts/runners/pretrained_eval_runner.py --datasets things
-    python scripts/runners/pretrained_eval_runner.py --models alexnet vgg16 resnet50 --datasets things
+    python runners/pretrained_eval_runner.py --dry-run
+    python runners/pretrained_eval_runner.py --datasets things
+    python runners/pretrained_eval_runner.py --models alexnet vgg16 resnet50 --datasets things
 """
 
 import argparse
