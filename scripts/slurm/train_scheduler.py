@@ -51,6 +51,13 @@ SLURM_CONFIG = {
 
 DEFAULT_CHECKPOINT_DIR = "default"
 
+# Short model tags for Slurm job names
+MODEL_TAGS = {
+    "CustomCNN": "CNN", "AlexNet": "Alex", "ResNet18": "RN18",
+    "ResNet50": "RN50", "VGG16": "VGG", "ViTBase": "ViT",
+    "ConvNeXt_Base": "CNX",
+}
+
 
 def get_checkpoint_dir(model_name, pca_labels, pca_labels_folder=None):
     """Derive checkpoint_dir from model name and PCA config.
@@ -74,10 +81,18 @@ def get_checkpoint_dir(model_name, pca_labels, pca_labels_folder=None):
     return DEFAULT_CHECKPOINT_DIR
 
 
-def generate_slurm_script(base_config, arch_config, overrides):
+def make_job_name(model_name, pca_labels, pca_n_classes):
+    """Short descriptive Slurm job name, e.g. 'vr_RN50_c16' or 'vr_ViT_std'."""
+    tag = MODEL_TAGS.get(model_name, model_name[:4])
+    suffix = f"c{pca_n_classes}" if pca_labels else "std"
+    return f"vr_{tag}_{suffix}"
+
+
+def generate_slurm_script(base_config, arch_config, overrides, job_name):
     """Generate SLURM batch script content."""
+    slurm_config = {**SLURM_CONFIG, "job-name": job_name}
     lines = ["#!/bin/bash"]
-    lines += [f"#SBATCH --{k}={v}" for k, v in SLURM_CONFIG.items()]
+    lines += [f"#SBATCH --{k}={v}" for k, v in slurm_config.items()]
     lines += [
         "",
         "source .venv/bin/activate",
@@ -91,7 +106,7 @@ def generate_slurm_script(base_config, arch_config, overrides):
 
 
 def build_jobs(experiments):
-    """Expand experiments into a flat list of (model_name, arch_config, overrides) tuples."""
+    """Expand experiments into a flat list of (exp_name, model_name, arch_config, overrides, job_name) tuples."""
     jobs = []
     for exp in experiments:
         name = exp["name"]
@@ -115,7 +130,8 @@ def build_jobs(experiments):
                     overrides.append(f"pca_n_classes={pca_n_classes}")
                     overrides.append(f"pca_labels_folder={pca_labels_folder}")
 
-                jobs.append((name, model_name, arch_config, overrides))
+                job_name = make_job_name(model_name, pca_labels, pca_n_classes)
+                jobs.append((name, model_name, arch_config, overrides, job_name))
     return jobs
 
 
@@ -126,19 +142,22 @@ def main():
     jobs = build_jobs(EXPERIMENTS)
     print(f"Submitting {len(jobs)} SLURM jobs\n")
 
-    for job_num, (exp_name, model_name, arch_config, overrides) in enumerate(jobs, 1):
+    for job_num, (exp_name, model_name, arch_config, overrides, job_name) in enumerate(jobs, 1):
         script_path = f"scripts/slurm/tmp/train_job_{job_num}.sh"
 
         with open(script_path, "w") as f:
-            f.write(generate_slurm_script(BASE_CONFIG, arch_config, overrides))
+            f.write(generate_slurm_script(BASE_CONFIG, arch_config, overrides, job_name))
 
-        print(f"Job {job_num} [{exp_name} | {model_name}]:")
+        print(f"Job {job_num} [{job_name} | {exp_name} | {model_name}]:")
         for o in overrides:
             print(f"  {o}")
         print()
 
-        subprocess.run(["sbatch", script_path])
-        os.remove(script_path)
+        result = subprocess.run(["sbatch", script_path])
+        if result.returncode == 0:
+            os.remove(script_path)
+        else:
+            print(f"  sbatch failed — script kept at {script_path}")
 
 
 if __name__ == "__main__":
