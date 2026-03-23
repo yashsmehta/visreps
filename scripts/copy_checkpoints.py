@@ -5,18 +5,29 @@ import os, subprocess, sys, threading, time
 # Each job specifies a folder, which subdirs to copy, and which files to grab.
 jobs = [
     {
-        "folder": "convnext_base_default",
+        "folder": "customcnn_imagenet-mini-10",
         "subdirs": ["cfg1000a"],
-        "files": ["checkpoint_epoch_20.pth", "config.json"],
+        "files": ["checkpoint_epoch_50.pth", "checkpoint_epoch_100.pth", "config.json"],
     },
     {
-        "folder": "convnext_base_clip_pca",
-        "subdirs": ["cfg32a"],
-        "files": ["checkpoint_epoch_20.pth", "config.json"],
+        "folder": "customcnn_clip_imagenet-mini-10",
+        "subdirs": ["cfg8a", "cfg16a", "cfg32a", "cfg64a"],
+        "files": ["checkpoint_epoch_50.pth", "checkpoint_epoch_100.pth", "config.json"],
+    },
+    {
+        "folder": "customcnn_imagenet-mini-100",
+        "subdirs": ["cfg1000a"],
+        "files": ["checkpoint_epoch_50.pth", "checkpoint_epoch_100.pth", "config.json"],
+    },
+    {
+        "folder": "customcnn_clip_imagenet-mini-100",
+        "subdirs": ["cfg8a", "cfg16a", "cfg32a", "cfg64a"],
+        "files": ["checkpoint_epoch_50.pth", "checkpoint_epoch_100.pth", "config.json"],
     },
 ]
-remote_base = "/scratch4/mbonner5/ymehta3/visreps/model_checkpoints"
-local_base = "/data/ymehta3"
+
+remote_base = "/scratch4/mbonner5/ymehta3/visreps/model_checkpoints/data_efficiency"
+local_base = "/data/ymehta3/data_efficiency"
 
 
 def fmt_size(n_bytes):
@@ -168,7 +179,7 @@ for job in jobs:
 
             proc = subprocess.run(
                 [
-                    "rsync", "-az",
+                    "rsync", "-a", "--inplace", "--partial",
                     "-e", f"ssh -o ControlPath={control_path}",
                     src, local_dir + "/",
                 ],
