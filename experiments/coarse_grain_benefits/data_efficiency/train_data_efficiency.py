@@ -27,7 +27,7 @@ load_dotenv(os.path.join(PROJECT_ROOT, '.env'))
 from visreps.trainer import Trainer
 from visreps.utils import load_config, validate_config
 from experiments.coarse_grain_benefits.data_efficiency.shared import (
-    SEED, SEED_LETTER, NUM_EPOCHS, DEFAULT_PCA_LABELS, DATASETS,
+    SEED, SEED_LETTER, NUM_EPOCHS, DEFAULT_PCA_LABELS, DATASETS, CHECKPOINT_BASE,
     get_conditions, get_checkpoint_dir,
 )
 
@@ -46,8 +46,8 @@ TRAINING_PARAMS = {
 
 def checkpoint_exists(dataset, n_classes, pca_labels):
     """Check if the final checkpoint for this condition already exists."""
-    checkpoint_dir = get_checkpoint_dir(dataset, pca_labels)
-    path = os.path.join("model_checkpoints", checkpoint_dir,
+    checkpoint_dir = get_checkpoint_dir(dataset, pca_labels, n_classes)
+    path = os.path.join(CHECKPOINT_BASE, checkpoint_dir,
                         f"cfg{n_classes}{SEED_LETTER}",
                         f"checkpoint_epoch_{NUM_EPOCHS}.pth")
     return os.path.exists(path)
@@ -56,10 +56,10 @@ def checkpoint_exists(dataset, n_classes, pca_labels):
 def train_condition(n_classes, dataset, conditions, pca_labels):
     """Train a single condition."""
     condition = conditions[n_classes]
-    checkpoint_dir = get_checkpoint_dir(dataset, pca_labels)
+    checkpoint_dir = get_checkpoint_dir(dataset, pca_labels, n_classes)
     print(f"\n{'='*60}")
     print(f"Training {n_classes}-class model on {dataset}")
-    print(f"Checkpoints: model_checkpoints/{checkpoint_dir}/")
+    print(f"Checkpoints: {CHECKPOINT_BASE}/{checkpoint_dir}/")
     print(f"{'='*60}\n")
 
     overrides = []

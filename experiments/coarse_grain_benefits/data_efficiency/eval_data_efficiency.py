@@ -9,7 +9,7 @@ Results are saved to a single combined CSV: data_efficiency_results.csv
 Usage (from project root):
     python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py
     python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py --pca_labels alexnet
-    python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py --datasets imagenet-mini-50
+    python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py --datasets imagenet-mini-100
     python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py --conditions 16 32
     python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py --benchmarks things
     python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py --benchmarks tvsd
@@ -33,7 +33,7 @@ import pandas as pd
 import visreps.evals as evals
 from visreps.utils import load_config, validate_config
 from experiments.coarse_grain_benefits.data_efficiency.shared import (
-    SEED, DEFAULT_PCA_LABELS, DATASETS, EPOCHS,
+    SEED, SEED_LETTER, DEFAULT_PCA_LABELS, DATASETS, EPOCHS, CHECKPOINT_BASE,
     get_conditions, get_checkpoint_dir, get_csv_path, save_results,
 )
 
@@ -41,7 +41,7 @@ from experiments.coarse_grain_benefits.data_efficiency.shared import (
 def build_overrides(dataset, condition_id, epoch, benchmark, conditions, pca_labels):
     """Build config overrides for a single eval run."""
     cond = conditions[condition_id]
-    checkpoint_dir = f"model_checkpoints/{get_checkpoint_dir(dataset, pca_labels)}"
+    checkpoint_dir = os.path.join(CHECKPOINT_BASE, get_checkpoint_dir(dataset, pca_labels, condition_id))
 
     overrides = [
         f"seed={SEED}",
@@ -90,9 +90,9 @@ def result_exists(completed, dataset, condition_id, epoch, benchmark):
 
 def checkpoint_exists(dataset, condition_id, epoch, pca_labels):
     """Check if the checkpoint file exists."""
-    checkpoint_dir = get_checkpoint_dir(dataset, pca_labels)
-    seed_letter = "a"  # seed=1
-    path = os.path.join("model_checkpoints", checkpoint_dir,
+    checkpoint_dir = get_checkpoint_dir(dataset, pca_labels, condition_id)
+    seed_letter = SEED_LETTER
+    path = os.path.join(CHECKPOINT_BASE, checkpoint_dir,
                         f"cfg{condition_id}{seed_letter}",
                         f"checkpoint_epoch_{epoch}.pth")
     return os.path.exists(path)
@@ -184,7 +184,6 @@ def main():
                         choices=["things", "nsd", "tvsd"])
     parser.add_argument("--force", action="store_true",
                         help="Re-evaluate even if result exists in CSV")
-    parser.add_argument("--no_bootstrap", action="store_true")
     parser.add_argument("--print_only", action="store_true")
     args = parser.parse_args()
 
@@ -205,14 +204,12 @@ def main():
         for condition_id in args.conditions:
             for epoch in args.epochs:
                 for benchmark in args.benchmarks:
-                    # Skip if checkpoint doesn't exist
                     if not checkpoint_exists(dataset, condition_id, epoch, args.pca_labels):
                         print(f"[SKIP] {condition_id}-class {dataset} epoch {epoch} "
                               f"— checkpoint not found")
                         skipped += 1
                         continue
 
-                    # Skip if result already in CSV
                     if not args.force and result_exists(existing, dataset, condition_id, epoch, benchmark):
                         print(f"[SKIP] {condition_id}-class {dataset} epoch {epoch} "
                               f"{benchmark} — already evaluated")

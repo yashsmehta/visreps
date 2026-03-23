@@ -6,10 +6,11 @@ import pandas as pd
 
 SEED = 1
 SEED_LETTER = "a"
-NUM_EPOCHS = 200
+NUM_EPOCHS = 100
 DEFAULT_PCA_LABELS = "clip"
-DATASETS = ["imagenet-mini-5", "imagenet-mini-10", "imagenet-mini-50"]
-EPOCHS = [100, 200]
+DATASETS = ["imagenet-mini-10", "imagenet-mini-100"]
+EPOCHS = [50, 100]
+CHECKPOINT_BASE = "/data/ymehta3/data_efficiency"
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -26,11 +27,16 @@ def get_conditions(pca_labels):
     }
 
 
-def get_checkpoint_dir(dataset, pca_labels):
-    """Build checkpoint directory name (relative to model_checkpoints/)."""
-    if pca_labels == DEFAULT_PCA_LABELS:
-        return f"data_efficiency_{dataset}"
-    return f"data_efficiency_{pca_labels}_{dataset}"
+def get_checkpoint_dir(dataset, pca_labels, condition_id=None):
+    """Build checkpoint directory name (relative to CHECKPOINT_BASE).
+
+    Coarse conditions (8-64) and fine-grained (1000) live in separate folders:
+      customcnn_clip_imagenet-mini-{N}  (coarse, CLIP PCA)
+      customcnn_imagenet-mini-{N}       (1000-class)
+    """
+    if condition_id == 1000:
+        return f"customcnn_{dataset}"
+    return f"customcnn_{pca_labels}_{dataset}"
 
 
 def get_csv_path(pca_labels):
