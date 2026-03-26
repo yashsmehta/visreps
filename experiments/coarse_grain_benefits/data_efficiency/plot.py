@@ -1,9 +1,11 @@
 """
-Plot data efficiency results: line plots for THINGS and NSD alignment
-across dataset sizes (5K → 1.2M), colored by supervision granularity.
+Plot data efficiency results: separate figures for neural (NSD + TVSD) and
+THINGS alignment across dataset sizes (mini-10, mini-100, full 1.2M).
 
-- Data-efficiency results (5K/10K/50K) from CSV
-- Full ImageNet (1.2M) results from results.db
+Epoch selection per dataset:
+  - imagenet-mini-10:  epoch 100
+  - imagenet-mini-100: epoch 50
+  - imagenet-full:     from results.db (best layer per seed)
 
 Usage (from project root):
     python experiments/coarse_grain_benefits/data_efficiency/plot.py
@@ -26,7 +28,6 @@ import seaborn as sns
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CSV_PATH = os.path.join(SCRIPT_DIR, "data_efficiency_results.csv")
 DB_PATH = os.path.join(PROJECT_ROOT, "results.db")
-OUT_PATH = os.path.join(SCRIPT_DIR, "data_efficiency.png")
 
 # ── Style ─────────────────────────────────────────────────────────────────
 sns.set_theme(style="ticks", context="paper", font_scale=1.1)
@@ -45,65 +46,60 @@ COLORS = {
     8:    "#a1d99b",   # light green
     16:   "#41ab5d",   # medium green
     32:   "#006d2c",   # dark green
+    64:   "#00441b",   # darkest green
     1000: "#e6550d",   # vivid orange
 }
-MARKERS = {8: "o", 16: "s", 32: "D", 1000: "X"}
+MARKERS = {8: "o", 16: "s", 32: "D", 64: "^", 1000: "X"}
 
-CONDITIONS = [8, 16, 32, 1000]
-DATASETS = ["imagenet-mini-5", "imagenet-mini-10", "imagenet-mini-50", "imagenet-full"]
+CONDITIONS = [8, 16, 32, 64, 1000]
+DATASETS = ["imagenet-mini-10", "imagenet-mini-100", "imagenet-full"]
 DATASET_LABELS = {
-    "imagenet-mini-5": "5K", "imagenet-mini-10": "10K",
-    "imagenet-mini-50": "50K", "imagenet-full": "1.2M",
+    "imagenet-mini-10": "10K",
+    "imagenet-mini-100": "100K",
+    "imagenet-full": "1.2M",
 }
-BENCHMARKS = {
-    "things": {
-        "title": "THINGS (Behavioral)",
-        "ylabel": r"Behavioral alignment (Spearman $\rho$)",
-    },
-    "nsd": {
-        "title": "NSD (Ventral Stream)",
-        "ylabel": r"Neural alignment (Spearman $\rho$)",
-    },
+
+# Epoch to use for each mini dataset
+EPOCH_FOR_DATASET = {
+    "imagenet-mini-10": 100,
+    "imagenet-mini-100": 50,
 }
 
 
 # ── Data loading ─────────────────────────────────────────────────────────────
 
 def load_csv_data():
-    """Load data-efficiency CSV and aggregate to one row per (dataset, condition, benchmark)."""
+    """Load data-efficiency CSV, selecting the prescribed epoch per dataset."""
     df = pd.read_csv(CSV_PATH)
     rows = []
 
-    for bench in ["things", "nsd"]:
+    for bench in ["things", "nsd", "tvsd"]:
         bdf = df[df["benchmark"] == bench]
         if bdf.empty:
             continue
 
-        for ds in ["imagenet-mini-5", "imagenet-mini-10", "imagenet-mini-50"]:
-            dsdf = bdf[bdf["dataset"] == ds]
+        for ds in ["imagenet-mini-10", "imagenet-mini-100"]:
+            epoch = EPOCH_FOR_DATASET[ds]
+            dsdf = bdf[(bdf["dataset"] == ds) & (bdf["epoch"] == epoch)]
+
             for cond in CONDITIONS:
                 cdf = dsdf[dsdf["condition"] == cond]
                 if cdf.empty:
                     continue
 
-                if bench == "nsd":
-                    # Average across subjects per epoch, then pick best epoch
-                    epoch_scores = {}
-                    for epoch, edf in cdf.groupby("epoch"):
-                        epoch_scores[epoch] = {
-                            "score": edf["score"].mean(),
-                            "ci_low": edf["ci_low"].mean(),
-                            "ci_high": edf["ci_high"].mean(),
-                        }
-                    best_epoch = max(epoch_scores, key=lambda e: epoch_scores[e]["score"])
-                    vals = epoch_scores[best_epoch]
-                else:
-                    # THINGS: pick best epoch directly
-                    best_row = cdf.loc[cdf["score"].idxmax()]
+                if bench in ("nsd", "tvsd"):
+                    # Average across subjects
                     vals = {
-                        "score": best_row["score"],
-                        "ci_low": best_row["ci_low"],
-                        "ci_high": best_row["ci_high"],
+                        "score": cdf["score"].mean(),
+                        "ci_low": cdf["ci_low"].mean(),
+                        "ci_high": cdf["ci_high"].mean(),
+                    }
+                else:
+                    # THINGS: single row
+                    vals = {
+                        "score": cdf["score"].iloc[0],
+                        "ci_low": cdf["ci_low"].iloc[0],
+                        "ci_high": cdf["ci_high"].iloc[0],
                     }
 
                 rows.append({
@@ -114,98 +110,102 @@ def load_csv_data():
 
 
 def load_full_imagenet():
-    """Load full ImageNet (1.2M) results from results.db with proper bootstrap CIs."""
+    """Load full ImageNet (1.2M) results from results.db."""
     conn = sqlite3.connect(DB_PATH)
     rows = []
 
     for cond in CONDITIONS:
         if cond == 1000:
-            where = "cfg_id=1000 AND reconstruct_from_pcs=0"
+            where = "cfg_id=1000 AND model_name='CustomCNN' AND reconstruct_from_pcs=0 AND epoch=20"
         else:
-            where = f"cfg_id={cond} AND pca_labels_folder='pca_labels_clip' AND reconstruct_from_pcs=0"
+            where = f"cfg_id={cond} AND model_name='CustomCNN' AND pca_labels_folder='pca_labels_clip' AND reconstruct_from_pcs=0 AND epoch=20"
 
-        # ── THINGS ───────────────────────────────────────────────────────
-        # Best layer per seed, then average across seeds
+        # ── THINGS (seed 1 only, matching low-data CSV) ─────────────────
         things = pd.read_sql(f"""
-            SELECT seed, score, ci_low, ci_high
+            SELECT score, ci_low, ci_high
             FROM results
             WHERE neural_dataset='things-behavior'
-              AND compare_method='spearman' AND {where}
-            ORDER BY seed, score DESC
+              AND compare_method='spearman' AND seed=1 AND {where}
+            ORDER BY score DESC
+            LIMIT 1
         """, conn)
         if not things.empty:
-            # Keep best layer per seed
-            best = things.groupby("seed").first().reset_index()
+            r = things.iloc[0]
             rows.append({
                 "dataset": "imagenet-full", "condition": cond, "benchmark": "things",
-                "score": best["score"].mean(),
-                "ci_low": best["ci_low"].mean(),
-                "ci_high": best["ci_high"].mean(),
+                "score": r["score"],
+                "ci_low": r["ci_low"] if pd.notna(r["ci_low"]) else r["score"],
+                "ci_high": r["ci_high"] if pd.notna(r["ci_high"]) else r["score"],
             })
 
-        # ── NSD ventral stream ───────────────────────────────────────────
-        # Best run_id per (seed, subject), then use bootstrap distributions
+        # ── NSD ventral stream (seed 1 only) ──────────────────────────────
         nsd_best = pd.read_sql(f"""
-            SELECT run_id, seed, subject_idx, score,
-                   ROW_NUMBER() OVER (PARTITION BY seed, subject_idx ORDER BY score DESC) as rn
+            SELECT run_id, subject_idx, score,
+                   ROW_NUMBER() OVER (PARTITION BY subject_idx ORDER BY score DESC) as rn
             FROM results
             WHERE neural_dataset='nsd'
               AND region='ventral visual stream'
-              AND compare_method='spearman' AND {where}
+              AND compare_method='spearman' AND seed=1 AND {where}
         """, conn)
-        if nsd_best.empty:
-            continue
-        nsd_best = nsd_best[nsd_best["rn"] == 1].drop(columns=["rn"])
-        mean_score = nsd_best["score"].mean()
+        if not nsd_best.empty:
+            nsd_best = nsd_best[nsd_best["rn"] == 1].drop(columns=["rn"])
+            mean_score = nsd_best["score"].mean()
+            ci_low, ci_high = _bootstrap_ci(conn, nsd_best, mean_score)
+            rows.append({
+                "dataset": "imagenet-full", "condition": cond, "benchmark": "nsd",
+                "score": mean_score, "ci_low": ci_low, "ci_high": ci_high,
+            })
 
-        # Get bootstrap distributions for best runs and average across subjects
-        run_ids = nsd_best["run_id"].unique().tolist()
-        placeholders = ",".join(f"'{r}'" for r in run_ids)
-        boot_dists = pd.read_sql(f"""
-            SELECT bd.run_id, bd.scores
-            FROM bootstrap_distributions bd
-            WHERE bd.run_id IN ({placeholders})
-              AND bd.compare_method='spearman'
+        # ── TVSD IT (seed 1 only) ──────────────────────────────────────
+        tvsd_best = pd.read_sql(f"""
+            SELECT run_id, subject_idx, score,
+                   ROW_NUMBER() OVER (PARTITION BY subject_idx ORDER BY score DESC) as rn
+            FROM results
+            WHERE neural_dataset='tvsd'
+              AND region='IT'
+              AND compare_method='spearman' AND seed=1 AND {where}
         """, conn)
-        # Merge seed/subject info
-        boot_dists = boot_dists.merge(
-            nsd_best[["run_id", "seed", "subject_idx"]], on="run_id"
-        )
-
-        if not boot_dists.empty:
-            # For each seed: average 1000 bootstrap values across 8 subjects
-            n_boot = 1000
-            seed_boots = []
-            for seed, sdf in boot_dists.groupby("seed"):
-                arrays = [np.array(json.loads(s)) for s in sdf["scores"].values]
-                arrays = [a for a in arrays if len(a) == n_boot]
-                if len(arrays) < 2:
-                    continue
-                seed_boots.append(np.vstack(arrays).mean(axis=0))
-            all_boots = np.vstack(seed_boots).mean(axis=0) if seed_boots else None
-            if all_boots is not None:
-                ci_low, ci_high = np.percentile(all_boots, [2.5, 97.5])
-            else:
-                sem = nsd_best["score"].std() / np.sqrt(len(nsd_best))
-                ci_low = mean_score - 1.96 * sem
-                ci_high = mean_score + 1.96 * sem
-        else:
-            sem = nsd_best["score"].std() / np.sqrt(len(nsd_best))
-            ci_low = mean_score - 1.96 * sem
-            ci_high = mean_score + 1.96 * sem
-
-        rows.append({
-            "dataset": "imagenet-full", "condition": cond, "benchmark": "nsd",
-            "score": mean_score, "ci_low": ci_low, "ci_high": ci_high,
-        })
+        if not tvsd_best.empty:
+            tvsd_best = tvsd_best[tvsd_best["rn"] == 1].drop(columns=["rn"])
+            mean_score = tvsd_best["score"].mean()
+            ci_low, ci_high = _bootstrap_ci(conn, tvsd_best, mean_score)
+            rows.append({
+                "dataset": "imagenet-full", "condition": cond, "benchmark": "tvsd",
+                "score": mean_score, "ci_low": ci_low, "ci_high": ci_high,
+            })
 
     conn.close()
     return pd.DataFrame(rows)
 
 
+def _bootstrap_ci(conn, best_df, mean_score):
+    """Compute 95% CI from bootstrap distributions (single seed), falling back to SEM across subjects."""
+    run_ids = best_df["run_id"].unique().tolist()
+    placeholders = ",".join(f"'{r}'" for r in run_ids)
+    boot_dists = pd.read_sql(f"""
+        SELECT bd.run_id, bd.scores
+        FROM bootstrap_distributions bd
+        WHERE bd.run_id IN ({placeholders})
+          AND bd.compare_method='spearman'
+    """, conn)
+
+    if not boot_dists.empty:
+        n_boot = 1000
+        arrays = [np.array(json.loads(s)) for s in boot_dists["scores"].values]
+        arrays = [a for a in arrays if len(a) == n_boot]
+        if len(arrays) >= 2:
+            # Average bootstrap distributions across subjects
+            all_boots = np.vstack(arrays).mean(axis=0)
+            return tuple(np.percentile(all_boots, [2.5, 97.5]))
+
+    # Fallback: SEM across subjects
+    sem = best_df["score"].std() / np.sqrt(len(best_df))
+    return mean_score - 1.96 * sem, mean_score + 1.96 * sem
+
+
 # ── Plotting ─────────────────────────────────────────────────────────────────
 
-def plot_panel(ax, data, benchmark, panel_label=None):
+def plot_panel(ax, data, ylabel, title, panel_label=None):
     """Line plot for one benchmark panel."""
     x_positions = np.arange(len(DATASETS))
     x_map = {ds: i for i, ds in enumerate(DATASETS)}
@@ -223,8 +223,8 @@ def plot_panel(ax, data, benchmark, panel_label=None):
             r = row.iloc[0]
             xs.append(x_map[ds])
             ys.append(r["score"])
-            errs_lo.append(r["score"] - r["ci_low"])
-            errs_hi.append(r["ci_high"] - r["score"])
+            errs_lo.append(max(0, r["score"] - r["ci_low"]))
+            errs_hi.append(max(0, r["ci_high"] - r["score"]))
 
         label = f"{cond}-class"
         ax.errorbar(xs, ys, yerr=[errs_lo, errs_hi],
@@ -237,8 +237,8 @@ def plot_panel(ax, data, benchmark, panel_label=None):
     ax.set_xticks(x_positions)
     ax.set_xticklabels([DATASET_LABELS[ds] for ds in DATASETS], fontsize=9)
     ax.set_xlabel("Training images", fontsize=10, labelpad=6)
-    ax.set_ylabel(BENCHMARKS[benchmark]["ylabel"], fontsize=10, labelpad=6)
-    ax.set_title(BENCHMARKS[benchmark]["title"], fontsize=11, fontweight="bold", pad=10)
+    ax.set_ylabel(ylabel, fontsize=10, labelpad=6)
+    ax.set_title(title, fontsize=11, fontweight="bold", pad=10)
     ax.yaxis.grid(True, which="major", color="#ECECEC", linewidth=0.5, zorder=0)
     ax.set_axisbelow(True)
     ax.margins(x=0.08)
@@ -246,15 +246,27 @@ def plot_panel(ax, data, benchmark, panel_label=None):
     from matplotlib.ticker import AutoMinorLocator, FuncFormatter
     ax.yaxis.set_minor_locator(AutoMinorLocator(2))
     ax.tick_params(axis="y", which="minor", direction="out", length=2.5, width=0.5)
-    # Clean y-axis: drop trailing zeros (e.g. 0.10 → 0.1)
     ax.yaxis.set_major_formatter(FuncFormatter(
         lambda v, _: f"{v:.2f}".rstrip("0").rstrip(".")))
     sns.despine(ax=ax, right=True, top=True, offset=5)
 
-    # Panel label
     if panel_label:
         ax.text(-0.14, 1.10, panel_label, transform=ax.transAxes,
                 fontsize=14, fontweight="bold", va="top", ha="left")
+
+
+def add_legend(fig, data, ncol=None):
+    """Add shared legend at top of figure."""
+    present = sorted(data["condition"].unique())
+    handles = [
+        Line2D([], [], marker=MARKERS[c], color=COLORS[c], markersize=7,
+               linewidth=2.0, markeredgecolor="white", markeredgewidth=0.8,
+               label=f"{c}-class")
+        for c in CONDITIONS if c in present
+    ]
+    fig.legend(handles=handles, loc="upper center", ncol=ncol or len(handles),
+               frameon=False, fontsize=9, bbox_to_anchor=(0.5, 1.03),
+               columnspacing=1.8, handletextpad=0.6)
 
 
 def main():
@@ -262,29 +274,39 @@ def main():
     full_data = load_full_imagenet()
     data = pd.concat([csv_data, full_data], ignore_index=True)
 
-    fig, axes = plt.subplots(1, 2, figsize=(7.5, 3.3))
+    # ── Figure 1: Neural data (NSD ventral + TVSD IT) ────────────────────
+    neural_data = data[data["benchmark"].isin(["nsd", "tvsd"])]
+    fig1, axes1 = plt.subplots(1, 2, figsize=(7.5, 3.3))
 
-    panel_labels = ["A", "B"]
-    for i, bench in enumerate(["things", "nsd"]):
-        plot_panel(axes[i], data[data["benchmark"] == bench], bench,
-                   panel_label=panel_labels[i])
+    plot_panel(axes1[0], neural_data[neural_data["benchmark"] == "nsd"],
+               ylabel=r"Neural alignment (Spearman $\rho$)",
+               title="NSD (Ventral Stream)", panel_label="A")
+    plot_panel(axes1[1], neural_data[neural_data["benchmark"] == "tvsd"],
+               ylabel=r"Neural alignment (Spearman $\rho$)",
+               title="TVSD (IT)", panel_label="B")
 
-    # Shared legend at top
-    handles = [
-        Line2D([], [], marker=MARKERS[c], color=COLORS[c], markersize=7,
-               linewidth=2.0, markeredgecolor="white", markeredgewidth=0.8,
-               label=f"{c}-class")
-        for c in CONDITIONS if c in data["condition"].unique()
-    ]
-    fig.legend(handles=handles, loc="upper center", ncol=len(handles),
-               frameon=False, fontsize=9, bbox_to_anchor=(0.5, 1.03),
-               columnspacing=1.8, handletextpad=0.6)
-
+    add_legend(fig1, neural_data)
     plt.subplots_adjust(wspace=0.35)
-    fig.tight_layout(rect=[0, 0, 1, 0.90])
-    fig.savefig(OUT_PATH, dpi=600, bbox_inches="tight", facecolor="white", edgecolor="none")
-    print(f"Saved to {OUT_PATH}")
-    plt.close(fig)
+    fig1.tight_layout(rect=[0, 0, 1, 0.90])
+    out1 = os.path.join(SCRIPT_DIR, "data_efficiency_neural.png")
+    fig1.savefig(out1, dpi=600, bbox_inches="tight", facecolor="white", edgecolor="none")
+    print(f"Saved to {out1}")
+    plt.close(fig1)
+
+    # ── Figure 2: THINGS behavioral ──────────────────────────────────────
+    things_data = data[data["benchmark"] == "things"]
+    fig2, ax2 = plt.subplots(1, 1, figsize=(4.0, 3.3))
+
+    plot_panel(ax2, things_data,
+               ylabel=r"Behavioral alignment (Spearman $\rho$)",
+               title="THINGS (Behavioral)")
+
+    add_legend(fig2, things_data)
+    fig2.tight_layout(rect=[0, 0, 1, 0.90])
+    out2 = os.path.join(SCRIPT_DIR, "data_efficiency_things.png")
+    fig2.savefig(out2, dpi=600, bbox_inches="tight", facecolor="white", edgecolor="none")
+    print(f"Saved to {out2}")
+    plt.close(fig2)
 
 
 if __name__ == "__main__":

@@ -5,24 +5,34 @@ import os, subprocess, sys, threading, time
 # Each job specifies a folder, which subdirs to copy, and which files to grab.
 jobs = [
     {
-        "folder": "customcnn_imagenet-mini-10",
+        "folder": "convnext_base_imagenet-mini-10",
         "subdirs": ["cfg1000a"],
         "files": ["checkpoint_epoch_50.pth", "checkpoint_epoch_100.pth", "config.json"],
     },
     {
-        "folder": "customcnn_clip_imagenet-mini-10",
+        "folder": "convnext_base_clip_imagenet-mini-10",
         "subdirs": ["cfg8a", "cfg16a", "cfg32a", "cfg64a"],
         "files": ["checkpoint_epoch_50.pth", "checkpoint_epoch_100.pth", "config.json"],
     },
     {
-        "folder": "customcnn_imagenet-mini-100",
+        "folder": "resnet50_imagenet-mini-10",
         "subdirs": ["cfg1000a"],
         "files": ["checkpoint_epoch_50.pth", "checkpoint_epoch_100.pth", "config.json"],
     },
     {
-        "folder": "customcnn_clip_imagenet-mini-100",
+        "folder": "resnet50_clip_imagenet-mini-10",
         "subdirs": ["cfg8a", "cfg16a", "cfg32a", "cfg64a"],
         "files": ["checkpoint_epoch_50.pth", "checkpoint_epoch_100.pth", "config.json"],
+    },
+    {
+        "folder": "vitbase_imagenet-mini-10",
+        "subdirs": ["cfg1000a"],
+        "files": ["checkpoint_epoch_100.pth", "config.json"],
+    },
+    {
+        "folder": "vitbase_clip_imagenet-mini-10",
+        "subdirs": ["cfg8a", "cfg16a", "cfg32a", "cfg64a"],
+        "files": ["checkpoint_epoch_100.pth", "config.json"],
     },
 ]
 
