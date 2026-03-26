@@ -240,13 +240,24 @@ def plot_coarseness_raw(ax):
 # ── Model comparison panel (simplified: 2 bars + pretrained scatter) ─────
 
 def _fetch_clip8_score():
-    """Fetch CLIP 8-class score on THINGS."""
-    s = get_condition_summary("things-behavior", "N/A", "pca_labels_clip", 8,
-                              "spearman", epoch=20, analysis="rsa")
+    """Fetch CLIP 8-class score on THINGS (seed 1 only, matching pretrained evals)."""
+    conn = sqlite3.connect(DB_PATH)
+    df = pd.read_sql("""
+        SELECT score, ci_low, ci_high FROM results
+        WHERE neural_dataset = 'things-behavior' AND pca_labels_folder = 'pca_labels_clip'
+          AND cfg_id = 8 AND compare_method = 'spearman' AND analysis = 'rsa'
+          AND model_name = 'CustomCNN' AND epoch = 20 AND seed = 1
+          AND reconstruct_from_pcs = 0
+        ORDER BY score DESC LIMIT 1
+    """, conn)
+    conn.close()
+    if df.empty:
+        return {"mean": np.nan, "ci_low": np.nan, "ci_high": np.nan}
+    r = df.iloc[0]
     return {
-        "mean": s["mean"],
-        "ci_low": s["ci_low"],
-        "ci_high": s["ci_high"],
+        "mean": r["score"],
+        "ci_low": r["ci_low"] if pd.notna(r["ci_low"]) else r["score"],
+        "ci_high": r["ci_high"] if pd.notna(r["ci_high"]) else r["score"],
         "label": "8 classes (CLIP repr.)",
     }
 
@@ -362,23 +373,16 @@ def plot_comparison_panel(ax, ref_ax=None):
         group_pts = sorted(
             [p for p in all_points if p["group"] == group_name],
             key=lambda p: p["score"], reverse=True)
-        # Start labels at their data y-positions
+        # Start labels at their data y-positions (sorted high→low)
         label_ys = [pt["score"] for pt in group_pts]
-        # Iterative bidirectional repulsion
+        # Downward-only repulsion: labels stay at or below their data point
         for _ in range(80):
             moved = False
-            for i in range(len(label_ys)):
-                for j in range(i + 1, len(label_ys)):
-                    diff = label_ys[i] - label_ys[j]
-                    if abs(diff) < min_gap:
-                        push = (min_gap - abs(diff)) * 0.5
-                        if diff >= 0:
-                            label_ys[i] += push
-                            label_ys[j] -= push
-                        else:
-                            label_ys[i] -= push
-                            label_ys[j] += push
-                        moved = True
+            for i in range(len(label_ys) - 1):
+                gap = label_ys[i] - label_ys[i + 1]
+                if gap < min_gap:
+                    label_ys[i + 1] = label_ys[i] - min_gap
+                    moved = True
             if not moved:
                 break
 
