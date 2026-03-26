@@ -48,7 +48,7 @@ PALETTE_4 = ["#2d6a4f", "#74c69d", "#e8963e", "#d64045"]  # dark green, light gr
 # Bottom row: learned representation colors — slightly more saturated
 # for better visibility on scatter with low alpha
 REPR_COLORS_2 = ["#1b9e77", "#d95f02"]
-REPR_COLORS_4 = ["#00997F", "#6B5CE7", "#E07D28", "#C93035"]
+REPR_COLORS_4 = ["#1B7A4F", "#50C888", "#E88A2A", "#D63540"]
 
 INSET_LAYER = "fc1"
 N_INSETS = 3  # images per class
@@ -692,7 +692,7 @@ def main():
     plt.tight_layout(h_pad=2.5)
 
     out_b = os.path.join(SCRIPT_DIR, "figure1b.png")
-    fig_b.savefig(out_b, dpi=600, bbox_inches="tight", facecolor="white",
+    fig_b.savefig(out_b, dpi=300, bbox_inches="tight", facecolor="white",
                   edgecolor="none")
     print(f"Saved -> {out_b}")
     plt.close(fig_b)
