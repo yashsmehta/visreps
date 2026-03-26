@@ -833,7 +833,7 @@ def main():
     # ── Panel labels ──
     for ax, label, x_off in zip(
         [ax_schematic, ax_coarse, ax_compare, pc_axes[0]],
-        ["A", "B", "C", "D"],
+        ["a", "b", "c", "d"],
         [-0.08, -0.14, -0.06, -0.10]):
         ax.text(x_off, 1.12, label, transform=ax.transAxes,
                 fontsize=14, fontweight="bold", va="top", ha="left",

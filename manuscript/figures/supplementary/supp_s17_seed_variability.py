@@ -52,7 +52,7 @@ PANELS = [
     ("things-behavior", "N/A", "THINGS Behavioral"),
 ]
 
-PANEL_LABELS = ["A", "B", "C"]
+PANEL_LABELS = ["a", "b", "c"]
 
 SEED_MARKERS = {1: "o", 2: "s", 3: "^"}
 

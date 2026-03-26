@@ -132,15 +132,15 @@ def main():
     ax.set_yscale("log")
     ax.set_xlabel("Component", fontsize=9)
     ax.set_ylabel("Fraction of variance", fontsize=9)
-    ax.text(-0.08, 1.08, "A", transform=ax.transAxes, fontsize=13, fontweight="bold", va="top", ha="left")
+    ax.text(-0.08, 1.08, "a", transform=ax.transAxes, fontsize=13, fontweight="bold", va="top", ha="left")
     ax.set_title("FC1 eigenspectrum", loc="left", fontsize=10, fontweight="bold", pad=8)
     sns.despine(ax=ax, offset=5)
 
     # ── Panels (b)-(d): layer metrics ─────────────────────────────────
     metric_configs = [
-        (axes[0, 1], "pr", "Participation ratio", "Effective dimensionality", True, "B"),
-        (axes[1, 0], "twonn", "Intrinsic dimension", "Two-NN intrinsic dimension", False, "C"),
-        (axes[1, 1], "sparsity", "Hoyer sparsity", "Activation sparsity", False, "D"),
+        (axes[0, 1], "pr", "Participation ratio", "Effective dimensionality", True, "b"),
+        (axes[1, 0], "twonn", "Intrinsic dimension", "Two-NN intrinsic dimension", False, "c"),
+        (axes[1, 1], "sparsity", "Hoyer sparsity", "Activation sparsity", False, "d"),
     ]
 
     for ax, metric_key, ylabel, title, log_y, panel_label in metric_configs:

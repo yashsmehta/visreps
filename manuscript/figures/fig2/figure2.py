@@ -394,7 +394,7 @@ def main():
 
     label_order = [(0, 0), (0, 1), (0, 2), (1, 0), (1, 1), (1, 2)]
     for i, key in enumerate(label_order):
-        label = chr(ord("A") + i)
+        label = chr(ord("a") + i)
         ax = axes[key]
         pos = ax.get_position()
         x = pos.x0 - 0.02  # slightly left of each panel

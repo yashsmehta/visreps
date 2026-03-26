@@ -257,7 +257,7 @@ def main():
 
     # Panel labels
     for i, ax in enumerate(axes):
-        label = chr(ord("A") + i)
+        label = chr(ord("a") + i)
         ax.text(-0.10, 1.18, label, transform=ax.transAxes,
                 fontsize=14, fontweight="bold", va="top", ha="left",
                 fontfamily="sans-serif", color="#000000")

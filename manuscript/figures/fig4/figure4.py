@@ -283,11 +283,11 @@ def main():
     # ── Panel labels ─────────────────────────────────────────────────
     label_kw = dict(fontsize=20, fontweight="bold", va="top", ha="left",
                     family="sans-serif")
-    ax_rdm_behav.text(-0.18, 1.10, "A", transform=ax_rdm_behav.transAxes,
+    ax_rdm_behav.text(-0.18, 1.10, "a", transform=ax_rdm_behav.transAxes,
                       **label_kw)
-    ax_scatter.text(-0.12, 1.08, "B", transform=ax_scatter.transAxes,
+    ax_scatter.text(-0.12, 1.08, "b", transform=ax_scatter.transAxes,
                     **label_kw)
-    ax_hist.text(-0.08, 1.08, "C", transform=ax_hist.transAxes,
+    ax_hist.text(-0.08, 1.08, "c", transform=ax_hist.transAxes,
                  **label_kw)
 
     out = f"{OUTPUT_DIR}/figure4.png"

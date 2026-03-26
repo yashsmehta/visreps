@@ -83,8 +83,8 @@ def main():
     x_left = margin
     x_right = margin + img_clip4.width + gap
 
-    draw.text((x_left, 8), "A", fill=(30, 30, 30), font=font)
-    draw.text((x_right, 8), "B", fill=(30, 30, 30), font=font)
+    draw.text((x_left, 8), "a", fill=(30, 30, 30), font=font)
+    draw.text((x_right, 8), "b", fill=(30, 30, 30), font=font)
 
     # Paste collages
     canvas.paste(img_clip4, (x_left, label_height))

@@ -83,7 +83,7 @@ def main():
     panel_idx = 0
     for row, col, _, _, _ in PANELS:
         ax = fig.axes[panel_idx]
-        label = chr(ord("A") + panel_idx)
+        label = chr(ord("a") + panel_idx)
         ax.text(-0.10, 1.10, label, transform=ax.transAxes,
                 fontsize=13, fontweight="bold", va="top", ha="left",
                 family="sans-serif")

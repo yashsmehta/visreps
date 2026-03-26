@@ -244,7 +244,7 @@ def main():
             color="#DCDCDC", linewidth=0.5, linestyle="-", zorder=0,
         ))
 
-    for ax, label in zip(axes_bars, ["A", "B", "C", "D", "E"]):
+    for ax, label in zip(axes_bars, ["a", "b", "c", "d", "e"]):
         ax.text(-0.06, 1.12, label, transform=ax.transAxes,
                 fontsize=10, fontweight="bold", va="top", ha="left",
                 fontfamily="sans-serif")
