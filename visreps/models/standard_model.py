@@ -131,6 +131,14 @@ class CLIPVisualExtractor(nn.Module):
                 # (L, N, D) -> (N, L, D) for pipeline compatibility
                 features[self.return_nodes[name]] = x.permute(1, 0, 2).float()
 
+        # Final CLIP embedding: ln_post → proj (no L2-norm — keep raw for consistent RSA)
+        if self.return_nodes and "embedding" in self.return_nodes:
+            cls_token = x.permute(1, 0, 2)[:, 0, :]
+            emb = v.ln_post(cls_token)
+            if v.proj is not None:
+                emb = emb @ v.proj
+            features[self.return_nodes["embedding"]] = emb.float()
+
         return features
 
 
@@ -171,6 +179,12 @@ class TimmViTExtractor(nn.Module):
             name = f"block{i + 1}"
             if self.return_nodes and name in self.return_nodes:
                 features[self.return_nodes[name]] = x.float()
+
+        # Final embedding: CLS token → norm (norm is LayerNorm(D), valid on single token)
+        if self.return_nodes and "embedding" in self.return_nodes:
+            emb = m.norm(x[:, 0, :])
+            features[self.return_nodes["embedding"]] = emb.float()
+
         return features
 
 

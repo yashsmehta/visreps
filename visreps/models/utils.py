@@ -36,13 +36,12 @@ TORCHVISION_RETURN_NODES = {
     "ConvNeXt_Base":    ["block3", "block6",  # last of stage 1, 2
                          "block9", "block14", "block19", "block24", "block29", "block33",  # stage 3
                          "block36"],  # last of stage 4
-    "CLIP_ViT_B32":     ["block1"] + [f"block{i}" for i in range(2, 13, 2)],
-    "CLIP_ViT_L14":     ["block1"] + [f"block{i}" for i in range(4, 25, 4)],
-    "DINOv1_ResNet50":  None,  # filled below (same as ResNet50)
-    "DINOv2_ViT_B14":   [f"block{i}" for i in range(1, 13)],
-    "DINOv3_ViT_L16":   ["block1"] + [f"block{i}" for i in range(2, 25, 2)],
+    "CLIP_ViT_B32":     ["block1"] + [f"block{i}" for i in range(2, 13, 2)] + ["embedding"],
+    "CLIP_ViT_L14":     ["block1"] + [f"block{i}" for i in range(4, 25, 4)] + ["embedding"],
+    "DINOv1_ResNet50":  ["conv1"] + [f"block{i}" for i in range(1, 17, 2)] + ["block16", "fc1"],
+    "DINOv2_ViT_B14":   [f"block{i}" for i in range(1, 13)] + ["embedding"],
+    "DINOv3_ViT_L16":   ["block1"] + [f"block{i}" for i in range(2, 25, 2)] + ["embedding"],
 }
-TORCHVISION_RETURN_NODES["DINOv1_ResNet50"] = TORCHVISION_RETURN_NODES["ResNet50"]
 
 class FeatureExtractor(nn.Module):
     def __init__(self, model: nn.Module, return_nodes: Dict[str, str] = None,
@@ -344,9 +343,11 @@ def get_activations(
     num_layers = len(probe_out)
     for name, out in probe_out.items():
         D = out.reshape(out.size(0), -1).size(1)
+        if D <= k_fixed:
+            continue  # skip SRP — D already ≤ k, projection would not reduce dimensionality
         transformer = get_srp_transformer(
             D=D,
-            k=min(k_fixed, D),
+            k=k_fixed,
             density=density,
             seed=seed,
             cache_dir=cache_dir,
