@@ -203,7 +203,6 @@ def plot_things_coarseness(ax, model_name, display_name,
     y_min = min(all_y_vals)
     y_max = max(all_y_vals)
     y_range = y_max - y_min if y_max > y_min else 0.05
-    y_bottom = y_min - y_range * 0.12
 
     # ── Untrained dashed line ──
     if untrained is not None:
@@ -216,22 +215,16 @@ def plot_things_coarseness(ax, model_name, display_name,
                 transform=blended_transform_factory(ax.transAxes, ax.transData),
                 zorder=10)
 
-    # ── 1000-way bar ──
+    # ── 1000-way bar (drawn from axis bottom so it doesn't float) ──
+    # Use a sentinel; actual bottom is set after ylim is finalized
     if baseline:
         bl = baseline
         bl_err_lo = (max(bl["score"] - bl["ci_low"], 0)
                      if bl["ci_low"] is not None and pd.notna(bl["ci_low"]) else 0)
         bl_err_hi = (max(bl["ci_high"] - bl["score"], 0)
                      if bl["ci_high"] is not None and pd.notna(bl["ci_high"]) else 0)
-        ax.bar(BAR_CENTER, bl["score"] - y_bottom, bottom=y_bottom,
-               width=BAR_CENTER * BAR_WIDTH_FRAC,
-               color=BASELINE_1K_COLOR, edgecolor="#c07830",
-               linewidth=0.4, zorder=3)
-        if bl_err_lo > 0 or bl_err_hi > 0:
-            ax.errorbar(BAR_CENTER, bl["score"],
-                        yerr=[[bl_err_lo], [bl_err_hi]],
-                        fmt="none", ecolor="#555555", elinewidth=0.7,
-                        capsize=2.2, capthick=0.6, zorder=5)
+        # Store for deferred drawing after ylim is set
+        ax._bar_data = (bl["score"], bl_err_lo, bl_err_hi)
 
     # ── Axis formatting (match Figure 2) ──
     ax.set_xscale("log", base=2)
@@ -278,6 +271,20 @@ def plot_things_coarseness(ax, model_name, display_name,
     else:
         ax.set_ylabel("")
     sns.despine(ax=ax, right=True, top=True, offset=3)
+
+    # ── Draw 1000-way bar now that ylim is final ──
+    if hasattr(ax, "_bar_data"):
+        bl_score, bl_err_lo, bl_err_hi = ax._bar_data
+        y_bot = ax.get_ylim()[0]
+        ax.bar(BAR_CENTER, bl_score - y_bot, bottom=y_bot,
+               width=BAR_CENTER * BAR_WIDTH_FRAC,
+               color=BASELINE_1K_COLOR, edgecolor="#c07830",
+               linewidth=0.4, zorder=3)
+        ax.errorbar(BAR_CENTER, bl_score,
+                    yerr=[[bl_err_lo], [bl_err_hi]],
+                    fmt="none", ecolor="#555555", elinewidth=0.7,
+                    capsize=2.2, capthick=0.6, zorder=5)
+        del ax._bar_data
 
     _draw_bar_break(ax)
 
@@ -558,27 +565,25 @@ def main():
                  fontsize=9, color="#888888",
                  ha="center", va="bottom", family="sans-serif")
 
-    # Legend in first panel — just the coarse label source (CLIP)
+    # Legend in first panel
     coarse_handle = Line2D([], [], marker=CLIP_STYLE["marker"],
                            color="none",
                            markerfacecolor=CLIP_STYLE["color"],
                            markeredgecolor=EDGE_COLOR,
                            markeredgewidth=EDGE_WIDTH,
-                           markersize=5.5, label="CLIP")
+                           markersize=5.5, label="Coarse labels\n(CLIP)")
     axes[0].legend(handles=[coarse_handle],
                    fontsize=7.5, frameon=True, fancybox=False,
                    framealpha=0.92, edgecolor="#dddddd",
                    borderpad=0.4, handletextpad=0.3,
                    labelspacing=0.25,
-                   title="Coarse label source",
-                   title_fontsize=7,
                    loc="center left",
                    bbox_to_anchor=(0.0, 0.35))
 
-    # ── Panel labels: A, B, C ──
+    # ── Panel labels: a, b, c ──
     top_y = axes[0].get_position().y1
     label_y = top_y + 0.035
-    for i, label in enumerate(["A", "B", "C"]):
+    for i, label in enumerate(["a", "b", "c"]):
         pos = axes[i].get_position()
         fig.text(pos.x0 - 0.03, label_y, label,
                  fontsize=14, fontweight="bold", va="bottom", ha="left",
