@@ -35,7 +35,9 @@ def _load_cfg(cfg):
     seed_letter = get_seed_letter(cfg.seed)
     path = f"{cfg.checkpoint_dir}/cfg{cfg.cfg_id}{seed_letter}/config.json"
     base = OmegaConf.load(path)
-    epoch = int(cfg.checkpoint_model.split('_')[-1].split('.')[0])
+    # Parse epoch from filename: checkpoint_epoch_100.pth or checkpoint_epoch_100_recal.pth
+    parts = cfg.checkpoint_model.replace('.pth', '').split('_')
+    epoch = int(next(p for p in reversed(parts) if p.isdigit()))
     base.epoch = epoch
     for k in ("mode", "exp_name", "lr_scheduler", "n_classes"):
         base.pop(k, None)
