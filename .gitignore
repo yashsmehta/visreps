@@ -1,4 +1,5 @@
 discussion/
+talk/
 datasets/
 *.npz
 *.db

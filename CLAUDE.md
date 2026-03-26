@@ -78,7 +78,7 @@ python runners/train_runner.py --grid configs/grids/train_default.json  # Grid s
 ```
 
 **Key config options:**
-- `dataset`: "imagenet", "imagenet-mini-{10,50,200}"
+- `dataset`: "imagenet", "imagenet-mini-{10,50,100,200}" — the number is **images per class** (not % of classes). All 1000 classes are kept. E.g., `imagenet-mini-10` = 10 imgs/class = 10K total.
 - `pca_labels`: true/false (use coarse labels)
 - `pca_n_classes`: 2, 4, 8, 16, 32, 64 (must be power of 2)
 - `pca_labels_folder`: "pca_labels_alexnet", "pca_labels_dino", etc.
@@ -213,3 +213,4 @@ When asked for a single plot or specific layout, implement exactly that — do n
 6. Layer names: CNNs use `conv1-5`, `fc1-2`; ViT uses `block1-12`, `head`
 7. Checkpoints at `/data/ymehta3/default/` (1000-way) and `/data/ymehta3/alexnet_pca/` (coarse)
 8. **SRP (k=4096) is always applied during `get_activations()`**. For RSA, the best layer is re-extracted without SRP via `extract_single_layer` for exact test RDMs. Encoding score uses SRP throughout. See "Sparse Random Projection" section above for details.
+9. **Direct SQL queries against `results.db` must filter by `model_name`, `epoch`, and `reconstruct_from_pcs=0`** — the DB contains results for multiple models (CustomCNN, ResNet50, ViT, ConvNeXt) and multiple epochs. Omitting these filters silently contaminates results. Prefer `plotter_utils.get_condition_summary()` which handles `pca_labels_folder` and `epoch` filtering properly.
