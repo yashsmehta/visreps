@@ -4,11 +4,11 @@
   "pca_k": 1,
   "load_model_from": "checkpoint",
   "seed": 1,
-  "cfg_id": 32,
+  "cfg_id": 1024,
   "checkpoint":
   {
-    "checkpoint_dir": "/data/ymehta3/vitbase_clip_pca",
-    "checkpoint_model": "checkpoint_epoch_80.pth"
+    "checkpoint_dir": "/data/ymehta3/clip_pca",
+    "checkpoint_model": "checkpoint_epoch_20.pth"
   },
   "torchvision":
   {

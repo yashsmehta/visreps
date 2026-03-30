@@ -203,10 +203,13 @@ def _show_region_group(
 
     print()
     for _, row in df.iterrows():
-        pf, ci, act, exp = row["pca_folder"], int(row["cfg_id"]), int(row["actual"]), int(row["expected"])
+        pf = str(row["pca_folder"] or "None")
+        ci = row["cfg_id"]
+        ci_str = str(int(ci)) if isinstance(ci, (int, float)) and ci == int(ci) else str(ci)
+        act, exp = int(row["actual"]), int(row["expected"])
         bar = progress_bar(act, exp, acolor)
         status = _status_str(act, exp)
-        print(f"    {pf:>22s}  {ci:>5d}   {act:>3d}/{exp:<3d}  {bar}  {status}")
+        print(f"    {pf:>22s}  {ci_str:>10s}   {act:>3d}/{exp:<3d}  {bar}  {status}")
 
     total_actual = int(df["actual"].sum())
     total_expected = int(df["expected"].sum())

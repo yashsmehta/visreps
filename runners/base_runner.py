@@ -125,13 +125,15 @@ class ExperimentRunner:
         """Execute a single experiment with given parameters."""
         # Create overrides from parameters, handling nested dicts
         overrides = self._flatten_params(params)
-        overrides.append(f"mode={self.mode}")
 
-        # Build command
+        # Build command — pass mode as a CLI flag (not an override)
+        # so it isn't clobbered by run.py's default mode=eval append
         cmd = [
             "python",
             "-m",
             "visreps.run",
+            "--mode",
+            self.mode,
             "--config",
         ] + self.base_config + [
             "--override",
