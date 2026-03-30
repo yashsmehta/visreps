@@ -9,10 +9,10 @@ import numpy as np
 import pandas as pd
 
 # Configuration
-MODEL_NAME = "dino"
+MODEL_NAME = "clip"
 FEATURES_PATH = f"datasets/obj_cls/imagenet/features_{MODEL_NAME}.npz"
 EIGENVECTORS_PATH = f"datasets/obj_cls/imagenet/eigenvectors_{MODEL_NAME}.npz"
-N_PCS = 6  # Number of principal components (produces 2^N_PCS classes max)
+N_PCS = 10  # Number of principal components (produces 2^N_PCS classes max)
 
 
 def make_labels(scores):
