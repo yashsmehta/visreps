@@ -27,6 +27,8 @@ def get_conditions(pca_labels):
     """Build conditions dict using the specified PCA labels folder."""
     folder = f"pca_labels_{pca_labels}"
     return {
+        2:    {"pca_labels": True, "pca_n_classes": 2,  "pca_labels_folder": folder},
+        4:    {"pca_labels": True, "pca_n_classes": 4,  "pca_labels_folder": folder},
         8:    {"pca_labels": True, "pca_n_classes": 8,  "pca_labels_folder": folder},
         16:   {"pca_labels": True, "pca_n_classes": 16, "pca_labels_folder": folder},
         32:   {"pca_labels": True, "pca_n_classes": 32, "pca_labels_folder": folder},
@@ -59,12 +61,23 @@ def get_csv_path(pca_labels, arch="customcnn"):
     return os.path.join(SCRIPT_DIR, f"{'_'.join(parts)}.csv")
 
 
+def get_legacy_csv_path(pca_labels):
+    """Return legacy CSV path under legacy_results/."""
+    if pca_labels == DEFAULT_PCA_LABELS:
+        return os.path.join(SCRIPT_DIR, "legacy_results", "data_efficiency_results.csv")
+    return os.path.join(SCRIPT_DIR, "legacy_results", f"data_efficiency_{pca_labels}_results.csv")
+
+
 def save_results(rows, csv_path):
     """Append result rows to the combined CSV, deduplicating by key columns."""
     keys = ["dataset", "condition", "epoch", "benchmark", "region", "subject_idx"]
     new_df = pd.DataFrame(rows)
     if os.path.exists(csv_path):
         existing = pd.read_csv(csv_path)
+        # Backfill region for legacy CSVs that lack it
+        if "region" not in existing.columns:
+            existing["region"] = existing["benchmark"].map(
+                {"nsd": "ventral visual stream", "tvsd": "IT", "things": "N/A"})
         combined = pd.concat([existing, new_df], ignore_index=True)
     else:
         combined = new_df

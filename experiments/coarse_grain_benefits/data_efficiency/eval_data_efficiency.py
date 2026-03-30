@@ -21,6 +21,9 @@ Usage (from project root):
 
     # Print existing results:
     python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py --architecture resnet50 --print_only
+
+    # Evaluate legacy checkpoints (model_checkpoints/data_efficiency_{dataset}/, epoch 200):
+    python experiments/coarse_grain_benefits/data_efficiency/eval_data_efficiency.py --legacy --conditions 2 4
 """
 
 import gc
@@ -41,14 +44,21 @@ import visreps.evals as evals
 from visreps.utils import load_config, validate_config
 from experiments.coarse_grain_benefits.data_efficiency.shared import (
     SEED, SEED_LETTER, DEFAULT_PCA_LABELS, DATASETS, CHECKPOINT_BASE, ARCHITECTURES,
-    get_conditions, get_checkpoint_dir, get_csv_path, save_results,
+    get_conditions, get_checkpoint_dir, get_csv_path, get_legacy_csv_path, save_results,
 )
 
 
-def _resolve_checkpoint_model(dataset, pca_labels, condition_id, arch, epoch):
+def _get_checkpoint_base_and_dir(dataset, pca_labels, condition_id, arch, legacy):
+    """Return (checkpoint_base_path, checkpoint_subdir) for the given mode."""
+    if legacy:
+        return "model_checkpoints", f"data_efficiency_{dataset}"
+    return CHECKPOINT_BASE, get_checkpoint_dir(dataset, pca_labels, condition_id, arch=arch)
+
+
+def _resolve_checkpoint_model(dataset, pca_labels, condition_id, arch, epoch, legacy=False):
     """Prefer BN-recalibrated checkpoint if available (needed for ResNet50)."""
-    checkpoint_dir = get_checkpoint_dir(dataset, pca_labels, condition_id, arch=arch)
-    base_path = os.path.join(CHECKPOINT_BASE, checkpoint_dir, f"cfg{condition_id}{SEED_LETTER}")
+    ckpt_base, ckpt_dir = _get_checkpoint_base_and_dir(dataset, pca_labels, condition_id, arch, legacy)
+    base_path = os.path.join(ckpt_base, ckpt_dir, f"cfg{condition_id}{SEED_LETTER}")
     recal = f"checkpoint_epoch_{epoch}_recal.pth"
     if os.path.exists(os.path.join(base_path, recal)):
         print(f"  [BN-recal] Using {recal}")
@@ -57,12 +67,12 @@ def _resolve_checkpoint_model(dataset, pca_labels, condition_id, arch, epoch):
 
 
 def build_overrides(dataset, condition_id, epoch, benchmark, conditions, pca_labels,
-                    arch="customcnn", region=None):
+                    arch="customcnn", region=None, legacy=False):
     """Build config overrides for a single eval run."""
     cond = conditions[condition_id]
-    checkpoint_dir = os.path.join(
-        CHECKPOINT_BASE, get_checkpoint_dir(dataset, pca_labels, condition_id, arch=arch))
-    checkpoint_model = _resolve_checkpoint_model(dataset, pca_labels, condition_id, arch, epoch)
+    ckpt_base, ckpt_dir = _get_checkpoint_base_and_dir(dataset, pca_labels, condition_id, arch, legacy)
+    checkpoint_dir = os.path.join(ckpt_base, ckpt_dir)
+    checkpoint_model = _resolve_checkpoint_model(dataset, pca_labels, condition_id, arch, epoch, legacy=legacy)
 
     overrides = [
         f"seed={SEED}",
@@ -115,10 +125,10 @@ def result_exists(completed, dataset, condition_id, epoch, benchmark, region):
     return (dataset, condition_id, epoch, benchmark, region) in completed
 
 
-def checkpoint_exists(dataset, condition_id, epoch, pca_labels, arch="customcnn"):
+def checkpoint_exists(dataset, condition_id, epoch, pca_labels, arch="customcnn", legacy=False):
     """Check if the checkpoint file exists."""
-    checkpoint_dir = get_checkpoint_dir(dataset, pca_labels, condition_id, arch=arch)
-    path = os.path.join(CHECKPOINT_BASE, checkpoint_dir,
+    ckpt_base, ckpt_dir = _get_checkpoint_base_and_dir(dataset, pca_labels, condition_id, arch, legacy)
+    path = os.path.join(ckpt_base, ckpt_dir,
                         f"cfg{condition_id}{SEED_LETTER}",
                         f"checkpoint_epoch_{epoch}.pth")
     return os.path.exists(path)
@@ -144,15 +154,18 @@ def _make_result_rows(result_df, dataset, condition_id, epoch, benchmark, region
 
 
 def eval_benchmark(dataset, condition_id, epoch, benchmark, conditions, pca_labels,
-                   arch="customcnn", region=None):
+                   arch="customcnn", region=None, legacy=False):
     """Run a single evaluation and return result rows."""
     region_label = region or {"nsd": "ventral visual stream", "tvsd": "IT", "things": "N/A"}[benchmark]
     print(f"\n{'='*60}")
-    print(f"Evaluating: {arch} | {condition_id}-class | {dataset} | epoch {epoch} | {benchmark} | {region_label}")
+    label = f"{arch} | {condition_id}-class | {dataset} | epoch {epoch} | {benchmark} | {region_label}"
+    if legacy:
+        label += " [LEGACY]"
+    print(f"Evaluating: {label}")
     print(f"{'='*60}")
 
     overrides = build_overrides(dataset, condition_id, epoch, benchmark, conditions, pca_labels,
-                                arch=arch, region=region)
+                                arch=arch, region=region, legacy=legacy)
     cfg = load_config("configs/eval/base.json", overrides)
     cfg = validate_config(cfg)
     result_df = evals.eval(cfg)
@@ -208,7 +221,10 @@ def _run_architecture(arch, args, conditions, bench_regions):
         "imagenet-mini-100": 50,
     }
 
-    csv_path = get_csv_path(args.pca_labels, arch=arch)
+    if args.legacy:
+        csv_path = get_legacy_csv_path(args.pca_labels)
+    else:
+        csv_path = get_csv_path(args.pca_labels, arch=arch)
     existing = load_existing_results(csv_path)
     completed, skipped = 0, 0
 
@@ -222,23 +238,26 @@ def _run_architecture(arch, args, conditions, bench_regions):
             for epoch in epochs:
                 for benchmark, region in bench_regions:
                     if not checkpoint_exists(dataset, condition_id, epoch,
-                                             args.pca_labels, arch=arch):
+                                             args.pca_labels, arch=arch, legacy=args.legacy):
                         print(f"[SKIP] {arch} {condition_id}-class {dataset} epoch {epoch} "
                               f"-- checkpoint not found")
                         skipped += 1
                         continue
 
+                    region_label = region or {"nsd": "ventral visual stream",
+                                              "tvsd": "IT", "things": "N/A"}[benchmark]
                     if not args.force and result_exists(
-                            existing, dataset, condition_id, epoch, benchmark, region):
+                            existing, dataset, condition_id, epoch, benchmark, region_label):
                         print(f"[SKIP] {arch} {condition_id}-class {dataset} epoch {epoch} "
-                              f"{benchmark}/{region} -- already evaluated")
+                              f"{benchmark}/{region_label} -- already evaluated")
                         skipped += 1
                         continue
 
                     rows = eval_benchmark(dataset, condition_id, epoch, benchmark,
                                           conditions, args.pca_labels,
                                           arch=arch,
-                                          region=region if benchmark != "things" else None)
+                                          region=region if benchmark != "things" else None,
+                                          legacy=args.legacy)
                     save_results(rows, csv_path)
                     completed += 1
 
@@ -279,13 +298,21 @@ def main():
     parser.add_argument("--tvsd_regions", type=str, nargs="+",
                         default=["IT"],
                         help="TVSD regions to evaluate (default: IT)")
+    parser.add_argument("--legacy", action="store_true",
+                        help="Use legacy checkpoints (model_checkpoints/data_efficiency_{dataset}/) "
+                             "and save to legacy_results/ CSV. Defaults to epoch 200, customcnn.")
     parser.add_argument("--force", action="store_true",
                         help="Re-evaluate even if result exists in CSV")
     parser.add_argument("--print_only", action="store_true")
     args = parser.parse_args()
 
-    # Resolve architecture list
-    archs = ALL_ARCHS if args.architecture == "all" else [args.architecture]
+    # Legacy mode overrides
+    if args.legacy:
+        archs = ["customcnn"]
+        if args.epochs == [100]:  # default wasn't changed by user
+            args.epochs = [200]
+    else:
+        archs = ALL_ARCHS if args.architecture == "all" else [args.architecture]
 
     conditions = get_conditions(args.pca_labels)
     if args.conditions is None:
@@ -305,14 +332,17 @@ def main():
 
     if args.print_only:
         for arch in archs:
-            csv_path = get_csv_path(args.pca_labels, arch=arch)
+            if args.legacy:
+                csv_path = get_legacy_csv_path(args.pca_labels)
+            else:
+                csv_path = get_csv_path(args.pca_labels, arch=arch)
             print_summary(args.datasets, args.conditions, args.benchmarks, csv_path, arch=arch)
         return
 
     total_completed, total_skipped = 0, 0
     for arch in archs:
         print(f"\n{'#'*60}")
-        print(f"  Architecture: {arch}")
+        print(f"  Architecture: {arch}" + (" [LEGACY]" if args.legacy else ""))
         print(f"{'#'*60}")
         c, s = _run_architecture(arch, args, conditions, bench_regions)
         total_completed += c

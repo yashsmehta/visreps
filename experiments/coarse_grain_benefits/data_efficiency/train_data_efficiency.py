@@ -9,8 +9,11 @@ Skips models whose final checkpoint already exists.
 Usage (from project root):
     python experiments/coarse_grain_benefits/data_efficiency/train_data_efficiency.py
     python experiments/coarse_grain_benefits/data_efficiency/train_data_efficiency.py --pca_labels alexnet
-    python experiments/coarse_grain_benefits/data_efficiency/train_data_efficiency.py --datasets imagenet-mini-5
-    python experiments/coarse_grain_benefits/data_efficiency/train_data_efficiency.py --conditions 16 32 64
+    python experiments/coarse_grain_benefits/data_efficiency/train_data_efficiency.py --datasets imagenet-mini-10
+    python experiments/coarse_grain_benefits/data_efficiency/train_data_efficiency.py --conditions 2 4
+
+    # Train with legacy hyperparameters (dropout=0.5, lr=0.008, bs=256, 200 epochs):
+    python experiments/coarse_grain_benefits/data_efficiency/train_data_efficiency.py --legacy --conditions 2 4
 """
 
 import os
@@ -43,30 +46,65 @@ TRAINING_PARAMS = {
     "model_class": "custom_model",
 }
 
+# Matches the checkpoints saved on 2026-03-13 (dropout=0.5, 200 epochs, bs=256, lr=0.008).
+# Checkpoints saved to model_checkpoints/data_efficiency_{dataset}/.
+LEGACY_NUM_EPOCHS = 200
+LEGACY_TRAINING_PARAMS = {
+    "batchsize": 256,
+    "learning_rate": 0.008,
+    "num_epochs": LEGACY_NUM_EPOCHS,
+    "warmup_epochs": 20,
+    "checkpoint_interval": 50,
+    "log_interval": 200,
+    "log_checkpoints": True,
+    "use_wandb": False,
+    "model_class": "custom_model",
+}
 
-def checkpoint_exists(dataset, n_classes, pca_labels):
+
+def checkpoint_exists(dataset, n_classes, pca_labels, legacy=False):
     """Check if the final checkpoint for this condition already exists."""
-    checkpoint_dir = get_checkpoint_dir(dataset, pca_labels, n_classes)
-    path = os.path.join(CHECKPOINT_BASE, checkpoint_dir,
-                        f"cfg{n_classes}{SEED_LETTER}",
-                        f"checkpoint_epoch_{NUM_EPOCHS}.pth")
+    num_epochs = LEGACY_NUM_EPOCHS if legacy else NUM_EPOCHS
+    if legacy:
+        checkpoint_dir = f"data_efficiency_{dataset}"
+        path = os.path.join("model_checkpoints", checkpoint_dir,
+                            f"cfg{n_classes}{SEED_LETTER}",
+                            f"checkpoint_epoch_{num_epochs}.pth")
+    else:
+        checkpoint_dir = get_checkpoint_dir(dataset, pca_labels, n_classes)
+        path = os.path.join(CHECKPOINT_BASE, checkpoint_dir,
+                            f"cfg{n_classes}{SEED_LETTER}",
+                            f"checkpoint_epoch_{num_epochs}.pth")
     return os.path.exists(path)
 
 
-def train_condition(n_classes, dataset, conditions, pca_labels):
+def train_condition(n_classes, dataset, conditions, pca_labels, legacy=False):
     """Train a single condition."""
     condition = conditions[n_classes]
-    checkpoint_dir = get_checkpoint_dir(dataset, pca_labels, n_classes)
+    training_params = LEGACY_TRAINING_PARAMS if legacy else TRAINING_PARAMS
+
+    if legacy:
+        checkpoint_dir = f"data_efficiency_{dataset}"
+        checkpoint_base = "model_checkpoints"
+    else:
+        checkpoint_dir = get_checkpoint_dir(dataset, pca_labels, n_classes)
+        checkpoint_base = CHECKPOINT_BASE
+
     print(f"\n{'='*60}")
-    print(f"Training {n_classes}-class model on {dataset}")
-    print(f"Checkpoints: {CHECKPOINT_BASE}/{checkpoint_dir}/")
+    print(f"Training {n_classes}-class model on {dataset}" +
+          (" [LEGACY settings]" if legacy else ""))
+    print(f"Checkpoints: {checkpoint_base}/{checkpoint_dir}/")
     print(f"{'='*60}\n")
 
     overrides = []
-    params = {**TRAINING_PARAMS, **condition, "seed": SEED,
+    params = {**training_params, **condition, "seed": SEED,
               "dataset": dataset, "checkpoint_dir": checkpoint_dir}
     for k, v in params.items():
         overrides.append(f"{k}={v}")
+
+    # Legacy models used dropout=0.5 (current custom_cnn.json has 0.3)
+    if legacy:
+        overrides.append("custom_model.arch.dropout=0.5")
 
     cfg = load_config(["configs/train/base.json", "configs/train/architectures/custom_cnn.json"], overrides)
     cfg = validate_config(cfg)
@@ -82,6 +120,9 @@ def main():
                         choices=DATASETS, help="Datasets to train on")
     parser.add_argument("--conditions", type=int, nargs="+", default=None,
                         help="Which conditions to train (default: all)")
+    parser.add_argument("--legacy", action="store_true",
+                        help="Use legacy hyperparameters (dropout=0.5, lr=0.008, bs=256, 200 epochs) "
+                             "and save to model_checkpoints/data_efficiency_{dataset}/")
     parser.add_argument("--force", action="store_true",
                         help="Train even if checkpoint exists")
     args = parser.parse_args()
@@ -90,16 +131,20 @@ def main():
     if args.conditions is None:
         args.conditions = list(conditions.keys())
 
+    # Legacy mode defaults to imagenet-mini-10 if not specified
+    if args.legacy and args.datasets == DATASETS:
+        args.datasets = ["imagenet-mini-10"]
+
     total = len(args.datasets) * len(args.conditions)
     skipped = 0
 
     for dataset in args.datasets:
         for n_classes in args.conditions:
-            if not args.force and checkpoint_exists(dataset, n_classes, args.pca_labels):
+            if not args.force and checkpoint_exists(dataset, n_classes, args.pca_labels, legacy=args.legacy):
                 print(f"[SKIP] {n_classes}-class on {dataset} — checkpoint exists")
                 skipped += 1
                 continue
-            train_condition(n_classes, dataset, conditions, args.pca_labels)
+            train_condition(n_classes, dataset, conditions, args.pca_labels, legacy=args.legacy)
 
     print(f"\nTraining complete. {total - skipped}/{total} runs executed, {skipped} skipped.")
     print("Run eval_data_efficiency.py to evaluate.")
