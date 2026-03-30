@@ -127,6 +127,8 @@ python runners/eval_runner.py --grid configs/grids/eval_default.json  # Grid swe
 
 **RSA — THINGS:** Fixed 80/20 concept-level split (seed=42). 20% (~370 concepts) for layer selection, 80% (~1,480 concepts) for evaluation. Re-extract best layer without SRP, concept-average for eval set. Bootstrap 1,000 iterations (90% subsample) on eval set for 95% CIs.
 
+**Bootstrap CI aggregation for plots:** `get_condition_summary()` (in `plotter_utils.py`) aggregates bootstrap CIs across seeds by element-wise averaging of the 1,000-iteration bootstrap distributions, then taking the 2.5th/97.5th percentiles. Point estimate = mean score across seeds. Falls back to ±1.96 × SEM across seed means only if bootstrap data is missing.
+
 **Encoding — NSD/TVSD only** (Pearson r, not applicable to THINGS): Per subject: select best layer via 80/20 fit/val split with `RidgeCV(cv=5)` → refit on full train → predict test → mean Pearson r across voxels → 1,000-iteration bootstrap on cached predictions for 95% CIs. Uses SRP throughout, z-normalization with fit-only stats during selection.
 
 ## Results Database
