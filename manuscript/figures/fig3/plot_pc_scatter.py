@@ -141,22 +141,22 @@ def plot_scatter_panel(ax, coords, labels, title, subtitle=None,
                    edgecolors="white", linewidths=0.12,
                    rasterized=True, zorder=2, label=name)
 
-    ax.set_xlabel(xlabel, fontsize=9, labelpad=3)
-    ax.set_ylabel(ylabel, fontsize=9, labelpad=3)
+    ax.set_xlabel(xlabel, fontsize=10, labelpad=3)
+    ax.set_ylabel(ylabel, fontsize=10, labelpad=3)
 
     # Title with optional lighter-weight subtitle
     if subtitle:
-        ax.set_title(title, fontsize=10.5, fontweight="bold", pad=18,
+        ax.set_title(title, fontsize=12, fontweight="bold", pad=18,
                      color="#1a1a1a")
         ax.text(0.5, 1.02, subtitle, transform=ax.transAxes,
-                fontsize=8.5, fontweight="normal", color="#555555",
+                fontsize=9.5, fontweight="normal", color="#555555",
                 ha="center", va="bottom")
     else:
-        ax.set_title(title, fontsize=10.5, fontweight="bold", pad=8,
+        ax.set_title(title, fontsize=12, fontweight="bold", pad=8,
                      color="#1a1a1a")
 
-    ax.tick_params(axis="both", labelsize=7, length=2, width=0.4, pad=2)
-    sns.despine(ax=ax, offset=5)
+    ax.tick_params(axis="both", labelsize=8.5, direction="out", pad=2)
+    sns.despine(ax=ax, offset=4)
     # Data-driven margins
     for idx in [0, 1]:
         lo, hi = coords[:, idx].min(), coords[:, idx].max()

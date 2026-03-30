@@ -1,13 +1,14 @@
 """Figure 3: THINGS Behavioral Alignment.
 
 Layout:
-  Row 0 (top): [Schematic placeholder | Coarseness | Model Comparison]
+  Row 0 (top): [Schematic | Coarseness | Model Comparison | Data Efficiency]
   Row 1 (bottom): [4 PCA scatter panels] spanning full width
 
 Panel A: Schematic of THINGS behavioral similarity task (placeholder)
 Panel B: Alignment vs. Granularity (raw Spearman rho, log x-axis)
 Panel C: Model comparison — coarse vs 1000-way bars + pretrained scatter
-Panel D: PC scatter — Behavioral, CLIP 8-class, Pretrained AlexNet, Pretrained ViT
+Panel D: Data efficiency — coarse models on 10K images vs 1000-class
+Panel E: PC scatter — Behavioral, CLIP 8-class, Pretrained AlexNet, Pretrained ViT
 
 Usage:
     python manuscript/figures/fig3/figure3.py
@@ -61,7 +62,7 @@ ARCH_STYLE = {
     "clip":    {"color": "#08519c", "marker": "s"},    # dark blue
     "pixels":  {"color": "#c0a898", "marker": "v"},    # muted tan
 }
-BASELINE_1K_COLOR = "#d4822e"  # warm amber
+BASELINE_1K_COLOR = "#e8963e"  # warm amber (matches Figure 2)
 COARSE_BAR_COLOR = "#08519c"   # dark blue (CLIP)
 
 # ── Bar position for 1000-way (matches Fig 2 style) ──────────────────────
@@ -93,6 +94,22 @@ GROUP_COLORS = {
     "Vision-language": "#c4377a",   # magenta-rose (distinct from 1K orange)
 }
 ARCH_MARKERS = {"cnn": "p", "vit": "*"}
+
+# ── Data Efficiency config (Panel D) ─────────────────────────────────────
+LEGACY_CSV = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "../../../experiments/coarse_grain_benefits/data_efficiency/"
+    "legacy_results/data_efficiency_results.csv")
+
+DATA_EFF_COARSE_CFGS = [8, 16, 32]
+DATA_EFF_COLORS = {
+    8:  "#74c476",   # light green
+    16: "#238b45",   # medium green
+    32: "#00441b",   # dark green
+}
+DATA_EFF_MARKERS = {8: "o", 16: "s", 32: "D"}
+DATA_EFF_1K_BAR_COLOR = "#FDAE42"     # lighter amber fill
+DATA_EFF_1K_EDGE_COLOR = "#d4822e"    # warm amber edge
 
 
 # ── Coarseness data fetching ─────────────────────────────────────────────
@@ -138,23 +155,19 @@ def _make_tick_formatter(label_map):
 def plot_coarseness_raw(ax):
     """Panel B: Raw Spearman rho coarseness for THINGS behavioral.
 
-    Uses bar style for 1000-way baseline (matching Figure 2).
+    Clean compact style: scatter for coarse (2–64), dashed line for 1000-way.
     """
     # 1000-way baseline
     bl = get_condition_summary("things-behavior", "N/A", "imagenet1k", 1000,
                                "spearman", epoch=20, analysis="rsa")
     bl_mean = bl["mean"]
 
-    # Untrained baseline
-    un = get_condition_summary("things-behavior", "N/A", "imagenet1k", 1000,
-                               "spearman", epoch=0, analysis="rsa")
+    if np.isnan(bl_mean) or bl_mean == 0:
+        ax.text(0.5, 0.5, "No baseline", ha="center", va="center",
+                transform=ax.transAxes, fontsize=9, color="#888")
+        return
 
-    # Collect y-values for axis range
-    all_y_vals = []
-    if not np.isnan(bl_mean):
-        all_y_vals.append(bl_mean)
-    if not np.isnan(un["mean"]):
-        all_y_vals.append(un["mean"])
+    all_y_vals = [bl_mean]
 
     # Coarse architectures
     for arch_idx, (arch_key, folder, _) in enumerate(ARCHITECTURES):
@@ -174,67 +187,47 @@ def plot_coarseness_raw(ax):
                          capsize=1.5, capthick=0.5,
                          ecolor=style["color"], elinewidth=0.7, zorder=4)
 
-    # Y-axis range (no forced zero)
-    y_min = min(all_y_vals) if all_y_vals else 0
-    y_max = max(all_y_vals) if all_y_vals else 1
+    # 1000-way dashed reference line
+    ax.axhline(bl_mean, color=BASELINE_1K_COLOR, linestyle="--",
+               linewidth=1.1, alpha=0.85, zorder=2)
+
+    y_min = min(all_y_vals)
+    y_max = max(all_y_vals)
     y_range = y_max - y_min
-    y_bottom = y_min - y_range * 0.12
 
-    # Untrained dashed line + label
-    if not np.isnan(un["mean"]):
-        ax.axhline(un["mean"], **UNTRAINED_LINE_STYLE, zorder=1)
-        y_offset = y_range * 0.03
-        ax.text(0.02, un["mean"] + y_offset, " Untrained",
-                fontsize=6, fontstyle="italic", color="#AAAAAA",
-                ha="left", va="bottom",
-                transform=blended_transform_factory(ax.transAxes, ax.transData),
-                zorder=10)
+    # "1000-way" label
+    y_offset = y_range * 0.015
+    ax.text(180 * 0.95, bl_mean + y_offset, "Trained, 1000 classes",
+            fontsize=6, fontstyle="italic", color=BASELINE_1K_COLOR,
+            ha="right", va="bottom", zorder=10)
 
-    # 1000-way bar
-    if not np.isnan(bl_mean):
-        bl_err_lo = max(bl_mean - bl["ci_low"], 0) if not np.isnan(bl["ci_low"]) else 0
-        bl_err_hi = max(bl["ci_high"] - bl_mean, 0) if not np.isnan(bl["ci_high"]) else 0
-        ax.bar(BAR_CENTER, bl_mean - y_bottom, bottom=y_bottom,
-               width=BAR_CENTER * BAR_WIDTH_FRAC,
-               color=BASELINE_1K_COLOR, edgecolor="#c07830",
-               linewidth=0.4, zorder=3)
-        ax.errorbar(BAR_CENTER, bl_mean,
-                    yerr=[[bl_err_lo], [bl_err_hi]],
-                    fmt="none", ecolor="#555555", elinewidth=0.7,
-                    capsize=2.2, capthick=0.6, zorder=5)
-
-    # Axis formatting
+    # Axis formatting — clean log₂ x-axis, coarse ticks only
     ax.set_xscale("log", base=2)
-    all_ticks = COARSE_CFGS + [BAR_CENTER]
-    label_map = {v: str(v) for v in COARSE_CFGS}
-    label_map[BAR_CENTER] = "1000"
-    ax.xaxis.set_major_locator(FixedLocator(all_ticks))
-    ax.xaxis.set_major_formatter(FuncFormatter(_make_tick_formatter(label_map)))
+    ax.xaxis.set_major_locator(FixedLocator(COARSE_CFGS))
+    ax.xaxis.set_major_formatter(FuncFormatter(
+        lambda val, pos: str(int(val)) if int(round(val)) in set(COARSE_CFGS) else ""))
     ax.xaxis.set_minor_locator(NullLocator())
     ax.tick_params(axis="x", which="minor", bottom=False)
-    ax.tick_params(axis="x", which="major", length=3.5, width=0.6)
-    ax.set_xlim(1.5, BAR_CENTER * 1.35)
+    ax.tick_params(axis="x", which="major", direction="out")
+    ax.set_xlim(1.5, 180)
 
     # Y-axis
-    ax.tick_params(axis="y", which="major", direction="out", length=3.5, width=0.6)
+    ax.tick_params(axis="y", which="major", direction="out")
     ax.yaxis.set_minor_locator(AutoMinorLocator(2))
-    ax.tick_params(axis="y", which="minor", direction="out", length=2, width=0.4)
+    ax.tick_params(axis="y", which="minor", direction="out")
     ax.yaxis.grid(True, which="major", color="#F0F0F0", linewidth=0.3, zorder=0)
     ax.yaxis.set_major_formatter(FuncFormatter(
         lambda v, _: f"{v:.2f}".rstrip("0").rstrip(".")))
 
-    # Small top margin
-    cur_ylim = ax.get_ylim()
-    ax.set_ylim(cur_ylim[0], cur_ylim[1] + y_range * 0.03)
+    # Y-range with margins
+    ax.set_ylim(y_min - y_range * 0.12, y_max + y_range * 0.10)
 
-    ax.set_xlabel("ImageNet training classes", fontsize=8, labelpad=8)
-    ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=8.5, labelpad=3)
-    sns.despine(ax=ax, right=True, top=True, offset=3)
-
-    _draw_bar_break(ax)
+    ax.set_xlabel("Training classes", fontsize=9, labelpad=6)
+    ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=9, labelpad=3)
+    sns.despine(ax=ax, right=True, top=True, offset=4)
 
     ax.set_title("Alignment vs. Granularity",
-                 fontsize=9.5, fontweight="semibold", pad=8)
+                 fontsize=11, fontweight="semibold", pad=8)
 
 
 # ── Model comparison panel (simplified: 2 bars + pretrained scatter) ─────
@@ -322,11 +315,11 @@ def plot_comparison_panel(ax, ref_ax=None):
 
     # ── Layout: scatter groups evenly spaced across panel ──
     group_positions = {
-        "Supervised":      2.0,
-        "Self-supervised": 5.0,
-        "Vision-language": 8.0,
+        "Supervised":      0.8,
+        "Self-supervised": 3.8,
+        "Vision-language": 6.1,
     }
-    jitter_spread = 0.22
+    jitter_spread = 0.20
 
     # ── Dashed reference line for coarse-grain 8-way ──
     if not np.isnan(best_coarse["mean"]):
@@ -339,7 +332,7 @@ def plot_comparison_panel(ax, ref_ax=None):
         # Label just above the dashed line
         ax.text(x_ref_start + 0.1, best_coarse["mean"] + 0.008,
                 "8 classes (CLIP repr.)",
-                ha="left", va="bottom", fontsize=8.75, color=COARSE_BAR_COLOR,
+                ha="left", va="bottom", fontsize=9, color=COARSE_BAR_COLOR,
                 fontstyle="italic")
 
     # ── Draw pretrained scatter ──
@@ -364,10 +357,10 @@ def plot_comparison_panel(ax, ref_ax=None):
                    s=sz, edgecolors="white", linewidths=1.0, zorder=5)
 
     # ── Model name labels with repulsion ──
-    fs_model = 7.5
+    fs_model = 8.5
     min_gap = 0.024
     # Label column anchored to group center + fixed offset (balanced distance)
-    group_label_x = {g: gx + 0.55 for g, gx in group_positions.items()}
+    group_label_x = {g: gx + 0.42 for g, gx in group_positions.items()}
 
     for group_name in PRETRAINED_GROUPS:
         group_pts = sorted(
@@ -400,17 +393,17 @@ def plot_comparison_panel(ax, ref_ax=None):
                     zorder=10)
 
     # ── Axis formatting ──
-    xlim_right = list(group_positions.values())[-1] + 2.8
+    xlim_right = list(group_positions.values())[-1] + 2.3
     ax.set_xlim(-0.5, xlim_right)
-    ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=9.5, labelpad=5)
+    ax.set_ylabel("")
     ax.set_title("Model Comparison",
-                 fontsize=10.5, fontweight="semibold", pad=8)
+                 fontsize=11, fontweight="semibold", pad=8)
 
     # X-ticks: only scatter group labels
     scatter_xticks = [group_positions[g] for g in group_positions]
     scatter_xlabels = ["Supervised", "Self-\nsupervised", "Vision-\nlanguage"]
     ax.set_xticks(scatter_xticks)
-    ax.set_xticklabels(scatter_xlabels, fontsize=8.0)
+    ax.set_xticklabels(scatter_xlabels, fontsize=9.5)
 
     # Subtle horizontal grid
     ax.yaxis.grid(True, which="major", color="#EBEBEB", linewidth=0.4, zorder=0)
@@ -420,15 +413,11 @@ def plot_comparison_panel(ax, ref_ax=None):
     ax.yaxis.set_major_locator(MultipleLocator(0.1))
     ax.yaxis.set_minor_locator(AutoMinorLocator(2))
     ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v:.1f}"))
-    ax.tick_params(axis="y", which="major", direction="out", length=5,
-                   width=1.2, labelsize=8.5)
-    ax.tick_params(axis="y", which="minor", direction="out", length=3,
-                   width=0.8)
-    ax.tick_params(axis="x", which="major", length=4, width=1.0, direction="out")
+    ax.tick_params(axis="y", which="major", direction="out")
+    ax.tick_params(axis="y", which="minor", direction="out")
+    ax.tick_params(axis="x", which="major", direction="out")
 
-    sns.despine(ax=ax, right=True, top=True, offset=5)
-    ax.spines["bottom"].set_linewidth(1.2)
-    ax.spines["left"].set_linewidth(1.2)
+    sns.despine(ax=ax, right=True, top=True, offset=4)
 
     # ── Sync y-axis with Panel B if provided ──
     if ref_ax is not None:
@@ -445,7 +434,7 @@ def plot_comparison_panel(ax, ref_ax=None):
                markeredgecolor="white", markeredgewidth=0.5,
                markersize=13, label="ViT"),
     ]
-    leg = ax.legend(handles=leg_handles, fontsize=9, frameon=True,
+    leg = ax.legend(handles=leg_handles, fontsize=10, frameon=True,
                     loc="lower left", edgecolor="#dddddd", fancybox=False,
                     framealpha=0.95, handletextpad=0.3, borderpad=0.4,
                     labelspacing=0.3, ncol=1, columnspacing=0.5,
@@ -453,7 +442,176 @@ def plot_comparison_panel(ax, ref_ax=None):
     leg.get_frame().set_linewidth(0.4)
 
 
-# ── Panel D — PCA scatter of THINGS concept representations ──────────────
+# ── Panel D — Data Efficiency ─────────────────────────────────────────────
+
+def _load_data_efficiency_10k():
+    """Load THINGS scores from legacy CSV (CLIP labels, epoch 200, 10K images)."""
+    df = pd.read_csv(LEGACY_CSV)
+    things = df[(df["benchmark"] == "things") &
+                (df["dataset"] == "imagenet-mini-10") &
+                (df["epoch"] == 200)]
+    results = {}
+    for cond in DATA_EFF_COARSE_CFGS + [1000]:
+        cdf = things[things["condition"] == cond]
+        if cdf.empty:
+            continue
+        best = cdf.loc[cdf["score"].idxmax()]
+        results[cond] = {
+            "score": best["score"],
+            "ci_low": best["ci_low"],
+            "ci_high": best["ci_high"],
+        }
+    return results
+
+
+def _load_data_efficiency_1m():
+    """Load 1.2M 1000-class THINGS result from results.db (epoch 20, seed 1)."""
+    conn = sqlite3.connect(DB_PATH)
+    result = pd.read_sql("""
+        SELECT score, ci_low, ci_high FROM results
+        WHERE neural_dataset='things-behavior'
+          AND compare_method='spearman' AND cfg_id=1000
+          AND reconstruct_from_pcs=0 AND epoch=20
+          AND model_name='CustomCNN' AND seed=1
+        ORDER BY score DESC LIMIT 1
+    """, conn)
+    conn.close()
+    if result.empty:
+        return None
+    r = result.iloc[0]
+    return {
+        "score": r["score"],
+        "ci_low": r["ci_low"] if pd.notna(r["ci_low"]) else r["score"],
+        "ci_high": r["ci_high"] if pd.notna(r["ci_high"]) else r["score"],
+    }
+
+
+def _draw_bar_break_d(ax):
+    """Draw // break marks for Panel D (same style as Panel B)."""
+    trans = blended_transform_factory(ax.transData, ax.transAxes)
+    mid = np.exp((np.log(32) + np.log(BAR_CENTER / 1.16)) / 2)
+    rect_hw = mid * 0.16
+    rect = mpatches.FancyBboxPatch(
+        (mid / 1.16, -0.05), width=rect_hw * 1.5, height=0.10,
+        boxstyle="square,pad=0", facecolor="white", edgecolor="none",
+        transform=trans, clip_on=False, zorder=9)
+    ax.add_patch(rect)
+    for x_shift in [0.93, 1.07]:
+        x_c = mid * x_shift
+        ax.plot([x_c / 1.04, x_c * 1.04], [-0.028, 0.028],
+                transform=trans, color="#555555", linewidth=0.7,
+                clip_on=False, zorder=11)
+
+
+def plot_data_efficiency(ax, ref_ax=None):
+    """Panel D: Low Data Regime — THINGS alignment with only 10K training images.
+
+    Mirrors Panel B's structure: log2 x-axis with coarse markers at 8/16/32,
+    axis break, then 1000-way bar. CLIP label source only (green squares).
+    Dashed line shows 1.2M 1000-class baseline.
+    If ref_ax is provided, syncs y-axis limits with it.
+    """
+    data_10k = _load_data_efficiency_10k()
+    data_1m = _load_data_efficiency_1m()
+
+    # Collect y-values for axis range
+    all_y_vals = []
+
+    # Sync y-axis with panel B if available
+    if ref_ax is not None:
+        ref_ax.figure.canvas.draw()
+        y_lo, y_hi = ref_ax.get_ylim()
+        y_bottom = y_lo
+    else:
+        for d in data_10k.values():
+            all_y_vals.append(d["score"])
+        if data_1m:
+            all_y_vals.append(data_1m["score"])
+        y_min = min(all_y_vals) if all_y_vals else 0
+        y_max = max(all_y_vals) if all_y_vals else 1
+        y_range = y_max - y_min
+        y_bottom = y_min - y_range * 0.12
+        y_lo, y_hi = y_bottom, y_max + y_range * 0.03
+    ax.set_ylim(y_lo, y_hi)
+    y_bottom = y_lo
+
+    # Dashed line: 1.2M 1000-class baseline
+    if data_1m:
+        ax.axhline(y=data_1m["score"], color=BASELINE_1K_COLOR, linestyle="--",
+                    linewidth=1.3, zorder=5, alpha=0.8, dash_capstyle="round")
+        y_range_actual = y_hi - y_lo
+        ax.text(0.02, data_1m["score"] + y_range_actual * 0.03,
+                " 1.2M images",
+                transform=blended_transform_factory(ax.transAxes, ax.transData),
+                fontsize=7, fontstyle="italic", color=BASELINE_1K_COLOR,
+                ha="left", va="bottom")
+
+    # Untrained dashed line (reuse from Panel B's style)
+    un_10k = data_10k.get("untrained")
+    # No untrained in legacy CSV, so skip if missing
+
+    # 1000-way bar at BAR_CENTER (same position as Panel B)
+    if 1000 in data_10k:
+        d = data_10k[1000]
+        bl_err_lo = max(d["score"] - d["ci_low"], 0) if not np.isnan(d["ci_low"]) else 0
+        bl_err_hi = max(d["ci_high"] - d["score"], 0) if not np.isnan(d["ci_high"]) else 0
+        ax.bar(BAR_CENTER, d["score"] - y_bottom, bottom=y_bottom,
+               width=BAR_CENTER * BAR_WIDTH_FRAC,
+               color=BASELINE_1K_COLOR, edgecolor="#c07830",
+               linewidth=0.4, zorder=3)
+        ax.errorbar(BAR_CENTER, d["score"],
+                    yerr=[[bl_err_lo], [bl_err_hi]],
+                    fmt="none", ecolor="#555555", elinewidth=0.7,
+                    capsize=2.2, capthick=0.6, zorder=5)
+
+    # Coarse markers at their actual x positions (CLIP style: green squares)
+    clip_style = {"color": "#08519c", "marker": "s"}  # CLIP style from Panel B
+    for cond in DATA_EFF_COARSE_CFGS:
+        if cond not in data_10k:
+            continue
+        d = data_10k[cond]
+        e_lo = max(d["score"] - d["ci_low"], 0) if not np.isnan(d["ci_low"]) else 0
+        e_hi = max(d["ci_high"] - d["score"], 0) if not np.isnan(d["ci_high"]) else 0
+        ax.errorbar(cond, d["score"], yerr=[[e_lo], [e_hi]],
+                    fmt=clip_style["marker"], color=clip_style["color"],
+                    markersize=MARKER_SIZE,
+                    markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
+                    capsize=1.5, capthick=0.5,
+                    ecolor=clip_style["color"], elinewidth=0.7, zorder=4)
+
+    # X-axis: log2 scale with break, matching Panel B
+    ax.set_xscale("log", base=2)
+    all_ticks = DATA_EFF_COARSE_CFGS + [BAR_CENTER]
+    label_map = {v: str(v) for v in DATA_EFF_COARSE_CFGS}
+    label_map[BAR_CENTER] = "1000"
+    ax.xaxis.set_major_locator(FixedLocator(all_ticks))
+    ax.xaxis.set_major_formatter(FuncFormatter(_make_tick_formatter(label_map)))
+    ax.xaxis.set_minor_locator(NullLocator())
+    ax.tick_params(axis="x", which="minor", bottom=False)
+    ax.tick_params(axis="x", which="major", direction="out")
+    ax.set_xlim(5.5, BAR_CENTER * 1.35)
+
+    # Y-axis (no label — shared with panel B)
+    ax.set_ylabel("")
+    ax.yaxis.set_minor_locator(AutoMinorLocator(2))
+    ax.yaxis.set_major_formatter(FuncFormatter(
+        lambda v, _: f"{v:.2f}".rstrip("0").rstrip(".")))
+    ax.tick_params(axis="y", which="major", direction="out")
+    ax.tick_params(axis="y", which="minor", direction="out")
+    ax.yaxis.grid(True, which="major", color="#F0F0F0", linewidth=0.3, zorder=0)
+    ax.set_axisbelow(True)
+
+    ax.set_xlabel("ImageNet training classes", fontsize=9, labelpad=6)
+    sns.despine(ax=ax, right=True, top=True, offset=4)
+    _draw_bar_break_d(ax)
+
+    # Title + gray subtitle (subtitle sits just below the title)
+    ax.set_title("Low Data Regime", fontsize=11, fontweight="semibold", pad=8)
+    ax.text(0.5, 1.01, "10K images (1% of ImageNet)", transform=ax.transAxes,
+            fontsize=7.5, color="#888888", ha="center", va="bottom")
+
+
+# ── Panel E — PCA scatter of THINGS concept representations ──────────────
 
 PROJECT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../..")
 
@@ -462,7 +620,7 @@ PROJECT_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../.
 PC_PANELS = [
     ("Behavioral",  "(ground truth)", None),
     ("CNN",         "(8 classes (CLIP repr.))", "clip8"),
-    ("AlexNet",     "(1K classes)",   "alexnet_pre"),
+    ("CNN",         "(1K classes)",   "alexnet_pre"),
     ("ViT-B/16",    "(1K classes)",   "vit_pre"),
 ]
 
@@ -741,57 +899,70 @@ def load_pc_scatter_data():
 def main():
     setup_style()
     plt.rcParams.update({
-        "axes.labelsize": 8.5,
-        "axes.titlesize": 9,
-        "xtick.labelsize": 7.5,
-        "ytick.labelsize": 7.5,
+        "axes.labelsize": 9,
+        "axes.titlesize": 10,
+        "xtick.labelsize": 8.5,
+        "ytick.labelsize": 8.5,
+        "axes.linewidth": 0.8,
+        "xtick.major.width": 0.8,
+        "ytick.major.width": 0.8,
+        "xtick.minor.width": 0.5,
+        "ytick.minor.width": 0.5,
+        "xtick.major.size": 4,
+        "ytick.major.size": 4,
+        "xtick.minor.size": 2.5,
+        "ytick.minor.size": 2.5,
     })
 
-    fig = plt.figure(figsize=(15.5, 8.8))
+    fig = plt.figure(figsize=(17.0, 9.0))
     fig.patch.set_facecolor("white")
 
-    # Unified 2×4 grid — columns align between rows
+    # Single 2×4 grid — columns aligned between top and bottom rows
     gs = gridspec.GridSpec(2, 4, figure=fig,
-                           height_ratios=[1.05, 0.88],
+                           height_ratios=[1.0, 0.88],
                            width_ratios=[1, 1, 1, 1],
-                           hspace=0.38, wspace=0.28,
-                           left=0.05, right=0.96,
-                           top=0.95, bottom=0.07)
+                           hspace=0.32, wspace=0.30,
+                           left=0.045, right=0.965,
+                           top=0.96, bottom=0.06)
 
-    # Panel A: cols 0–1 (schematic spans 2 columns)
-    ax_schematic = fig.add_subplot(gs[0, 0:2])
+    # ── Panel A: Schematic ────────────────────────────────────────────────
+    ax_schematic = fig.add_subplot(gs[0, 0])
     draw_schematic_placeholder(ax_schematic,
                                "THINGS\nBehavioral Similarity\n(schematic)")
 
-    # Panel B: col 2
-    ax_coarse = fig.add_subplot(gs[0, 2])
+    # ── Panel B: Coarseness ───────────────────────────────────────────────
+    ax_coarse = fig.add_subplot(gs[0, 1])
     plot_coarseness_raw(ax_coarse)
 
-    # Panel B legend — architecture markers (bar is self-explanatory)
+    # Panel B legend — architecture markers
     legend_handles = []
     for arch_key, _, display in ARCHITECTURES:
         style = ARCH_STYLE[arch_key]
         h = Line2D([], [], marker=style["marker"], color="none",
                    markerfacecolor=style["color"],
                    markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
-                   markersize=5.5, label=display)
+                   markersize=5, label=display)
         legend_handles.append(h)
     leg_c = ax_coarse.legend(
-        handles=legend_handles, fontsize=7.5,
+        handles=legend_handles, fontsize=8,
         frameon=True, fancybox=False, framealpha=0.92,
-        edgecolor="#dddddd", borderpad=0.4,
-        handletextpad=0.3, labelspacing=0.25,
-        title="Latent repr. for\ncoarse labels",
-        title_fontsize=7,
+        edgecolor="#dddddd", borderpad=0.35,
+        handletextpad=0.3, labelspacing=0.2,
+        title="Coarse label source",
+        title_fontsize=7.5,
         loc="center left",
-        bbox_to_anchor=(0.0, 0.45))
+        bbox_to_anchor=(0.0, 0.42))
     leg_c._legend_box.align = "left"
 
-    # Panel C: col 3
-    ax_compare = fig.add_subplot(gs[0, 3])
+    # ── Panel C: Model Comparison ─────────────────────────────────────────
+    ax_compare = fig.add_subplot(gs[0, 2])
     plot_comparison_panel(ax_compare, ref_ax=ax_coarse)
 
-    # ── Bottom row: 4 PCA scatter panels (one per column) ──
+    # ── Panel D: Data Efficiency ──────────────────────────────────────────
+    ax_data_eff = fig.add_subplot(gs[0, 3])
+    plot_data_efficiency(ax_data_eff, ref_ax=ax_coarse)
+
+    # ── Bottom row: 4 PCA scatter panels ──────────────────────────────────
     pc_axes = [fig.add_subplot(gs[1, i]) for i in range(4)]
 
     print("Loading PCA scatter data...")
@@ -818,28 +989,36 @@ def main():
         Line2D([0], [0], marker="o", color="none",
                markerfacecolor=SUPER_COLORS[name],
                markeredgecolor="white", markeredgewidth=0.4,
-               markersize=6, label=name)
+               markersize=5.5, label=name)
         for name in SUPER_ORDER
     ]
     leg_cat = pc_axes[0].legend(
         handles=cat_handles, loc="upper left",
-        ncol=2, fontsize=6.5, frameon=True,
-        handletextpad=0.2, columnspacing=0.6, labelspacing=0.25,
+        ncol=2, fontsize=7.5, frameon=True,
+        handletextpad=0.2, columnspacing=0.5, labelspacing=0.2,
         borderpad=0.3, edgecolor="#dddddd", fancybox=False,
         framealpha=0.90,
     )
     leg_cat.get_frame().set_linewidth(0.3)
 
-    # ── Panel labels ──
-    for ax, label, x_off in zip(
-        [ax_schematic, ax_coarse, ax_compare, pc_axes[0]],
-        ["a", "b", "c", "d"],
-        [-0.08, -0.14, -0.06, -0.10]):
-        ax.text(x_off, 1.12, label, transform=ax.transAxes,
-                fontsize=14, fontweight="bold", va="top", ha="left",
+    # ── Uniform axis styling across all data panels ──────────────────────
+    for ax in [ax_coarse, ax_compare, ax_data_eff] + pc_axes:
+        for spine in ax.spines.values():
+            spine.set_linewidth(0.8)
+        ax.tick_params(axis="both", which="major", width=0.8, length=4)
+        ax.tick_params(axis="both", which="minor", width=0.5, length=2.5)
+
+    # ── Panel labels ──────────────────────────────────────────────────────
+    for ax, label, x_off, y_off in zip(
+        [ax_schematic, ax_coarse, ax_compare, ax_data_eff, pc_axes[0]],
+        ["a", "b", "c", "d", "e"],
+        [-0.06, -0.18, -0.06, -0.18, -0.10],
+        [1.08,  1.08,  1.08,  1.08,  1.10]):
+        ax.text(x_off, y_off, label, transform=ax.transAxes,
+                fontsize=13, fontweight="bold", va="top", ha="left",
                 family="sans-serif")
 
-    # ── Save ──
+    # ── Save ──────────────────────────────────────────────────────────────
     out = f"{OUTPUT_DIR}/figure3.png"
     fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")

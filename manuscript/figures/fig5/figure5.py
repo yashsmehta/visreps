@@ -1,9 +1,9 @@
-"""Figure 5: Architecture Generalization + Data Efficiency.
+"""Figure 5: Architecture Generalization — THINGS Behavioral Alignment.
 
-Layout (2 rows):
-  Top row (A): THINGS coarseness for ResNet-50 | ConvNeXt | ViT-B/16
-               (CLIP-based coarse labels, epoch 20, seed 1)
-  Bottom row (B): Data efficiency — NSD Early | NSD Ventral | THINGS
+Layout (single row, 3 panels):
+  a: ResNet-50 | b: ConvNeXt | c: ViT-B/16
+  Each panel shows THINGS coarseness (CLIP labels, epoch 20, seed 1)
+  with a 1000-class baseline bar.
 
 Usage:
     python manuscript/figures/fig5/figure5.py
@@ -34,10 +34,7 @@ from fig_utils import (
 # ── Config ────────────────────────────────────────────────────────────────
 OUTPUT_DIR = "manuscript/figures/fig5"
 DB_PATH = "results.db"
-DATA_EFF_CSV = os.path.join("experiments", "coarse_grain_benefits",
-                            "data_efficiency", "data_efficiency_results.csv")
 
-# ── Top row: Architecture coarseness panels ──────────────────────────────
 ARCH_MODELS = [
     ("ResNet50",      "ResNet-50"),
     ("ConvNeXt_Base", "ConvNeXt"),
@@ -50,34 +47,8 @@ BASELINE_1K_COLOR = "#e8963e"                        # warm amber
 BAR_CENTER = 250
 BAR_WIDTH_FRAC = 0.15
 
-# ── Bottom row: Data efficiency ──────────────────────────────────────────
-DE_COLORS = {
-    8:    "#a1d99b",   # light green
-    16:   "#41ab5d",   # medium green
-    32:   "#006d2c",   # dark green
-    1000: "#e6550d",   # vivid orange
-}
-DE_MARKERS = {8: "o", 16: "s", 32: "D", 1000: "X"}
-DE_CONDITIONS = [8, 16, 32, 1000]
-DATASETS = ["imagenet-mini-5", "imagenet-mini-10", "imagenet-mini-50",
-            "imagenet-full"]
-DATASET_LABELS = {
-    "imagenet-mini-5": "5K", "imagenet-mini-10": "10K",
-    "imagenet-mini-50": "50K", "imagenet-full": "1.2M",
-}
-BENCHMARKS = {
-    "nsd_early": {"title": "NSD (Early Visual Stream)",
-                  "ylabel": r"RSA (Spearman $\rho$)"},
-    "nsd":       {"title": "NSD (Ventral Visual Stream)",
-                  "ylabel": r"RSA (Spearman $\rho$)"},
-    "things":    {"title": "THINGS (Behavioral)",
-                  "ylabel": r"RSA (Spearman $\rho$)"},
-}
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Top row — THINGS coarseness per architecture
-# ═══════════════════════════════════════════════════════════════════════════
+# ── Data fetching ─────────────────────────────────────────────────────────
 
 def fetch_things_arch_data(model_name, epoch=20, seed=1):
     """Fetch THINGS-behavior scores for a specific architecture (CLIP labels).
@@ -148,6 +119,8 @@ def fetch_things_arch_data(model_name, epoch=20, seed=1):
     return results, baseline, untrained
 
 
+# ── Plotting ──────────────────────────────────────────────────────────────
+
 def _draw_bar_break(ax):
     """Draw // break marks between the coarse scatter region and the bar."""
     trans = blended_transform_factory(ax.transData, ax.transAxes)
@@ -168,7 +141,7 @@ def _draw_bar_break(ax):
 def plot_things_coarseness(ax, model_name, display_name,
                            show_ylabel=True, show_xlabel=True,
                            forced_ylim=None):
-    """Plot THINGS coarseness panel in Figure 2 style for a single architecture."""
+    """Plot THINGS coarseness panel — clean compact style with dashed reference lines."""
     results, baseline, untrained = fetch_things_arch_data(model_name)
 
     if not results and baseline is None:
@@ -204,46 +177,33 @@ def plot_things_coarseness(ax, model_name, display_name,
     y_max = max(all_y_vals)
     y_range = y_max - y_min if y_max > y_min else 0.05
 
+    # ── 1000-way dashed reference line ──
+    if baseline:
+        ax.axhline(baseline["score"], color=BASELINE_1K_COLOR, linestyle="--",
+                   linewidth=1.1, alpha=0.85, zorder=2)
+        y_offset = y_range * 0.015
+        ax.text(180 * 0.95, baseline["score"] + y_offset, "Trained, 1000 classes",
+                fontsize=6, fontstyle="italic", color=BASELINE_1K_COLOR,
+                ha="right", va="bottom", zorder=10)
+
     # ── Untrained dashed line ──
     if untrained is not None:
         ax.axhline(untrained, color="#AAAAAA", linestyle="--",
                    linewidth=0.9, alpha=0.7, zorder=1)
-        y_offset = y_range * 0.03
-        ax.text(0.02, untrained + y_offset, " Untrained",
+        y_offset = y_range * 0.015
+        ax.text(180 * 0.95, untrained + y_offset, "Untrained",
                 fontsize=6, fontstyle="italic", color="#AAAAAA",
-                ha="left", va="bottom",
-                transform=blended_transform_factory(ax.transAxes, ax.transData),
-                zorder=10)
+                ha="right", va="bottom", zorder=10)
 
-    # ── 1000-way bar (drawn from axis bottom so it doesn't float) ──
-    # Use a sentinel; actual bottom is set after ylim is finalized
-    if baseline:
-        bl = baseline
-        bl_err_lo = (max(bl["score"] - bl["ci_low"], 0)
-                     if bl["ci_low"] is not None and pd.notna(bl["ci_low"]) else 0)
-        bl_err_hi = (max(bl["ci_high"] - bl["score"], 0)
-                     if bl["ci_high"] is not None and pd.notna(bl["ci_high"]) else 0)
-        # Store for deferred drawing after ylim is set
-        ax._bar_data = (bl["score"], bl_err_lo, bl_err_hi)
-
-    # ── Axis formatting (match Figure 2) ──
+    # ── Axis formatting — clean log₂ x-axis, coarse ticks only ──
     ax.set_xscale("log", base=2)
-    all_ticks = COARSE_CFGS + [BAR_CENTER]
-    label_map = {v: str(v) for v in COARSE_CFGS}
-    label_map[BAR_CENTER] = "1000"
-
-    def _fmt(val, pos):
-        for k, lbl in label_map.items():
-            if abs(val - k) < k * 0.05:
-                return lbl
-        return ""
-
-    ax.xaxis.set_major_locator(FixedLocator(all_ticks))
-    ax.xaxis.set_major_formatter(FuncFormatter(_fmt))
+    ax.xaxis.set_major_locator(FixedLocator(COARSE_CFGS))
+    ax.xaxis.set_major_formatter(FuncFormatter(
+        lambda val, pos: str(int(val)) if int(round(val)) in set(COARSE_CFGS) else ""))
     ax.xaxis.set_minor_locator(NullLocator())
     ax.tick_params(axis="x", which="minor", bottom=False)
-    ax.tick_params(axis="x", which="major", length=3.5, width=0.6)
-    ax.set_xlim(1.5, BAR_CENTER * 1.35)
+    ax.tick_params(axis="x", which="major", length=3.5, width=0.6, labelsize=10)
+    ax.set_xlim(1.5, 180)
 
     ax.tick_params(axis="y", which="major", direction="out", length=3.5,
                    width=0.6)
@@ -256,254 +216,22 @@ def plot_things_coarseness(ax, model_name, display_name,
         lambda v, _: f"{v:.2f}".rstrip("0").rstrip(".")))
 
     if forced_ylim is not None:
-        cur_ylim = ax.get_ylim()
-        yl = forced_ylim[0] if forced_ylim[0] is not None else cur_ylim[0]
-        yh = forced_ylim[1] if forced_ylim[1] is not None else cur_ylim[1] + y_range * 0.03
+        yl = forced_ylim[0] if forced_ylim[0] is not None else y_min - y_range * 0.12
+        yh = forced_ylim[1] if forced_ylim[1] is not None else y_max + y_range * 0.10
         ax.set_ylim(yl, yh)
     else:
-        cur_ylim = ax.get_ylim()
-        ax.set_ylim(cur_ylim[0], cur_ylim[1] + y_range * 0.03)
+        ax.set_ylim(y_min - y_range * 0.12, y_max + y_range * 0.10)
 
     if show_xlabel:
-        ax.set_xlabel("ImageNet training classes", fontsize=9, labelpad=6)
+        ax.set_xlabel("Training classes", fontsize=9, labelpad=6)
     if show_ylabel:
         ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=9, labelpad=3)
     else:
         ax.set_ylabel("")
     sns.despine(ax=ax, right=True, top=True, offset=3)
 
-    # ── Draw 1000-way bar now that ylim is final ──
-    if hasattr(ax, "_bar_data"):
-        bl_score, bl_err_lo, bl_err_hi = ax._bar_data
-        y_bot = ax.get_ylim()[0]
-        ax.bar(BAR_CENTER, bl_score - y_bot, bottom=y_bot,
-               width=BAR_CENTER * BAR_WIDTH_FRAC,
-               color=BASELINE_1K_COLOR, edgecolor="#c07830",
-               linewidth=0.4, zorder=3)
-        ax.errorbar(BAR_CENTER, bl_score,
-                    yerr=[[bl_err_lo], [bl_err_hi]],
-                    fmt="none", ecolor="#555555", elinewidth=0.7,
-                    capsize=2.2, capthick=0.6, zorder=5)
-        del ax._bar_data
 
-    _draw_bar_break(ax)
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Bottom row — Data efficiency (unchanged from original)
-# ═══════════════════════════════════════════════════════════════════════════
-
-def load_csv_data():
-    """Load data-efficiency CSV and aggregate to one row per
-    (dataset, condition, benchmark)."""
-    df = pd.read_csv(DATA_EFF_CSV)
-    rows = []
-
-    for bench in ["nsd", "nsd_early", "things"]:
-        bdf = df[df["benchmark"] == bench]
-        if bdf.empty:
-            continue
-
-        for ds in ["imagenet-mini-5", "imagenet-mini-10", "imagenet-mini-50"]:
-            dsdf = bdf[bdf["dataset"] == ds]
-            for cond in DE_CONDITIONS:
-                cdf = dsdf[dsdf["condition"] == cond]
-                if cdf.empty:
-                    continue
-
-                if bench in ("nsd", "nsd_early"):
-                    epoch_scores = {}
-                    for epoch, edf in cdf.groupby("epoch"):
-                        epoch_scores[epoch] = {
-                            "score": edf["score"].mean(),
-                            "ci_low": edf["ci_low"].mean(),
-                            "ci_high": edf["ci_high"].mean(),
-                        }
-                    best_epoch = max(epoch_scores,
-                                     key=lambda e: epoch_scores[e]["score"])
-                    vals = epoch_scores[best_epoch]
-                else:
-                    best_row = cdf.loc[cdf["score"].idxmax()]
-                    vals = {
-                        "score": best_row["score"],
-                        "ci_low": best_row["ci_low"],
-                        "ci_high": best_row["ci_high"],
-                    }
-
-                rows.append({"dataset": ds, "condition": cond,
-                             "benchmark": bench, **vals})
-
-    return pd.DataFrame(rows)
-
-
-def load_full_imagenet():
-    """Load full ImageNet (1.2M) results from results.db with bootstrap CIs."""
-    conn = sqlite3.connect(DB_PATH)
-    rows = []
-
-    for cond in DE_CONDITIONS:
-        if cond == 1000:
-            where = ("cfg_id=1000 AND model_name='CustomCNN' "
-                     "AND reconstruct_from_pcs=0 AND epoch=20")
-        else:
-            where = (f"cfg_id={cond} AND model_name='CustomCNN' "
-                     f"AND pca_labels_folder='pca_labels_clip' "
-                     f"AND reconstruct_from_pcs=0 AND epoch=20")
-
-        # ── THINGS ──
-        things = pd.read_sql(f"""
-            SELECT seed, score, ci_low, ci_high
-            FROM results
-            WHERE neural_dataset='things-behavior'
-              AND compare_method='spearman' AND {where}
-            ORDER BY seed, score DESC
-        """, conn)
-        if not things.empty:
-            best = things.groupby("seed").first().reset_index()
-            mean_score = best["score"].mean()
-            if best["ci_low"].notna().all():
-                ci_low = best["ci_low"].mean()
-                ci_high = best["ci_high"].mean()
-            else:
-                sem = best["score"].std() / np.sqrt(len(best))
-                ci_low = mean_score - 1.96 * sem
-                ci_high = mean_score + 1.96 * sem
-            rows.append({
-                "dataset": "imagenet-full", "condition": cond,
-                "benchmark": "things",
-                "score": mean_score, "ci_low": ci_low, "ci_high": ci_high,
-            })
-
-        # ── NSD ventral stream ──
-        nsd_best = pd.read_sql(f"""
-            SELECT run_id, seed, subject_idx, score,
-                   ROW_NUMBER() OVER (
-                       PARTITION BY seed, subject_idx
-                       ORDER BY score DESC) as rn
-            FROM results
-            WHERE neural_dataset='nsd'
-              AND region='ventral visual stream'
-              AND compare_method='spearman' AND {where}
-        """, conn)
-        if nsd_best.empty:
-            continue
-        nsd_best = nsd_best[nsd_best["rn"] == 1].drop(columns=["rn"])
-        mean_score = nsd_best["score"].mean()
-        ci_low, ci_high = _bootstrap_ci(conn, nsd_best, mean_score)
-        rows.append({
-            "dataset": "imagenet-full", "condition": cond,
-            "benchmark": "nsd",
-            "score": mean_score, "ci_low": ci_low, "ci_high": ci_high,
-        })
-
-        # ── NSD early visual stream ──
-        nsd_early = pd.read_sql(f"""
-            SELECT run_id, seed, subject_idx, score,
-                   ROW_NUMBER() OVER (
-                       PARTITION BY seed, subject_idx
-                       ORDER BY score DESC) as rn
-            FROM results
-            WHERE neural_dataset='nsd'
-              AND region='early visual stream'
-              AND compare_method='spearman' AND {where}
-        """, conn)
-        if not nsd_early.empty:
-            nsd_early = nsd_early[nsd_early["rn"] == 1].drop(columns=["rn"])
-            early_mean = nsd_early["score"].mean()
-            e_ci_low, e_ci_high = _bootstrap_ci(conn, nsd_early, early_mean)
-            rows.append({
-                "dataset": "imagenet-full", "condition": cond,
-                "benchmark": "nsd_early",
-                "score": early_mean, "ci_low": e_ci_low,
-                "ci_high": e_ci_high,
-            })
-
-    conn.close()
-    return pd.DataFrame(rows)
-
-
-def _bootstrap_ci(conn, best_df, mean_score):
-    """Compute 95% CI from bootstrap distributions, falling back to SEM."""
-    run_ids = best_df["run_id"].unique().tolist()
-    placeholders = ",".join(f"'{r}'" for r in run_ids)
-    boot_dists = pd.read_sql(f"""
-        SELECT bd.run_id, bd.scores
-        FROM bootstrap_distributions bd
-        WHERE bd.run_id IN ({placeholders})
-          AND bd.compare_method='spearman'
-    """, conn)
-
-    if not boot_dists.empty:
-        boot_dists = boot_dists.merge(
-            best_df[["run_id", "seed", "subject_idx"]], on="run_id")
-        n_boot = 1000
-        seed_boots = []
-        for seed, sdf in boot_dists.groupby("seed"):
-            arrays = [np.array(json.loads(s)) for s in sdf["scores"].values]
-            arrays = [a for a in arrays if len(a) == n_boot]
-            if len(arrays) < 2:
-                continue
-            seed_boots.append(np.vstack(arrays).mean(axis=0))
-        if seed_boots:
-            all_boots = np.vstack(seed_boots).mean(axis=0)
-            return tuple(np.percentile(all_boots, [2.5, 97.5]))
-
-    sem = best_df["score"].std() / np.sqrt(len(best_df))
-    return mean_score - 1.96 * sem, mean_score + 1.96 * sem
-
-
-def plot_de_panel(ax, data, benchmark):
-    """Line plot for one data-efficiency benchmark panel."""
-    x_positions = np.arange(len(DATASETS))
-    x_map = {ds: i for i, ds in enumerate(DATASETS)}
-
-    for cond in DE_CONDITIONS:
-        cdf = data[data["condition"] == cond]
-        if cdf.empty:
-            continue
-
-        xs, ys, errs_lo, errs_hi = [], [], [], []
-        for ds in DATASETS:
-            row = cdf[cdf["dataset"] == ds]
-            if row.empty:
-                continue
-            r = row.iloc[0]
-            xs.append(x_map[ds])
-            ys.append(r["score"])
-            errs_lo.append(r["score"] - r["ci_low"])
-            errs_hi.append(r["ci_high"] - r["score"])
-
-        label = f"{cond}-class"
-        ax.errorbar(xs, ys, yerr=[errs_lo, errs_hi],
-                    fmt="none", ecolor=DE_COLORS[cond], capsize=3,
-                    linewidth=1.0, capthick=0.8, alpha=0.65, zorder=2)
-        ax.plot(xs, ys, marker=DE_MARKERS[cond], color=DE_COLORS[cond],
-                markersize=7, linewidth=2.0, markeredgecolor="white",
-                markeredgewidth=0.7, label=label, zorder=3)
-
-    ax.set_xticks(x_positions)
-    ax.set_xticklabels([DATASET_LABELS[ds] for ds in DATASETS], fontsize=9)
-    ax.set_xlabel("Training images", fontsize=10, labelpad=6)
-    ax.set_ylabel(BENCHMARKS[benchmark]["ylabel"], fontsize=10, labelpad=6)
-    ax.set_title(BENCHMARKS[benchmark]["title"], fontsize=11,
-                 fontweight="bold", pad=10)
-    ax.yaxis.grid(True, which="major", color="#ECECEC", linewidth=0.5,
-                  zorder=0)
-    ax.set_axisbelow(True)
-    ax.margins(x=0.08)
-    ax.tick_params(axis="both", which="major", direction="out", length=4,
-                   width=0.8)
-    ax.yaxis.set_minor_locator(AutoMinorLocator(2))
-    ax.tick_params(axis="y", which="minor", direction="out", length=2.5,
-                   width=0.5)
-    ax.yaxis.set_major_formatter(FuncFormatter(
-        lambda v, _: f"{v:.2f}".rstrip("0").rstrip(".")))
-    sns.despine(ax=ax, right=True, top=True, offset=5)
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Main
-# ═══════════════════════════════════════════════════════════════════════════
+# ── Main ──────────────────────────────────────────────────────────────────
 
 def main():
     setup_style()

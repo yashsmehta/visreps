@@ -4,7 +4,8 @@
 
 ## Abstract
 
-A central question in computational neuroscience is what learning signals give rise to human-like visual representations. Current deep-learning approaches pursue increasingly fine-grained supervision - from thousands of object categories to instance-level contrastive objectives - under the assumption that richer training signals yield more brain-like features. Here we show that a remarkably coarse signal suffices. We introduce a modality-agnostic method for generating coarse category structures and use it to train hundreds of deep neural networks on ImageNet under systematically varied supervision - from 2 broad categories to 1,000 fine-grained classes - while holding architecture and training procedure constant. We evaluate alignment with biological vision at three scales: macaque single-neuron recordings, human fMRI, and human behavioral similarity judgments. On neural data, coarse-trained networks match or exceed fine-grained models in both species with orders-of-magnitude fewer categories. On behavioral similarity, coarse-trained networks outperform 1,000-class supervision by 40% and surpass state-of-the-art pretrained vision transformers and vision–language models across all architectures and training paradigms tested. Our findings demonstrate that a coarse learning signal is sufficient to produce surprisingly human-aligned internal representations. More broadly, they suggest that the key to building artificial systems that perceive as humans do may lie not in richer supervision but in discovering the right coarse structure of the visual world.
+A long-standing goal across neuroscience, cognitive science, and AI is to build artificial neural networks that process information like the brain. A prevailing assumption has been that achieving this requires increasingly rich training signals—driving the field from supervised classification over 1,000 categories toward self-supervised and single-image objectives that capture ever more fine-grained structure. Here, we start by exploring the opposite direction: how coarse can the training signal be while still producing representations that match how humans perceive and organize the world? We developed a data-driven coarse-graining method that progressively partitions images into broad categories (2, 4, 8, 16, …) without manual annotations. We trained hundreds of neural networks on ImageNet with these coarse supervisory signals. Strikingly, models trained with just a handful of broad categories achieved the highest alignment with human perceptual judgments of any neural network tested—outperforming both fine-grained supervised models and large-scale pretrained systems across every architecture we evaluated. These coarsely trained models also develop strong alignment with neural responses in both macaque and human visual cortex, using orders of magnitude fewer categories than standard benchmarks. The advantage grows stronger in low-data regimes: coarse feedback yields high alignment even with limited training samples. This work shows coarse feedback is a surprisingly powerful learning signal for building human-aligned artificial neural networks.
+
 
 ---
 
@@ -16,13 +17,13 @@ A central question in computational neuroscience is what learning signals give r
 
 ## Narrative Arc
 
-The five main figures follow a progression: **method overview + representation analysis -> neural data -> behavioral data -> per-concept analysis -> data efficiency**.
+The five main figures follow a progression: **method overview + representation analysis -> neural data -> behavioral data -> per-concept analysis -> architecture generalization**.
 
 1. **Figure 1** combines the method overview with representation analysis: the left panel (figure1a) shows the PCA-based coarse-graining procedure via shared-PCA scatter (2-way, 4-way, 1000-way label coloring), and the right panel (figure1b) shows that the *learned* representations are qualitatively different via PC scatter of model activations (1000-way vs 4-way with image insets).
 2. **Figure 2** presents neural alignment across species: macaque electrophysiology (TVSD) and human fMRI (NSD) side by side, with coarseness curves (raw Spearman rho). Schematic placeholders for each dataset. Per-layer profiles in supplementary.
 3. **Figure 3** presents behavioral alignment (THINGS): coarseness results, model comparison with pretrained baselines, and PC scatter panels visualizing representational geometry across models. Per-concept analysis is in Figure 4.
 4. **Figure 4** digs into per-concept alignment: category-sorted RDMs showing *why* coarse models win, per-concept scatter, and advantage histogram.
-5. **Figure 5** introduces the data-efficiency paradigm: coarse vs fine-grained training at varying data scales across NSD (early + ventral) and THINGS.
+5. **Figure 5** demonstrates architecture generalization: the coarseness finding on THINGS behavioral alignment holds across ResNet-50, ConvNeXt, and ViT-B/16 (CLIP-based coarse labels).
 
 ---
 
@@ -138,7 +139,7 @@ Y-axis shows raw Spearman rho. Log2 x-axis (2 -> 1000) with axis break before th
 
 **Directory:** `manuscript/figures/fig3/`
 
-**Narrative role:** Present the behavioral alignment results -- the most surprising finding. Coarse models *vastly* outperform 1000-way on human similarity judgments. This figure shows the result (coarseness log plot), compares against pretrained models, and visualizes the representational geometry via PC scatter panels. Per-concept analysis and RDMs are in Figure 4; data efficiency is in Figure 5.
+**Narrative role:** Present the behavioral alignment results -- the most surprising finding. Coarse models *vastly* outperform 1000-way on human similarity judgments. This figure shows the result (coarseness log plot), compares against pretrained models, and visualizes the representational geometry via PC scatter panels. Per-concept analysis and RDMs are in Figure 4; architecture generalization is in Figure 5.
 
 ### Layout -- 2 rows
 
@@ -258,49 +259,40 @@ Histogram of per-concept advantage: `(coarse_score - 1000way_score)` for each ev
 
 ---
 
-## Figure 5: Data Efficiency
+## Figure 5: Architecture Generalization (THINGS Behavioral)
 
 **Directory:** `manuscript/figures/fig5/`
 
-**Narrative role:** Introduce a new analysis paradigm -- varying the number of training images per class while holding granularity constant. Shows that coarse-trained models are more data-efficient than fine-grained models across both neural and behavioral alignment.
+**Narrative role:** Demonstrate that the coarseness finding is not specific to the custom AlexNet-style CNN used in Figures 2-4. The same pattern -- coarse-trained models matching or exceeding 1000-class on THINGS behavioral alignment -- holds across three diverse modern architectures: ResNet-50 (deep CNN), ConvNeXt (modern CNN), and ViT-B/16 (vision transformer).
 
-### Layout -- 2 panel groups (A + B)
+### Layout -- single row, 3 panels
 
 ```
-+----------------------------------------------+-----------------------+
-| A: Natural Scenes Dataset                    | B: THINGS Behavior    |
-|  +-------------------+--------------------+  |                       |
-|  | Early visual      | Ventral visual     |  | line plot             |
-|  | stream            | stream             |  | (4 conditions x       |
-|  | (line plot)       | (line plot)        |  |  4 data scales)       |
-|  +-------------------+--------------------+  |                       |
-+----------------------------------------------+-----------------------+
++-------------------+-------------------+-------------------+
+| a: ResNet-50      | b: ConvNeXt       | c: ViT-B/16       |
+|   THINGS          |   THINGS          |   THINGS          |
+|   coarseness      |   coarseness      |   coarseness      |
++-------------------+-------------------+-------------------+
 ```
 
-Panel A groups two NSD sub-panels under a shared "Natural Scenes Dataset" header with region subtitles. A vertical separator divides the NSD group from Panel B.
+Each panel shows THINGS behavioral alignment (Spearman rho) vs. label granularity (2-64 classes on log x-axis), with a 1000-class baseline bar. All use CLIP-derived coarse labels, epoch 20, seed 1.
 
-### Panel A -- NSD (Early Visual Stream + Ventral Visual Stream)
+### Panels a-c -- THINGS coarseness per architecture
 
-Two side-by-side line plots with 4 conditions (8, 16, 32, 1000-class) across 4 data scales (5K, 10K, 50K, 1.2M training images). Green shades for coarse models, orange for 1000-class.
+Same style as Figure 3B: coarse conditions as blue scatter (CLIP labels), 1000-way as amber bar, untrained as dashed line. Axis break before 1000-way bar. ResNet-50 and ConvNeXt share y-axis limits for direct comparison; ViT-B/16 has its own scale.
 
-- **Left sub-panel (Early visual stream):** Coarse and fine-grained models perform similarly, especially at larger data scales.
-- **Right sub-panel (Ventral visual stream):** Coarse models consistently outperform 1000-class at all data scales, with the gap narrowing at full scale.
-- *Key message:* Coarse training provides a better inductive bias when data is limited, even for neural alignment.
-
-### Panel B -- THINGS Behavioral (line plot)
-
-Same line-plot format as Panel A, showing behavioral alignment (Spearman rho) across data scales.
-
-- *Key visual:* The coarse advantage is dramatic and persistent -- 1000-class never catches up, even at full ImageNet.
-- *Key message:* Coarse training is not only better at full scale -- it is vastly more data-efficient for behavioral alignment.
+- *Key message:* The coarseness finding generalizes across architectures. In all three architectures, coarse-trained models (as few as 2-8 classes) match or exceed the fully supervised 1000-class baseline on behavioral alignment.
+- *Architecture-specific patterns:*
+  - **ResNet-50 & ConvNeXt:** Flat coarseness curve at rho ~ 0.55-0.58 for all granularities, well above 1000-class (rho ~ 0.50 / 0.35). The finding from the custom CNN replicates cleanly.
+  - **ViT-B/16:** Coarseness curve at rho ~ 0.41-0.46, above 1000-class (rho ~ 0.26). Coarse advantage is even more dramatic in relative terms (~60% improvement).
 
 ### Observed results
 
-**(A, left) NSD Early Visual Stream.** All conditions perform similarly at larger data scales. At 5K, coarse models (8, 16, 32-class) show a slight advantage. By 1.2M, all converge around rho ~ 0.19-0.21.
+**(a) ResNet-50.** All coarse models (2-64 class) achieve rho ~ 0.55-0.58 on THINGS, substantially above the 1000-class baseline (rho ~ 0.50). The curve is nearly flat.
 
-**(A, right) NSD Ventral Visual Stream.** All coarse models (8, 16, 32-class) outperform 1000-class across all data scales. At 5K, coarse models achieve rho ~ 0.10 while 1000-class is at rho ~ 0.05. All models converge toward rho ~ 0.25 at full scale (1.2M), but coarse models maintain a slight edge.
+**(b) ConvNeXt.** Coarse models range from rho ~ 0.53 (2-class) to rho ~ 0.56 (64-class). The 1000-class baseline is lower at rho ~ 0.35. Dramatic coarse advantage.
 
-**(B) THINGS Behavioral.** The headline data-efficiency result. At 5K, 8-class achieves rho ~ 0.45 while 1000-class reaches only rho ~ 0.27. The gap persists at all scales. At full ImageNet (1.2M), coarse models reach rho ~ 0.57 vs 1000-class at rho ~ 0.40.
+**(c) ViT-B/16.** Coarse models achieve rho ~ 0.41-0.46, well above 1000-class (rho ~ 0.26). The coarse advantage is proportionally the largest for ViT, consistent with the behavioral alignment being driven by broad categorical structure that coarse supervision preserves.
 
 ---
 
@@ -326,8 +318,8 @@ manuscript/figures/
 |   +-- figure4.py               # RDMs + scatter + histogram
 |   +-- dimension_profiling.py   # Semantic dimension profiling (standalone, not in main figure)
 |   +-- figure4.png
-+-- fig5/                        # Figure 5: Data efficiency
-|   +-- figure5.py               # Data-efficiency line plots
++-- fig5/                        # Figure 5: Architecture generalization
+|   +-- figure5.py               # THINGS coarseness for ResNet-50, ConvNeXt, ViT-B/16
 |   +-- figure5.png
 +-- supplementary/               # Supplementary figures (S1-S18)
     +-- README.md                # Index, run commands, data sources
@@ -351,7 +343,7 @@ manuscript/figures/
 - **Figure 1 combines method + representation analysis** -- left panel (figure1a) is shared PCA scatter (label space), right panel (figure1b) is learned representation PC scatter (model activation space). Old RDM panel moved to supplementary S18.
 - **Figure 3 bottom row is PC scatter** -- 4 panels showing representational geometry (Behavioral, CNN 8-class CLIP, AlexNet 1K, ViT-B/16 1K). RDMs moved to Figure 4 Panel A.
 - **Figure 4 row 1 has RDMs** -- category-sorted RDMs (Behavioral, 8-class CLIP, 1000-class) with 8 super-category groupings. Row 2 has per-concept scatter + histogram. Dimension profiling exists as a standalone script but is not in the main figure.
-- **Figure 5 has no schematic** -- directly shows data-efficiency line plots for NSD (early + ventral) and THINGS.
+- **Figure 5 has no schematic** -- directly shows THINGS coarseness for three architectures (ResNet-50, ConvNeXt, ViT-B/16).
 - **No DINO or ViT PCA in main figures** -- supplementary only. Main figures show AlexNet, CLIP, and Pixels PCA sources.
 - **No NSD-Synthetic in main figures** -- supplementary only.
 - **V4 (TVSD) in supplementary only** -- V1 and IT represent the extremes of the visual hierarchy.

@@ -45,7 +45,7 @@ All 5 main figures (Fig. 1–5) are up to date. See `figures/paper.md` for detai
 | Fig 2 | `fig2/figure2.py` | TVSD + NSD neural alignment (2×3 with schematics) |
 | Fig 3 | `fig3/figure3.py` | THINGS: schematic + coarseness + model comparison + PC scatter |
 | Fig 4 | `fig4/figure4.py` | RDMs (behavioral vs coarse vs 1K) + per-concept scatter + histogram |
-| Fig 5 | `fig5/figure5.py` | Data efficiency: NSD (early + ventral) + THINGS |
+| Fig 5 | `fig5/figure5.py` | Architecture generalization: THINGS coarseness for ResNet-50, ConvNeXt, ViT-B/16 |
 
 ## Talk Figures
 
