@@ -5,10 +5,10 @@ computes 1000×1000 Pearson RDMs for each granularity level.
 
 Usage (from project root):
     # Compute features + save cache (~5-10 min on 4090)
-    python manuscript/figures/fig2/plot_class_rdms.py
+    python manuscript/figures/fig3/plot_class_rdms.py
 
     # Re-plot from cached data
-    python manuscript/figures/fig2/plot_class_rdms.py --plot-only
+    python manuscript/figures/fig3/plot_class_rdms.py --plot-only
 """
 
 import os
@@ -415,7 +415,7 @@ def plot_rdm_panel(ax, rdm, block_boundaries, n, title):
 
 
 def plot_figure(centroids_1k, coarse_centroids, categories):
-    """Create the 2x3 RDM grid figure (standalone, not used by figure2.py)."""
+    """Create the 2x3 RDM grid figure (standalone, not used by figure3.py)."""
     sns.set_theme(style="ticks", context="paper", font_scale=1.0)
     valid = categories >= 0
     centroids_1k = centroids_1k[valid]

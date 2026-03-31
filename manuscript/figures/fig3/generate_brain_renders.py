@@ -1,4 +1,4 @@
-"""Generate pre-rendered brain ROI images for Figure 2 insets.
+"""Generate pre-rendered brain ROI images for Figure 3 insets.
 
 Uses nilearn to render human cortical surfaces (fsaverage, inflated, left
 hemisphere lateral view) with Destrieux atlas ROIs highlighted.  Outputs
@@ -8,7 +8,7 @@ Macaque brain insets use the Scidraw SVG with ellipse overlays at runtime
 (handled by schematic_utils.py), so no macaque renders are generated here.
 
 Usage:
-    python manuscript/figures/fig2/generate_brain_renders.py
+    python manuscript/figures/fig3/generate_brain_renders.py
 """
 
 import io
@@ -24,7 +24,7 @@ from nilearn.plotting import plot_surf_roi
 from nilearn.surface import load_surf_data
 from PIL import Image
 
-ASSETS_DIR = Path("manuscript/figures/fig2/assets")
+ASSETS_DIR = Path("manuscript/figures/fig3/assets")
 
 # Destrieux surface-label indices (left hemisphere) for each ROI
 ROI_LABELS = {

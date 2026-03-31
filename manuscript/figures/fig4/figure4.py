@@ -1,14 +1,14 @@
-"""Figure 4: Per-Concept Alignment Analysis.
+"""Figure 4: THINGS Behavioral Alignment.
 
-Layout (2 rows):
-  Row 1:  [Behavioral RDM]  [8 classes (CLIP repr.) RDM]  [1000-class RDM]  [colorbar]
-          [              super-category legend row                  ]
-  Row 2:  [Scatter plot]                          [Histogram]
+Layout:
+  Row 0 (top): [Schematic | Coarseness | Model Comparison | Data Efficiency]
+  Row 1 (bottom): [4 PCA scatter panels] spanning full width
 
-Panel A: Category-sorted RDMs — Behavioral vs 8 classes (CLIP repr.) vs 1000-class
-         (concepts grouped by 8 semantic super-categories derived from THINGS-27)
-Panel B: Per-concept scatter — 8 classes (CLIP repr.) vs 1000-way per-concept RSA
-Panel C: Histogram of per-concept advantage (delta rho)
+Panel A: Schematic of THINGS behavioral similarity task (placeholder)
+Panel B: Alignment vs. Granularity (raw Spearman rho, log x-axis)
+Panel C: Model comparison — coarse vs 1000-way bars + pretrained scatter
+Panel D: Data efficiency — coarse models on 10K images vs 1000-class
+Panel E: PC scatter — Behavioral, CLIP 8-class, Pretrained AlexNet, Pretrained ViT
 
 Usage:
     python manuscript/figures/fig4/figure4.py
@@ -16,283 +16,126 @@ Usage:
 
 import sys
 
-import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 import matplotlib.gridspec as gridspec
-import matplotlib.ticker as mticker
-import seaborn as sns
-from scipy.cluster.hierarchy import linkage, leaves_list
-from scipy.spatial.distance import squareform
+from matplotlib.lines import Line2D
 
 sys.path.insert(0, "manuscript/figures")
-from fig_utils import setup_style
-from things_utils import compute_things_data, plot_scatter_panel
-from experiments.things_visualizations.plot_rdms_categorized import (
-    load_categories, draw_category_sidebar, draw_boundary_lines,
-    rank_transform,
+from fig_utils import setup_style, draw_schematic_placeholder
+
+sys.path.insert(0, "manuscript/figures/fig4")
+from panel_coarseness import plot_coarseness
+from panel_comparison import plot_comparison
+from panel_data_efficiency import plot_data_efficiency
+from panel_scatter import (
+    load_pc_scatter_data, draw_image_insets,
+    PC_PANELS,
+)
+from plot_pc_scatter import (
+    load_super_categories, compute_pca,
+    plot_scatter_panel, SUPER_ORDER, SUPER_COLORS,
 )
 
-# ── Config ────────────────────────────────────────────────────────────────
 OUTPUT_DIR = "manuscript/figures/fig4"
-
-# Super-category groupings (ordered for display)
-SUPER_CAT_ORDER = [
-    "Living things",
-    "Body & apparel",
-    "Food & drink",
-    "Furniture & decor",
-    "Containers",
-    "Tools & implements",
-    "Sports & recreation",
-    "Vehicles",
-    "Electronics & music",
-    "Other",
-]
-
-# Shortened labels for sidebar annotations
-SIDEBAR_LABELS = {
-    "Living things": "Living things",
-    "Body & apparel": "Body & apparel",
-    "Food & drink": "Food & drink",
-    "Furniture & decor": "Furn. & decor",
-    "Containers": "Containers",
-    "Tools & implements": "Tools & impl.",
-    "Sports & recreation": "Sports & rec.",
-    "Vehicles": "Vehicles",
-    "Electronics & music": "Elec. & music",
-    "Other": "Other",
-}
-
-FINE_TO_SUPER = {
-    "animal": "Living things", "plant": "Living things",
-    "body part": "Body & apparel", "clothing": "Body & apparel",
-    "clothing accessory": "Body & apparel",
-    "food": "Food & drink", "dessert": "Food & drink",
-    "drink": "Food & drink", "kitchen appliance": "Food & drink",
-    "kitchen tool": "Food & drink",
-    "furniture": "Furniture & decor", "home decor": "Furniture & decor",
-    "container": "Containers",
-    "tool": "Tools & implements", "weapon": "Tools & implements",
-    "office supply": "Tools & implements", "medical equipment": "Tools & implements",
-    "sports equipment": "Sports & recreation", "toy": "Sports & recreation",
-    "vehicle": "Vehicles", "part of car": "Vehicles",
-    "electronic device": "Electronics & music",
-    "musical instrument": "Electronics & music",
-    "Other": "Other",
-}
-
-# Distinguishable palette for 10 super-categories
-SUPER_PALETTE = {
-    "Living things":        "#2ca02c",  # green
-    "Body & apparel":       "#9467bd",  # purple
-    "Food & drink":         "#d62728",  # red
-    "Furniture & decor":    "#ff7f0e",  # orange
-    "Containers":           "#e6ab02",  # gold
-    "Tools & implements":   "#1f77b4",  # blue
-    "Sports & recreation":  "#17becf",  # cyan
-    "Vehicles":             "#8c564b",  # brown
-    "Electronics & music":  "#e377c2",  # pink
-    "Other":                "#bdbdbd",  # grey
-}
-
-
-def _build_super_sort_order(fine_categories, behav_rdm):
-    """Sort concepts by super-category, then hierarchical clustering within."""
-    super_cats = np.array([FINE_TO_SUPER.get(c, "Other") for c in fine_categories])
-
-    sorted_indices = []
-    block_boundaries = []
-    offset = 0
-
-    for scat in SUPER_CAT_ORDER:
-        member_idx = np.where(super_cats == scat)[0]
-        if len(member_idx) == 0:
-            continue
-        if len(member_idx) <= 2:
-            order = member_idx
-        else:
-            sub_rdm = behav_rdm[np.ix_(member_idx, member_idx)]
-            sub_condensed = squareform(sub_rdm, checks=False)
-            sub_order = leaves_list(linkage(sub_condensed, method="average"))
-            order = member_idx[sub_order]
-
-        block_boundaries.append((offset, scat, len(order)))
-        sorted_indices.extend(order)
-        offset += len(order)
-
-    return np.array(sorted_indices), block_boundaries
-
-
-def _draw_rdm(ax, rdm, title, subtitle, block_boundaries, n, super_cats_used,
-              subtitle_italic=False, show_sidebar_labels=False):
-    """Draw a single RDM panel with super-category sidebars."""
-    im = ax.imshow(rdm, cmap="magma", interpolation="nearest", aspect="equal",
-                   rasterized=True, vmin=0, vmax=1)
-    ax.set_title(title, fontsize=13, fontweight="bold", pad=22,
-                 fontfamily="sans-serif")
-    if subtitle:
-        style = "italic" if subtitle_italic else "normal"
-        ax.text(0.5, 1.015, subtitle, transform=ax.transAxes,
-                ha="center", va="bottom", fontsize=9.5, color="#444444",
-                fontstyle=style)
-
-    ax.set_xticks([])
-    ax.set_yticks([])
-    for spine in ax.spines.values():
-        spine.set_visible(False)
-
-    cat_colors = [SUPER_PALETTE[c] for c in super_cats_used]
-    cat_to_idx = {c: i for i, c in enumerate(super_cats_used)}
-
-    draw_boundary_lines(ax, block_boundaries, n, color="white",
-                        lw=0.45, alpha=0.80)
-
-    width_frac = 0.032
-    gap_frac = 0.005
-    draw_category_sidebar(ax, block_boundaries, n, cat_colors, cat_to_idx,
-                          side="left", width_frac=width_frac, gap_frac=gap_frac)
-    draw_category_sidebar(ax, block_boundaries, n, cat_colors, cat_to_idx,
-                          side="bottom", width_frac=width_frac, gap_frac=gap_frac)
-
-    # Category labels beside the left sidebar
-    if show_sidebar_labels:
-        w = n * width_frac
-        gap = n * gap_frac
-        label_x = -w - gap - n * 0.012  # just left of the sidebar
-        for start, cat, size in block_boundaries:
-            mid_y = start - 0.5 + size / 2
-            display_label = SIDEBAR_LABELS.get(cat, cat)
-            ax.text(label_x, mid_y, display_label, ha="right", va="center",
-                    fontsize=7, color="#333333", fontfamily="sans-serif",
-                    clip_on=False)
-
-    return im
 
 
 def main():
     setup_style()
     plt.rcParams.update({
-        "axes.labelsize": 11,
-        "axes.titlesize": 12.5,
-        "xtick.labelsize": 9.5,
-        "ytick.labelsize": 9.5,
+        "axes.labelsize": 9,
+        "axes.titlesize": 10,
+        "xtick.labelsize": 8.5,
+        "ytick.labelsize": 8.5,
         "axes.linewidth": 0.8,
         "xtick.major.width": 0.8,
         "ytick.major.width": 0.8,
-        "font.family": "sans-serif",
+        "xtick.minor.width": 0.5,
+        "ytick.minor.width": 0.5,
+        "xtick.major.size": 4,
+        "ytick.major.size": 4,
+        "xtick.minor.size": 2.5,
+        "ytick.minor.size": 2.5,
     })
 
-    print("Computing THINGS data for per-concept analysis...")
-    precomputed = compute_things_data()
-
-    # ── Build super-category-sorted RDMs ─────────────────────────────
-    fine_sort_idx = precomputed["sort_idx"]
-    unsort = np.argsort(fine_sort_idx)
-    rdms_ranked = precomputed["rdms_ranked"]
-
-    rdm_behav_orig = rdms_ranked["Behavioral"][np.ix_(unsort, unsort)]
-    rdm_clip8_orig = rdms_ranked["8 classes (CLIP repr.)"][np.ix_(unsort, unsort)]
-    rdm_1k_orig = rdms_ranked["1000-class"][np.ix_(unsort, unsort)]
-
-    fine_categories = load_categories()
-    super_sort_idx, super_boundaries = _build_super_sort_order(
-        fine_categories, rdm_behav_orig
-    )
-
-    super_cats_used = [scat for _, scat, _ in super_boundaries]
-
-    rdm_behav_super = rdm_behav_orig[np.ix_(super_sort_idx, super_sort_idx)]
-    rdm_clip8_super = rdm_clip8_orig[np.ix_(super_sort_idx, super_sort_idx)]
-    rdm_1k_super = rdm_1k_orig[np.ix_(super_sort_idx, super_sort_idx)]
-    n = rdm_behav_super.shape[0]
-
-    rsa_scores = precomputed["rsa_scores"]
-
-    # ── Figure layout ─────────────────────────────────────────────────
-    fig = plt.figure(figsize=(14, 11.5))
+    fig = plt.figure(figsize=(17.0, 9.0))
     fig.patch.set_facecolor("white")
 
-    gs_outer = gridspec.GridSpec(
-        2, 1, figure=fig,
-        height_ratios=[1.0, 1.0],
-        hspace=0.22,
-        left=0.09, right=0.96, top=0.96, bottom=0.06,
-    )
+    gs = gridspec.GridSpec(2, 4, figure=fig,
+                           height_ratios=[1.0, 0.88],
+                           width_ratios=[1, 1, 1, 1],
+                           hspace=0.32, wspace=0.30,
+                           left=0.045, right=0.965,
+                           top=0.96, bottom=0.06)
 
-    # ── Row 1: Three RDMs + colorbar ─────────────────────────────────
-    gs_rdm = gridspec.GridSpecFromSubplotSpec(
-        3, 4, subplot_spec=gs_outer[0],
-        width_ratios=[1, 1, 1, 0.04],
-        height_ratios=[0.08, 0.84, 0.08],
-        wspace=0.10, hspace=0,
-    )
-    ax_rdm_behav = fig.add_subplot(gs_rdm[0:3, 0])
-    ax_rdm_clip8 = fig.add_subplot(gs_rdm[0:3, 1])
-    ax_rdm_1k = fig.add_subplot(gs_rdm[0:3, 2])
-    ax_cb = fig.add_subplot(gs_rdm[1, 3])
+    # ── Top row panels ───────────────────────────────────────────────────
+    ax_schematic = fig.add_subplot(gs[0, 0])
+    draw_schematic_placeholder(ax_schematic,
+                               "THINGS\nBehavioral Similarity\n(schematic)")
 
-    im = _draw_rdm(ax_rdm_behav, rdm_behav_super, "Behavioral",
-                    "(ground truth)", super_boundaries, n, super_cats_used,
-                    subtitle_italic=True, show_sidebar_labels=True)
-    _draw_rdm(ax_rdm_clip8, rdm_clip8_super, "8 classes (CLIP repr.)",
-              f"$\\rho_s$ = {rsa_scores['8 classes (CLIP repr.)']:.3f}",
-              super_boundaries, n, super_cats_used)
-    _draw_rdm(ax_rdm_1k, rdm_1k_super, "1000-class",
-              f"$\\rho_s$ = {rsa_scores['1000-class']:.3f}",
-              super_boundaries, n, super_cats_used)
+    ax_coarse = fig.add_subplot(gs[0, 1])
+    plot_coarseness(ax_coarse)
 
-    # Shared colorbar
-    cb = plt.colorbar(im, cax=ax_cb)
-    cb.ax.tick_params(labelsize=8.5, length=3, width=0.5, pad=4)
-    cb.outline.set_linewidth(0.5)
-    cb.ax.yaxis.set_major_locator(mticker.FixedLocator([0, 0.5, 1.0]))
-    cb.ax.yaxis.set_major_formatter(mticker.FixedFormatter(["0", "0.5", "1.0"]))
-    cb.set_label("Dissimilarity (rank)", fontsize=9.5, labelpad=10)
+    ax_compare = fig.add_subplot(gs[0, 2])
+    plot_comparison(ax_compare, ref_ax=ax_coarse)
 
-    # ── Row 2: Scatter + Histogram ───────────────────────────────────
-    gs_bottom = gridspec.GridSpecFromSubplotSpec(
-        1, 2, subplot_spec=gs_outer[1],
-        width_ratios=[1.05, 1.0],
-        wspace=0.22,
-    )
-    ax_scatter = fig.add_subplot(gs_bottom[0, 0])
-    ax_hist = fig.add_subplot(gs_bottom[0, 1])
+    ax_data_eff = fig.add_subplot(gs[0, 3])
+    plot_data_efficiency(ax_data_eff, ref_ax=ax_coarse)
 
-    super_config = {
-        "fine_to_super": FINE_TO_SUPER,
-        "palette": SUPER_PALETTE,
-        "kde_categories": [
-            "Living things", "Body & apparel",
-        ],
-    }
-    plot_scatter_panel(ax_scatter, ax_hist, precomputed, super_config=super_config)
+    # ── Bottom row: 4 PCA scatter panels ─────────────────────────────────
+    pc_axes = [fig.add_subplot(gs[1, i]) for i in range(4)]
 
-    # Override scatter title padding for this layout
-    ax_scatter.set_title("Per-Category Alignment", fontsize=13,
-                         fontweight="bold", pad=12)
+    print("Loading PCA scatter data...")
+    reps, concept_names = load_pc_scatter_data()
+    n_concepts = list(reps.values())[0].shape[0]
+    super_labels = load_super_categories(n_concepts)
 
-    # Override KDE panel formatting for standalone display
-    ax_hist.set_xlabel(
-        r"$\Delta\rho_s$ (8-class $-$ 1000-class)", fontsize=11)
-    ax_hist.tick_params(axis="x", labelsize=9.5, length=4, width=0.8)
-    ax_hist.set_title("Per-Concept Advantage", fontsize=13,
-                      fontweight="bold", pad=12)
-    sns.despine(ax=ax_hist, offset=5, left=True)
+    all_pcs = []
+    for i, (ax, (title, subtitle, data_key)) in enumerate(zip(pc_axes, PC_PANELS)):
+        pcs, _ = compute_pca(reps[data_key])
+        all_pcs.append(pcs)
+        plot_scatter_panel(ax, pcs, super_labels, title, subtitle=subtitle,
+                           point_size=12, alpha=0.62)
+        if i > 0:
+            ax.set_ylabel("")
 
-    # ── Panel labels ─────────────────────────────────────────────────
-    label_kw = dict(fontsize=20, fontweight="bold", va="top", ha="left",
-                    family="sans-serif")
-    ax_rdm_behav.text(-0.18, 1.10, "a", transform=ax_rdm_behav.transAxes,
-                      **label_kw)
-    ax_scatter.text(-0.12, 1.08, "b", transform=ax_scatter.transAxes,
-                    **label_kw)
-    ax_hist.text(-0.08, 1.08, "c", transform=ax_hist.transAxes,
-                 **label_kw)
+    # Image insets on scatter panels
+    draw_image_insets(pc_axes, all_pcs, concept_names)
 
+    # Super-category legend inside first scatter panel
+    cat_handles = [
+        Line2D([0], [0], marker="o", color="none",
+               markerfacecolor=SUPER_COLORS[name],
+               markeredgecolor="white", markeredgewidth=0.4,
+               markersize=5.5, label=name)
+        for name in SUPER_ORDER
+    ]
+    leg_cat = pc_axes[0].legend(
+        handles=cat_handles, loc="upper left",
+        ncol=2, fontsize=7.5, frameon=True,
+        handletextpad=0.2, columnspacing=0.5, labelspacing=0.2,
+        borderpad=0.3, edgecolor="#dddddd", fancybox=False, framealpha=0.90)
+    leg_cat.get_frame().set_linewidth(0.3)
+
+    # ── Uniform axis styling ─────────────────────────────────────────────
+    for ax in [ax_coarse, ax_compare, ax_data_eff] + pc_axes:
+        for spine in ax.spines.values():
+            spine.set_linewidth(0.8)
+        ax.tick_params(axis="both", which="major", width=0.8, length=4)
+        ax.tick_params(axis="both", which="minor", width=0.5, length=2.5)
+
+    # ── Panel labels ─────────────────────────────────────────────────────
+    for ax, label, x_off, y_off in zip(
+        [ax_schematic, ax_coarse, ax_compare, ax_data_eff, pc_axes[0]],
+        ["a", "b", "c", "d", "e"],
+        [-0.06, -0.18, -0.06, -0.18, -0.10],
+        [1.08,  1.08,  1.08,  1.08,  1.10]):
+        ax.text(x_off, y_off, label, transform=ax.transAxes,
+                fontsize=13, fontweight="bold", va="top", ha="left",
+                family="sans-serif")
+
+    # ── Save ─────────────────────────────────────────────────────────────
     out = f"{OUTPUT_DIR}/figure4.png"
-    fig.savefig(out, dpi=200, bbox_inches="tight", facecolor="white",
-                edgecolor="none")
+    fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()
 

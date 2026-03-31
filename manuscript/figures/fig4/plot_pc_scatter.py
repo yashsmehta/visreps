@@ -5,10 +5,10 @@ in behavioral similarity space vs two model spaces. Points colored by
 6 broad THINGS super-categories.
 
 Usage (from project root):
-    python manuscript/figures/fig3/plot_pc_scatter.py                    # PCA, fc1 (default)
-    python manuscript/figures/fig3/plot_pc_scatter.py --layer fc2        # PCA, fc2
-    python manuscript/figures/fig3/plot_pc_scatter.py --method umap      # UMAP, fc1
-    python manuscript/figures/fig3/plot_pc_scatter.py --no-behavioral    # model panels only
+    python manuscript/figures/fig4/plot_pc_scatter.py                    # PCA, fc1 (default)
+    python manuscript/figures/fig4/plot_pc_scatter.py --layer fc2        # PCA, fc2
+    python manuscript/figures/fig4/plot_pc_scatter.py --method umap      # UMAP, fc1
+    python manuscript/figures/fig4/plot_pc_scatter.py --no-behavioral    # model panels only
 """
 
 import os

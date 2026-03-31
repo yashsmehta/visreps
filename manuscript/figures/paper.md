@@ -9,7 +9,7 @@ A long-standing goal across neuroscience, cognitive science, and AI is to build 
 
 ---
 
-**Status:** All updated figures from Fig. 1 to Fig. 5 are complete. Supplementary figures are maintained separately in `manuscript/figures/supplementary/`.
+**Status:** All updated figures from Fig. 1 to Fig. 6 are complete. Supplementary figures are maintained separately in `manuscript/figures/supplementary/`.
 
 **PCA source models in main figures:** AlexNet, CLIP, Pixels. ViT and DINOv3-derived labels in supplementary only.
 
@@ -17,27 +17,36 @@ A long-standing goal across neuroscience, cognitive science, and AI is to build 
 
 ## Narrative Arc
 
-The five main figures follow a progression: **method overview + representation analysis -> neural data -> behavioral data -> per-concept analysis -> architecture generalization**.
+The six main figures follow a progression: **schematic -> representation analysis -> neural data -> behavioral data -> per-concept analysis -> architecture generalization**.
 
-1. **Figure 1** combines the method overview with representation analysis: the left panel (figure1a) shows the PCA-based coarse-graining procedure via shared-PCA scatter (2-way, 4-way, 1000-way label coloring), and the right panel (figure1b) shows that the *learned* representations are qualitatively different via PC scatter of model activations (1000-way vs 4-way with image insets).
-2. **Figure 2** presents neural alignment across species: macaque electrophysiology (TVSD) and human fMRI (NSD) side by side, with coarseness curves (raw Spearman rho). Schematic placeholders for each dataset. Per-layer profiles in supplementary.
-3. **Figure 3** presents behavioral alignment (THINGS): coarseness results, model comparison with pretrained baselines, and PC scatter panels visualizing representational geometry across models. Per-concept analysis is in Figure 4.
-4. **Figure 4** digs into per-concept alignment: category-sorted RDMs showing *why* coarse models win, per-concept scatter, and advantage histogram.
-5. **Figure 5** demonstrates architecture generalization: the coarseness finding on THINGS behavioral alignment holds across ResNet-50, ConvNeXt, and ViT-B/16 (CLIP-based coarse labels).
+1. **Figure 1** is the schematic overview of the method and experimental pipeline.
+2. **Figure 2** shows the categorical nature of representations: the left panel (figure2a) shows the PCA-based coarse-graining procedure via shared-PCA scatter (2-way, 4-way, 1000-way label coloring), and the right panel (figure2b) shows that the *learned* representations are qualitatively different via PC scatter of model activations (1000-way vs 4-way with image insets).
+3. **Figure 3** presents neural alignment across species: macaque electrophysiology (TVSD) and human fMRI (NSD) side by side, with coarseness curves (raw Spearman rho). Schematic placeholders for each dataset. Per-layer profiles in supplementary.
+4. **Figure 4** presents behavioral alignment (THINGS): coarseness results, model comparison with pretrained baselines, and PC scatter panels visualizing representational geometry across models. Per-concept analysis is in Figure 5.
+5. **Figure 5** digs into per-concept alignment: category-sorted RDMs showing *why* coarse models win, per-concept scatter, and advantage histogram.
+6. **Figure 6** demonstrates architecture generalization: the coarseness finding on THINGS behavioral alignment holds across ResNet-50, ConvNeXt, and ViT-B/16 (CLIP-based coarse labels).
 
 ---
 
-## Figure 1: Method Overview + Representation Analysis
+## Figure 1: Schematic
 
 **Directory:** `manuscript/figures/fig1/`
 
-**Narrative role:** Combines the method introduction with a visual demonstration that coarse-trained representations are qualitatively different. The left panel (figure1a) shows how the coarse-graining procedure partitions images in a shared PCA space; the right panel (figure1b) shows that the *learned* representations reorganize geometry in fundamentally different ways depending on label granularity.
+**Narrative role:** Schematic overview of the method and experimental pipeline.
 
-### Layout — left + right (figure1a + figure1b)
+---
+
+## Figure 2: Categorical Nature of Representations
+
+**Directory:** `manuscript/figures/fig2/`
+
+**Narrative role:** Visual demonstration that coarse-trained representations are qualitatively different. The left panel (figure2a) shows how the coarse-graining procedure partitions images in a shared PCA space; the right panel (figure2b) shows that the *learned* representations reorganize geometry in fundamentally different ways depending on label granularity.
+
+### Layout — left + right (figure2a + figure2b)
 
 ```
 +----------------------------------------------+------------------------------------------+
-| figure1a (left): Schematic / PCA scatter     | figure1b (right): Learned representations |
+| figure2a (left): Schematic / PCA scatter     | figure2b (right): Learned representations |
 |                                              |                                          |
 | +--------------+--------------+------------+ | +--------------------------------------+ |
 | | Shared PCA:  | Shared PCA:  | Shared PCA:| | | CNN trained on 1000 classes          | |
@@ -49,7 +58,7 @@ The five main figures follow a progression: **method overview + representation a
 +----------------------------------------------+------------------------------------------+
 ```
 
-### Left panel (figure1a) -- Shared PCA scatter (label space)
+### Left panel (figure2a) -- Shared PCA scatter (label space)
 
 Three PC1 vs PC2 scatter plots of ImageNet images (1 per class, 1000 points), projected onto the same CLIP PCA axes. All three panels share identical coordinates -- only the coloring changes:
 
@@ -58,10 +67,10 @@ Three PC1 vs PC2 scatter plots of ImageNet images (1 per class, 1000 points), pr
 - **C (1000-way):** Each ImageNet class gets a unique color -> continuous gradient, no structure.
 
 - *Key message:* The coarse-graining procedure is simple and principled -- median splits along PCA axes of a pretrained feature space. Same images, same coordinates, different label assignments.
-- *Script:* `manuscript/figures/fig1/figure1.py` (with `--recompute-top` to regenerate)
-- *Data:* `manuscript/figures/fig1/pc_scatter_1per_class.npz`
+- *Script:* `manuscript/figures/fig2/figure2.py` (with `--recompute-top` to regenerate)
+- *Data:* `manuscript/figures/fig2/pc_scatter_1per_class.npz`
 
-### Right panel (figure1b) -- Learned representation scatter (model activation space)
+### Right panel (figure2b) -- Learned representation scatter (model activation space)
 
 Two vertically stacked PC1 vs PC2 scatter plots of ImageNet activations (FC1 layer, L2-normalized), comparing models trained at different granularity. Points colored by 4-way coarse labels. Representative images shown as insets at class extremes and centroids.
 
@@ -84,9 +93,9 @@ Two vertically stacked PC1 vs PC2 scatter plots of ImageNet activations (FC1 lay
 
 ---
 
-## Figure 2: Neural Alignment Across Species (TVSD + NSD)
+## Figure 3: Neural Alignment Across Species (TVSD + NSD)
 
-**Directory:** `manuscript/figures/fig2/`
+**Directory:** `manuscript/figures/fig3/`
 
 **Narrative role:** Present neural alignment results from both macaque electrophysiology (TVSD) and human fMRI (NSD) in a single unified figure. This cross-species layout immediately demonstrates that the coarseness finding is robust -- it holds in spiking data and BOLD fMRI, across early and late visual regions, and across two completely different species.
 
@@ -135,11 +144,11 @@ Y-axis shows raw Spearman rho. Log2 x-axis (2 -> 1000) with axis break before th
 
 ---
 
-## Figure 3: Behavioral Alignment (THINGS)
+## Figure 4: Behavioral Alignment (THINGS)
 
-**Directory:** `manuscript/figures/fig3/`
+**Directory:** `manuscript/figures/fig4/`
 
-**Narrative role:** Present the behavioral alignment results -- the most surprising finding. Coarse models *vastly* outperform 1000-way on human similarity judgments. This figure shows the result (coarseness log plot), compares against pretrained models, and visualizes the representational geometry via PC scatter panels. Per-concept analysis and RDMs are in Figure 4; architecture generalization is in Figure 5.
+**Narrative role:** Present the behavioral alignment results -- the most surprising finding. Coarse models *vastly* outperform 1000-way on human similarity judgments. This figure shows the result (coarseness log plot), compares against pretrained models, and visualizes the representational geometry via PC scatter panels. Per-concept analysis and RDMs are in Figure 5; architecture generalization is in Figure 6.
 
 ### Layout -- 2 rows
 
@@ -162,7 +171,7 @@ Schematic placeholder of the THINGS behavioral similarity task: triplet odd-one-
 
 ### Panel B -- Coarseness log plot (raw Spearman rho)
 
-Y-axis shows raw Spearman rho. Log2 x-axis (2 -> 1000). Three PCA architectures (AlexNet, CLIP, Pixels -- same blue/amber color scheme as Figure 2).
+Y-axis shows raw Spearman rho. Log2 x-axis (2 -> 1000). Three PCA architectures (AlexNet, CLIP, Pixels -- same blue/amber color scheme as Figure 3).
 
 - *Key pattern:* All coarse models sit well **above** the 1000-way baseline -- the coarse advantage is dramatic. Even 2-class models exceed 1000-way. This is the headline result.
 - *Error bars:* Bootstrap 95% CIs across 3 seeds.
@@ -199,9 +208,9 @@ Four side-by-side PC1 vs PC2 scatter plots of THINGS concept representations, ea
 
 ---
 
-## Figure 4: Per-Concept Alignment Analysis
+## Figure 5: Per-Concept Alignment Analysis
 
-**Directory:** `manuscript/figures/fig4/`
+**Directory:** `manuscript/figures/fig5/`
 
 **Narrative role:** Dig deeper into *which* concepts drive the coarse advantage on THINGS behavioral alignment. Row 1 shows category-sorted RDMs that visually demonstrate *why* coarse models win; Row 2 quantifies the effect with per-concept scatter and advantage histogram.
 
@@ -259,11 +268,11 @@ Histogram of per-concept advantage: `(coarse_score - 1000way_score)` for each ev
 
 ---
 
-## Figure 5: Architecture Generalization (THINGS Behavioral)
+## Figure 6: Architecture Generalization (THINGS Behavioral)
 
-**Directory:** `manuscript/figures/fig5/`
+**Directory:** `manuscript/figures/fig6/`
 
-**Narrative role:** Demonstrate that the coarseness finding is not specific to the custom AlexNet-style CNN used in Figures 2-4. The same pattern -- coarse-trained models matching or exceeding 1000-class on THINGS behavioral alignment -- holds across three diverse modern architectures: ResNet-50 (deep CNN), ConvNeXt (modern CNN), and ViT-B/16 (vision transformer).
+**Narrative role:** Demonstrate that the coarseness finding is not specific to the custom AlexNet-style CNN used in Figures 3-5. The same pattern -- coarse-trained models matching or exceeding 1000-class on THINGS behavioral alignment -- holds across three diverse modern architectures: ResNet-50 (deep CNN), ConvNeXt (modern CNN), and ViT-B/16 (vision transformer).
 
 ### Layout -- single row, 3 panels
 
@@ -279,7 +288,7 @@ Each panel shows THINGS behavioral alignment (Spearman rho) vs. label granularit
 
 ### Panels a-c -- THINGS coarseness per architecture
 
-Same style as Figure 3B: coarse conditions as blue scatter (CLIP labels), 1000-way as amber bar, untrained as dashed line. Axis break before 1000-way bar. ResNet-50 and ConvNeXt share y-axis limits for direct comparison; ViT-B/16 has its own scale.
+Same style as Figure 4B: coarse conditions as blue scatter (CLIP labels), 1000-way as amber bar, untrained as dashed line. Axis break before 1000-way bar. ResNet-50 and ConvNeXt share y-axis limits for direct comparison; ViT-B/16 has its own scale.
 
 - *Key message:* The coarseness finding generalizes across architectures. In all three architectures, coarse-trained models (as few as 2-8 classes) match or exceed the fully supervised 1000-class baseline on behavioral alignment.
 - *Architecture-specific patterns:*
@@ -303,24 +312,25 @@ manuscript/figures/
 +-- paper.md                     # This file
 +-- fig_utils.py                 # Shared constants, style, helpers
 +-- things_utils.py              # Shared THINGS plotting utilities
-+-- fig1/                        # Figure 1: method overview + representation analysis
-|   +-- figure1.py               # Combined left + right panels
-|   +-- figure1a.png             # Left panel: shared PCA scatter (schematic)
-|   +-- figure1b.png             # Right panel: learned representation scatter
-+-- fig2/                        # Figure 2: Neural alignment (TVSD + NSD)
-|   +-- figure2.py               # Combined TVSD + NSD figure
-|   +-- figure2.png
-+-- fig3/                        # Figure 3: THINGS behavioral -- coarseness + model comparison + PC scatter
-|   +-- figure3.py               # Schematic + coarseness + model comparison + PC scatter
-|   +-- plot_pc_scatter.py       # PC scatter panel helper
++-- fig1/                        # Figure 1: Schematic
++-- fig2/                        # Figure 2: Categorical nature of representations
+|   +-- figure2.py               # Combined left + right panels
+|   +-- figure2a.png             # Left panel: shared PCA scatter (label space)
+|   +-- figure2b.png             # Right panel: learned representation scatter
++-- fig3/                        # Figure 3: Neural alignment (TVSD + NSD)
+|   +-- figure3.py               # Combined TVSD + NSD figure
 |   +-- figure3.png
-+-- fig4/                        # Figure 4: Per-concept alignment analysis
-|   +-- figure4.py               # RDMs + scatter + histogram
-|   +-- dimension_profiling.py   # Semantic dimension profiling (standalone, not in main figure)
++-- fig4/                        # Figure 4: THINGS behavioral -- coarseness + model comparison + PC scatter
+|   +-- figure4.py               # Schematic + coarseness + model comparison + PC scatter
+|   +-- plot_pc_scatter.py       # PC scatter panel helper
 |   +-- figure4.png
-+-- fig5/                        # Figure 5: Architecture generalization
-|   +-- figure5.py               # THINGS coarseness for ResNet-50, ConvNeXt, ViT-B/16
++-- fig5/                        # Figure 5: Per-concept alignment analysis
+|   +-- figure5.py               # RDMs + scatter + histogram
+|   +-- dimension_profiling.py   # Semantic dimension profiling (standalone, not in main figure)
 |   +-- figure5.png
++-- fig6/                        # Figure 6: Architecture generalization
+|   +-- figure6.py               # THINGS coarseness for ResNet-50, ConvNeXt, ViT-B/16
+|   +-- figure6.png
 +-- supplementary/               # Supplementary figures (S1-S18)
     +-- README.md                # Index, run commands, data sources
     +-- figure_descriptions.md   # Detailed descriptions of each supp figure
@@ -333,17 +343,18 @@ manuscript/figures/
 
 ## Design Notes
 
-- **Consistent color scheme across Figures 2 & 3:**
+- **Consistent color scheme across Figures 3 & 4:**
   - PCA source models: AlexNet (medium blue `#6baed6`, circle), CLIP (dark blue `#08519c`, square), Pixels (muted tan/brown, triangle-down). ViT moved to supplementary.
   - 1000-way baseline: Warm amber (`#e8963e`, diamond/bar)
   - Untrained baseline: Gray dashed line or gray bar (`#999999`)
-- **Raw Spearman rho (Figures 2 & 3):** All coarseness plots show raw Spearman rho values.
-- **Log-scale x-axis** for all coarseness plots (Figures 2 and 3), with axis break before the 1000-way grouped bars.
-- **Schematics are placeholders** in Figures 2 and 3 -- to be replaced with final artwork.
-- **Figure 1 combines method + representation analysis** -- left panel (figure1a) is shared PCA scatter (label space), right panel (figure1b) is learned representation PC scatter (model activation space). Old RDM panel moved to supplementary S18.
-- **Figure 3 bottom row is PC scatter** -- 4 panels showing representational geometry (Behavioral, CNN 8-class CLIP, AlexNet 1K, ViT-B/16 1K). RDMs moved to Figure 4 Panel A.
-- **Figure 4 row 1 has RDMs** -- category-sorted RDMs (Behavioral, 8-class CLIP, 1000-class) with 8 super-category groupings. Row 2 has per-concept scatter + histogram. Dimension profiling exists as a standalone script but is not in the main figure.
-- **Figure 5 has no schematic** -- directly shows THINGS coarseness for three architectures (ResNet-50, ConvNeXt, ViT-B/16).
+- **Raw Spearman rho (Figures 3 & 4):** All coarseness plots show raw Spearman rho values.
+- **Log-scale x-axis** for all coarseness plots (Figures 3 and 4), with axis break before the 1000-way grouped bars.
+- **Schematics are placeholders** in Figures 3 and 4 -- to be replaced with final artwork.
+- **Figure 1 is the schematic** -- method and experimental pipeline overview.
+- **Figure 2 shows categorical nature of representations** -- left panel (figure2a) is shared PCA scatter (label space), right panel (figure2b) is learned representation PC scatter (model activation space). Old RDM panel moved to supplementary S18.
+- **Figure 4 bottom row is PC scatter** -- 4 panels showing representational geometry (Behavioral, CNN 8-class CLIP, AlexNet 1K, ViT-B/16 1K). RDMs moved to Figure 5 Panel A.
+- **Figure 5 row 1 has RDMs** -- category-sorted RDMs (Behavioral, 8-class CLIP, 1000-class) with 8 super-category groupings. Row 2 has per-concept scatter + histogram. Dimension profiling exists as a standalone script but is not in the main figure.
+- **Figure 6 has no schematic** -- directly shows THINGS coarseness for three architectures (ResNet-50, ConvNeXt, ViT-B/16).
 - **No DINO or ViT PCA in main figures** -- supplementary only. Main figures show AlexNet, CLIP, and Pixels PCA sources.
 - **No NSD-Synthetic in main figures** -- supplementary only.
 - **V4 (TVSD) in supplementary only** -- V1 and IT represent the extremes of the visual hierarchy.

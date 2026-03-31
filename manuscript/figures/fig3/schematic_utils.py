@@ -1,4 +1,4 @@
-"""Schematic and brain-inset utilities for Figure 2.
+"""Schematic and brain-inset utilities for Figure 3.
 
 Provides:
 - SVG/image loading helpers (load_svg_as_image, load_things_image, load_nsd_image)
@@ -19,7 +19,7 @@ import cairosvg
 from PIL import Image
 
 # ── Asset paths ─────────────────────────────────────────────────────────
-ASSETS_DIR = Path("manuscript/figures/fig2/assets")
+ASSETS_DIR = Path("manuscript/figures/fig3/assets")
 THINGS_IMG_DIR = Path("/data/shared/datasets/hebart2019.things/images/object_images")
 
 # Stimuli selections (local PNGs in assets/)

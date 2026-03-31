@@ -1,325 +1,297 @@
-"""Figure 5: Architecture Generalization — THINGS Behavioral Alignment.
+"""Figure 5: Per-Concept Alignment Analysis.
 
-Layout (single row, 3 panels):
-  a: ResNet-50 | b: ConvNeXt | c: ViT-B/16
-  Each panel shows THINGS coarseness (CLIP labels, epoch 20, seed 1)
-  with a 1000-class baseline bar.
+Layout (2 rows):
+  Row 1:  [Behavioral RDM]  [8 classes (CLIP repr.) RDM]  [1000-class RDM]  [colorbar]
+          [              super-category legend row                  ]
+  Row 2:  [Scatter plot]                          [Histogram]
+
+Panel A: Category-sorted RDMs — Behavioral vs 8 classes (CLIP repr.) vs 1000-class
+         (concepts grouped by 8 semantic super-categories derived from THINGS-27)
+Panel B: Per-concept scatter — 8 classes (CLIP repr.) vs 1000-way per-concept RSA
+Panel C: Histogram of per-concept advantage (delta rho)
 
 Usage:
     python manuscript/figures/fig5/figure5.py
 """
 
-import os
 import sys
-import json
-import sqlite3
 
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.gridspec as gridspec
 import matplotlib.patches as mpatches
-from matplotlib.lines import Line2D
-from matplotlib.ticker import (
-    AutoMinorLocator, FuncFormatter, FixedLocator, NullLocator,
-)
-from matplotlib.transforms import blended_transform_factory
+import matplotlib.gridspec as gridspec
+import matplotlib.ticker as mticker
 import seaborn as sns
+from scipy.cluster.hierarchy import linkage, leaves_list
+from scipy.spatial.distance import squareform
 
 sys.path.insert(0, "manuscript/figures")
-from fig_utils import (
-    COARSE_CFGS, MARKER_SIZE, EDGE_COLOR, EDGE_WIDTH, setup_style,
+from fig_utils import setup_style
+from things_utils import compute_things_data, plot_scatter_panel
+from experiments.things_visualizations.plot_rdms_categorized import (
+    load_categories, draw_category_sidebar, draw_boundary_lines,
+    rank_transform,
 )
 
 # ── Config ────────────────────────────────────────────────────────────────
 OUTPUT_DIR = "manuscript/figures/fig5"
-DB_PATH = "results.db"
 
-ARCH_MODELS = [
-    ("ResNet50",      "ResNet-50"),
-    ("ConvNeXt_Base", "ConvNeXt"),
-    ("ViTBase",       "ViT-B/16"),
+# Super-category groupings (ordered for display)
+SUPER_CAT_ORDER = [
+    "Living things",
+    "Body & apparel",
+    "Food & drink",
+    "Furniture & decor",
+    "Containers",
+    "Tools & implements",
+    "Sports & recreation",
+    "Vehicles",
+    "Electronics & music",
+    "Other",
 ]
 
-# Match Figure 2 color scheme
-CLIP_STYLE = {"color": "#08519c", "marker": "s"}   # dark blue square
-BASELINE_1K_COLOR = "#e8963e"                        # warm amber
-BAR_CENTER = 250
-BAR_WIDTH_FRAC = 0.15
+# Shortened labels for sidebar annotations
+SIDEBAR_LABELS = {
+    "Living things": "Living things",
+    "Body & apparel": "Body & apparel",
+    "Food & drink": "Food & drink",
+    "Furniture & decor": "Furn. & decor",
+    "Containers": "Containers",
+    "Tools & implements": "Tools & impl.",
+    "Sports & recreation": "Sports & rec.",
+    "Vehicles": "Vehicles",
+    "Electronics & music": "Elec. & music",
+    "Other": "Other",
+}
+
+FINE_TO_SUPER = {
+    "animal": "Living things", "plant": "Living things",
+    "body part": "Body & apparel", "clothing": "Body & apparel",
+    "clothing accessory": "Body & apparel",
+    "food": "Food & drink", "dessert": "Food & drink",
+    "drink": "Food & drink", "kitchen appliance": "Food & drink",
+    "kitchen tool": "Food & drink",
+    "furniture": "Furniture & decor", "home decor": "Furniture & decor",
+    "container": "Containers",
+    "tool": "Tools & implements", "weapon": "Tools & implements",
+    "office supply": "Tools & implements", "medical equipment": "Tools & implements",
+    "sports equipment": "Sports & recreation", "toy": "Sports & recreation",
+    "vehicle": "Vehicles", "part of car": "Vehicles",
+    "electronic device": "Electronics & music",
+    "musical instrument": "Electronics & music",
+    "Other": "Other",
+}
+
+# Distinguishable palette for 10 super-categories
+SUPER_PALETTE = {
+    "Living things":        "#2ca02c",  # green
+    "Body & apparel":       "#9467bd",  # purple
+    "Food & drink":         "#d62728",  # red
+    "Furniture & decor":    "#ff7f0e",  # orange
+    "Containers":           "#e6ab02",  # gold
+    "Tools & implements":   "#1f77b4",  # blue
+    "Sports & recreation":  "#17becf",  # cyan
+    "Vehicles":             "#8c564b",  # brown
+    "Electronics & music":  "#e377c2",  # pink
+    "Other":                "#bdbdbd",  # grey
+}
 
 
-# ── Data fetching ─────────────────────────────────────────────────────────
+def _build_super_sort_order(fine_categories, behav_rdm):
+    """Sort concepts by super-category, then hierarchical clustering within."""
+    super_cats = np.array([FINE_TO_SUPER.get(c, "Other") for c in fine_categories])
 
-def fetch_things_arch_data(model_name, epoch=20, seed=1):
-    """Fetch THINGS-behavior scores for a specific architecture (CLIP labels).
+    sorted_indices = []
+    block_boundaries = []
+    offset = 0
 
-    Returns (coarse_dict, baseline_dict_or_None, untrained_score_or_None).
-    coarse_dict: {cfg_id: {score, ci_low, ci_high}} for coarse conditions.
-    """
-    conn = sqlite3.connect(DB_PATH)
-    results = {}
-
-    # ── Coarse conditions (CLIP labels) ──
-    for cfg in COARSE_CFGS:
-        df = pd.read_sql("""
-            SELECT r.run_id, r.score, r.ci_low, r.ci_high,
-                   bd.scores AS boot_scores
-            FROM results r
-            LEFT JOIN bootstrap_distributions bd
-                ON r.run_id = bd.run_id AND bd.compare_method = 'spearman'
-            WHERE r.neural_dataset = 'things-behavior'
-              AND r.model_name = ? AND r.cfg_id = ? AND r.epoch = ?
-              AND r.seed = ? AND r.pca_labels_folder = 'pca_labels_clip'
-              AND r.compare_method = 'spearman' AND r.reconstruct_from_pcs = 0
-            ORDER BY r.score DESC LIMIT 1
-        """, conn, params=[model_name, cfg, epoch, seed])
-        if not df.empty:
-            row = df.iloc[0]
-            ci_low, ci_high = row["ci_low"], row["ci_high"]
-            if row["boot_scores"] is not None:
-                boots = np.array(json.loads(row["boot_scores"]))
-                ci_low, ci_high = np.percentile(boots, [2.5, 97.5])
-            results[cfg] = {"score": row["score"],
-                            "ci_low": ci_low, "ci_high": ci_high}
-
-    # ── 1000-way baseline ──
-    df_1k = pd.read_sql("""
-        SELECT r.run_id, r.score, r.ci_low, r.ci_high,
-               bd.scores AS boot_scores
-        FROM results r
-        LEFT JOIN bootstrap_distributions bd
-            ON r.run_id = bd.run_id AND bd.compare_method = 'spearman'
-        WHERE r.neural_dataset = 'things-behavior'
-          AND r.model_name = ? AND r.cfg_id = 1000 AND r.epoch = ?
-          AND r.seed = ? AND r.compare_method = 'spearman'
-          AND r.reconstruct_from_pcs = 0
-        ORDER BY r.score DESC LIMIT 1
-    """, conn, params=[model_name, epoch, seed])
-    baseline = None
-    if not df_1k.empty:
-        row = df_1k.iloc[0]
-        ci_low, ci_high = row["ci_low"], row["ci_high"]
-        if row["boot_scores"] is not None:
-            boots = np.array(json.loads(row["boot_scores"]))
-            ci_low, ci_high = np.percentile(boots, [2.5, 97.5])
-        baseline = {"score": row["score"],
-                    "ci_low": ci_low, "ci_high": ci_high}
-
-    # ── Untrained (epoch=0) ──
-    df_un = pd.read_sql("""
-        SELECT score FROM results
-        WHERE neural_dataset = 'things-behavior'
-          AND model_name = ? AND epoch = 0 AND seed = ?
-          AND compare_method = 'spearman' AND reconstruct_from_pcs = 0
-        ORDER BY score DESC LIMIT 1
-    """, conn, params=[model_name, seed])
-    untrained = df_un.iloc[0]["score"] if not df_un.empty else None
-
-    conn.close()
-    return results, baseline, untrained
-
-
-# ── Plotting ──────────────────────────────────────────────────────────────
-
-def _draw_bar_break(ax):
-    """Draw // break marks between the coarse scatter region and the bar."""
-    trans = blended_transform_factory(ax.transData, ax.transAxes)
-    mid = np.exp((np.log(64) + np.log(BAR_CENTER)) / 2)
-    rect_hw = mid * 0.16
-    rect = mpatches.FancyBboxPatch(
-        (mid / 1.16, -0.05), width=rect_hw * 1.5, height=0.10,
-        boxstyle="square,pad=0", facecolor="white", edgecolor="none",
-        transform=trans, clip_on=False, zorder=9)
-    ax.add_patch(rect)
-    for x_shift in [0.93, 1.07]:
-        x_c = mid * x_shift
-        ax.plot([x_c / 1.04, x_c * 1.04], [-0.028, 0.028],
-                transform=trans, color="#555555", linewidth=0.7,
-                clip_on=False, zorder=11)
-
-
-def plot_things_coarseness(ax, model_name, display_name,
-                           show_ylabel=True, show_xlabel=True,
-                           forced_ylim=None):
-    """Plot THINGS coarseness panel — clean compact style with dashed reference lines."""
-    results, baseline, untrained = fetch_things_arch_data(model_name)
-
-    if not results and baseline is None:
-        ax.text(0.5, 0.5, "No data", ha="center", va="center",
-                transform=ax.transAxes, fontsize=9, color="#888")
-        return
-
-    all_y_vals = []
-
-    # ── Coarse scatter points ──
-    for cfg in COARSE_CFGS:
-        if cfg not in results:
+    for scat in SUPER_CAT_ORDER:
+        member_idx = np.where(super_cats == scat)[0]
+        if len(member_idx) == 0:
             continue
-        r = results[cfg]
-        all_y_vals.append(r["score"])
-        err_lo = max(r["score"] - r["ci_low"], 0) if pd.notna(r["ci_low"]) else 0
-        err_hi = max(r["ci_high"] - r["score"], 0) if pd.notna(r["ci_high"]) else 0
-        ax.errorbar(cfg, r["score"],
-                    yerr=[[err_lo], [err_hi]],
-                    fmt=CLIP_STYLE["marker"], color=CLIP_STYLE["color"],
-                    markersize=MARKER_SIZE,
-                    markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
-                    capsize=1.5, capthick=0.5,
-                    ecolor=CLIP_STYLE["color"], elinewidth=0.7, zorder=4)
+        if len(member_idx) <= 2:
+            order = member_idx
+        else:
+            sub_rdm = behav_rdm[np.ix_(member_idx, member_idx)]
+            sub_condensed = squareform(sub_rdm, checks=False)
+            sub_order = leaves_list(linkage(sub_condensed, method="average"))
+            order = member_idx[sub_order]
 
-    # ── Collect y-range ──
-    if baseline:
-        all_y_vals.append(baseline["score"])
-    if untrained is not None:
-        all_y_vals.append(untrained)
+        block_boundaries.append((offset, scat, len(order)))
+        sorted_indices.extend(order)
+        offset += len(order)
 
-    y_min = min(all_y_vals)
-    y_max = max(all_y_vals)
-    y_range = y_max - y_min if y_max > y_min else 0.05
-
-    # ── 1000-way dashed reference line ──
-    if baseline:
-        ax.axhline(baseline["score"], color=BASELINE_1K_COLOR, linestyle="--",
-                   linewidth=1.1, alpha=0.85, zorder=2)
-        y_offset = y_range * 0.015
-        ax.text(180 * 0.95, baseline["score"] + y_offset, "Trained, 1000 classes",
-                fontsize=6, fontstyle="italic", color=BASELINE_1K_COLOR,
-                ha="right", va="bottom", zorder=10)
-
-    # ── Untrained dashed line ──
-    if untrained is not None:
-        ax.axhline(untrained, color="#AAAAAA", linestyle="--",
-                   linewidth=0.9, alpha=0.7, zorder=1)
-        y_offset = y_range * 0.015
-        ax.text(180 * 0.95, untrained + y_offset, "Untrained",
-                fontsize=6, fontstyle="italic", color="#AAAAAA",
-                ha="right", va="bottom", zorder=10)
-
-    # ── Axis formatting — clean log₂ x-axis, coarse ticks only ──
-    ax.set_xscale("log", base=2)
-    ax.xaxis.set_major_locator(FixedLocator(COARSE_CFGS))
-    ax.xaxis.set_major_formatter(FuncFormatter(
-        lambda val, pos: str(int(val)) if int(round(val)) in set(COARSE_CFGS) else ""))
-    ax.xaxis.set_minor_locator(NullLocator())
-    ax.tick_params(axis="x", which="minor", bottom=False)
-    ax.tick_params(axis="x", which="major", length=3.5, width=0.6, labelsize=10)
-    ax.set_xlim(1.5, 180)
-
-    ax.tick_params(axis="y", which="major", direction="out", length=3.5,
-                   width=0.6)
-    ax.yaxis.set_minor_locator(AutoMinorLocator(2))
-    ax.tick_params(axis="y", which="minor", direction="out", length=2,
-                   width=0.4)
-    ax.yaxis.grid(True, which="major", color="#F0F0F0", linewidth=0.3,
-                  zorder=0)
-    ax.yaxis.set_major_formatter(FuncFormatter(
-        lambda v, _: f"{v:.2f}".rstrip("0").rstrip(".")))
-
-    if forced_ylim is not None:
-        yl = forced_ylim[0] if forced_ylim[0] is not None else y_min - y_range * 0.12
-        yh = forced_ylim[1] if forced_ylim[1] is not None else y_max + y_range * 0.10
-        ax.set_ylim(yl, yh)
-    else:
-        ax.set_ylim(y_min - y_range * 0.12, y_max + y_range * 0.10)
-
-    if show_xlabel:
-        ax.set_xlabel("Training classes", fontsize=9, labelpad=6)
-    if show_ylabel:
-        ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=9, labelpad=3)
-    else:
-        ax.set_ylabel("")
-    sns.despine(ax=ax, right=True, top=True, offset=3)
+    return np.array(sorted_indices), block_boundaries
 
 
-# ── Main ──────────────────────────────────────────────────────────────────
+def _draw_rdm(ax, rdm, title, subtitle, block_boundaries, n, super_cats_used,
+              subtitle_italic=False, show_sidebar_labels=False):
+    """Draw a single RDM panel with super-category sidebars."""
+    im = ax.imshow(rdm, cmap="magma", interpolation="nearest", aspect="equal",
+                   rasterized=True, vmin=0, vmax=1)
+    ax.set_title(title, fontsize=13, fontweight="bold", pad=22,
+                 fontfamily="sans-serif")
+    if subtitle:
+        style = "italic" if subtitle_italic else "normal"
+        ax.text(0.5, 1.015, subtitle, transform=ax.transAxes,
+                ha="center", va="bottom", fontsize=9.5, color="#444444",
+                fontstyle=style)
+
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+
+    cat_colors = [SUPER_PALETTE[c] for c in super_cats_used]
+    cat_to_idx = {c: i for i, c in enumerate(super_cats_used)}
+
+    draw_boundary_lines(ax, block_boundaries, n, color="white",
+                        lw=0.45, alpha=0.80)
+
+    width_frac = 0.032
+    gap_frac = 0.005
+    draw_category_sidebar(ax, block_boundaries, n, cat_colors, cat_to_idx,
+                          side="left", width_frac=width_frac, gap_frac=gap_frac)
+    draw_category_sidebar(ax, block_boundaries, n, cat_colors, cat_to_idx,
+                          side="bottom", width_frac=width_frac, gap_frac=gap_frac)
+
+    # Category labels beside the left sidebar
+    if show_sidebar_labels:
+        w = n * width_frac
+        gap = n * gap_frac
+        label_x = -w - gap - n * 0.012  # just left of the sidebar
+        for start, cat, size in block_boundaries:
+            mid_y = start - 0.5 + size / 2
+            display_label = SIDEBAR_LABELS.get(cat, cat)
+            ax.text(label_x, mid_y, display_label, ha="right", va="center",
+                    fontsize=7, color="#333333", fontfamily="sans-serif",
+                    clip_on=False)
+
+    return im
+
 
 def main():
     setup_style()
     plt.rcParams.update({
-        "axes.labelsize": 9,
-        "axes.titlesize": 10,
-        "xtick.labelsize": 7.5,
-        "ytick.labelsize": 7.5,
-        "axes.linewidth": 0.6,
-        "xtick.major.width": 0.6,
-        "ytick.major.width": 0.6,
+        "axes.labelsize": 11,
+        "axes.titlesize": 12.5,
+        "xtick.labelsize": 9.5,
+        "ytick.labelsize": 9.5,
+        "axes.linewidth": 0.8,
+        "xtick.major.width": 0.8,
+        "ytick.major.width": 0.8,
+        "font.family": "sans-serif",
     })
 
-    # ── Figure layout: single row, 3 panels ──
-    fig = plt.figure(figsize=(13, 4.0))
+    print("Computing THINGS data for per-concept analysis...")
+    precomputed = compute_things_data()
+
+    # ── Build super-category-sorted RDMs ─────────────────────────────
+    fine_sort_idx = precomputed["sort_idx"]
+    unsort = np.argsort(fine_sort_idx)
+    rdms_ranked = precomputed["rdms_ranked"]
+
+    rdm_behav_orig = rdms_ranked["Behavioral"][np.ix_(unsort, unsort)]
+    rdm_clip8_orig = rdms_ranked["8 classes (CLIP repr.)"][np.ix_(unsort, unsort)]
+    rdm_1k_orig = rdms_ranked["1000-class"][np.ix_(unsort, unsort)]
+
+    fine_categories = load_categories()
+    super_sort_idx, super_boundaries = _build_super_sort_order(
+        fine_categories, rdm_behav_orig
+    )
+
+    super_cats_used = [scat for _, scat, _ in super_boundaries]
+
+    rdm_behav_super = rdm_behav_orig[np.ix_(super_sort_idx, super_sort_idx)]
+    rdm_clip8_super = rdm_clip8_orig[np.ix_(super_sort_idx, super_sort_idx)]
+    rdm_1k_super = rdm_1k_orig[np.ix_(super_sort_idx, super_sort_idx)]
+    n = rdm_behav_super.shape[0]
+
+    rsa_scores = precomputed["rsa_scores"]
+
+    # ── Figure layout ─────────────────────────────────────────────────
+    fig = plt.figure(figsize=(14, 11.5))
     fig.patch.set_facecolor("white")
 
-    gs = gridspec.GridSpec(1, 3, figure=fig, wspace=0.28,
-                           left=0.07, right=0.97, top=0.82, bottom=0.15)
+    gs_outer = gridspec.GridSpec(
+        2, 1, figure=fig,
+        height_ratios=[1.0, 1.0],
+        hspace=0.22,
+        left=0.09, right=0.96, top=0.96, bottom=0.06,
+    )
 
-    # Pre-fetch data to compute shared y-limits for ResNet-50 & ConvNeXt
-    arch_data = {}
-    for model_name, display_name in ARCH_MODELS:
-        arch_data[model_name] = fetch_things_arch_data(model_name)
+    # ── Row 1: Three RDMs + colorbar ─────────────────────────────────
+    gs_rdm = gridspec.GridSpecFromSubplotSpec(
+        3, 4, subplot_spec=gs_outer[0],
+        width_ratios=[1, 1, 1, 0.04],
+        height_ratios=[0.08, 0.84, 0.08],
+        wspace=0.10, hspace=0,
+    )
+    ax_rdm_behav = fig.add_subplot(gs_rdm[0:3, 0])
+    ax_rdm_clip8 = fig.add_subplot(gs_rdm[0:3, 1])
+    ax_rdm_1k = fig.add_subplot(gs_rdm[0:3, 2])
+    ax_cb = fig.add_subplot(gs_rdm[1, 3])
 
-    # Shared ylim for ResNet-50 and ConvNeXt (indices 0 and 1)
-    shared_y_vals = []
-    for mn in ["ResNet50", "ConvNeXt_Base"]:
-        results, baseline, untrained = arch_data[mn]
-        for r in results.values():
-            shared_y_vals.extend([r["score"] - (r["score"] - r["ci_low"])
-                                  if pd.notna(r["ci_low"]) else r["score"],
-                                  r["ci_high"]
-                                  if pd.notna(r["ci_high"]) else r["score"]])
-        if baseline:
-            shared_y_vals.append(baseline["score"])
-        if untrained is not None:
-            shared_y_vals.append(untrained)
+    im = _draw_rdm(ax_rdm_behav, rdm_behav_super, "Behavioral",
+                    "(ground truth)", super_boundaries, n, super_cats_used,
+                    subtitle_italic=True, show_sidebar_labels=True)
+    _draw_rdm(ax_rdm_clip8, rdm_clip8_super, "8 classes (CLIP repr.)",
+              f"$\\rho_s$ = {rsa_scores['8 classes (CLIP repr.)']:.3f}",
+              super_boundaries, n, super_cats_used)
+    _draw_rdm(ax_rdm_1k, rdm_1k_super, "1000-class",
+              f"$\\rho_s$ = {rsa_scores['1000-class']:.3f}",
+              super_boundaries, n, super_cats_used)
 
-    shared_ymin = min(shared_y_vals)
-    shared_ymax = max(shared_y_vals)
-    shared_range = shared_ymax - shared_ymin
-    shared_ylim = (0.1, shared_ymax + shared_range * 0.08)
+    # Shared colorbar
+    cb = plt.colorbar(im, cax=ax_cb)
+    cb.ax.tick_params(labelsize=8.5, length=3, width=0.5, pad=4)
+    cb.outline.set_linewidth(0.5)
+    cb.ax.yaxis.set_major_locator(mticker.FixedLocator([0, 0.5, 1.0]))
+    cb.ax.yaxis.set_major_formatter(mticker.FixedFormatter(["0", "0.5", "1.0"]))
+    cb.set_label("Dissimilarity (rank)", fontsize=9.5, labelpad=10)
 
-    axes = []
-    for i, (model_name, display_name) in enumerate(ARCH_MODELS):
-        ax = fig.add_subplot(gs[0, i])
-        ylim = shared_ylim if i < 2 else (0.1, None)  # All start at 0.1
-        plot_things_coarseness(ax, model_name, display_name,
-                               show_ylabel=(i == 0), show_xlabel=True,
-                               forced_ylim=ylim)
-        axes.append(ax)
+    # ── Row 2: Scatter + Histogram ───────────────────────────────────
+    gs_bottom = gridspec.GridSpecFromSubplotSpec(
+        1, 2, subplot_spec=gs_outer[1],
+        width_ratios=[1.05, 1.0],
+        wspace=0.22,
+    )
+    ax_scatter = fig.add_subplot(gs_bottom[0, 0])
+    ax_hist = fig.add_subplot(gs_bottom[0, 1])
 
-    # Architecture subtitles above each panel
-    for i, (_, display_name) in enumerate(ARCH_MODELS):
-        pos = axes[i].get_position()
-        x_center = (pos.x0 + pos.x1) / 2
-        fig.text(x_center, pos.y1 + 0.012, display_name,
-                 fontsize=9, color="#888888",
-                 ha="center", va="bottom", family="sans-serif")
+    super_config = {
+        "fine_to_super": FINE_TO_SUPER,
+        "palette": SUPER_PALETTE,
+        "kde_categories": [
+            "Living things", "Body & apparel",
+        ],
+    }
+    plot_scatter_panel(ax_scatter, ax_hist, precomputed, super_config=super_config)
 
-    # Legend in first panel
-    coarse_handle = Line2D([], [], marker=CLIP_STYLE["marker"],
-                           color="none",
-                           markerfacecolor=CLIP_STYLE["color"],
-                           markeredgecolor=EDGE_COLOR,
-                           markeredgewidth=EDGE_WIDTH,
-                           markersize=5.5, label="Coarse labels\n(CLIP)")
-    axes[0].legend(handles=[coarse_handle],
-                   fontsize=7.5, frameon=True, fancybox=False,
-                   framealpha=0.92, edgecolor="#dddddd",
-                   borderpad=0.4, handletextpad=0.3,
-                   labelspacing=0.25,
-                   loc="center left",
-                   bbox_to_anchor=(0.0, 0.35))
+    # Override scatter title padding for this layout
+    ax_scatter.set_title("Per-Category Alignment", fontsize=13,
+                         fontweight="bold", pad=12)
 
-    # ── Panel labels: a, b, c ──
-    top_y = axes[0].get_position().y1
-    label_y = top_y + 0.035
-    for i, label in enumerate(["a", "b", "c"]):
-        pos = axes[i].get_position()
-        fig.text(pos.x0 - 0.03, label_y, label,
-                 fontsize=14, fontweight="bold", va="bottom", ha="left",
-                 family="sans-serif")
+    # Override KDE panel formatting for standalone display
+    ax_hist.set_xlabel(
+        r"$\Delta\rho_s$ (8-class $-$ 1000-class)", fontsize=11)
+    ax_hist.tick_params(axis="x", labelsize=9.5, length=4, width=0.8)
+    ax_hist.set_title("Per-Concept Advantage", fontsize=13,
+                      fontweight="bold", pad=12)
+    sns.despine(ax=ax_hist, offset=5, left=True)
 
-    # ── Save ──
+    # ── Panel labels ─────────────────────────────────────────────────
+    label_kw = dict(fontsize=20, fontweight="bold", va="top", ha="left",
+                    family="sans-serif")
+    ax_rdm_behav.text(-0.18, 1.10, "a", transform=ax_rdm_behav.transAxes,
+                      **label_kw)
+    ax_scatter.text(-0.12, 1.08, "b", transform=ax_scatter.transAxes,
+                    **label_kw)
+    ax_hist.text(-0.08, 1.08, "c", transform=ax_hist.transAxes,
+                 **label_kw)
+
     out = f"{OUTPUT_DIR}/figure5.png"
-    fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white",
+    fig.savefig(out, dpi=200, bbox_inches="tight", facecolor="white",
                 edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()

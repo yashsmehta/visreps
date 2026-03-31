@@ -11,7 +11,7 @@ Output: class_centroids_alexnet.npz with keys:
     - labels_{2,4,8,16,32,64}: (1000,) arrays of majority-vote coarse labels
 
 Usage:
-    python manuscript/figures/fig2/extract_class_centroids.py
+    python manuscript/figures/fig3/extract_class_centroids.py
 """
 
 import os
@@ -31,7 +31,7 @@ load_dotenv()
 IMAGENET_DIR = os.environ["IMAGENET_DATA_DIR"]
 EIGENVECTORS_PATH = "datasets/obj_cls/imagenet/eigenvectors_alexnet.npz"
 PCA_LABELS_DIR = "pca_labels/pca_labels_alexnet"
-OUTPUT_PATH = "manuscript/figures/fig2/class_centroids_alexnet.npz"
+OUTPUT_PATH = "manuscript/figures/fig3/class_centroids_alexnet.npz"
 IMAGES_PER_CLASS = 50
 GRANULARITIES = [2, 4, 8, 16, 32, 64]
 

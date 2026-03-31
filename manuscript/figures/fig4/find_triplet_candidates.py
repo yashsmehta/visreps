@@ -1,11 +1,11 @@
-"""Find triplet candidates for Figure 3 image insets.
+"""Find triplet candidates for Figure 4 image insets.
 
 Looks for triplets of concepts from 3 different super-categories where:
 - Behavioral & CLIP-8 distances are large (well separated)
 - AlexNet & ViT distances are moderate (close but NOT overlapping)
 
 Usage (from project root):
-    python manuscript/figures/fig3/find_triplet_candidates.py
+    python manuscript/figures/fig4/find_triplet_candidates.py
 """
 
 import os
@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 from scipy.spatial.distance import pdist, squareform
 
-sys.path.insert(0, "manuscript/figures/fig3")
+sys.path.insert(0, "manuscript/figures/fig4")
 from plot_pc_scatter import (
     load_super_categories, SUPER_ORDER, SUPER_COLORS, l2_normalize, compute_pca,
 )
@@ -28,13 +28,13 @@ behav_data = np.load("experiments/things_visualizations/data/things_viz_data.npz
 embeddings = behav_data["embeddings"]  # (1854, 66)
 concept_names = behav_data["concept_names"]  # (1854,)
 
-act_data = np.load("manuscript/figures/fig4/activations.npz", allow_pickle=True)
+act_data = np.load("manuscript/figures/fig5/activations.npz", allow_pickle=True)
 clip8_fc1 = l2_normalize(act_data["clip8_fc1"])  # (1854, 4096)
 
-alexnet_data = np.load("manuscript/figures/fig4/pretrained_alexnet_fc1.npz", allow_pickle=True)
+alexnet_data = np.load("manuscript/figures/fig5/pretrained_alexnet_fc1.npz", allow_pickle=True)
 alexnet_fc1 = l2_normalize(alexnet_data["fc1"])  # (1854, 4096)
 
-vit_data = np.load("manuscript/figures/fig3/pretrained_vit_things.npz", allow_pickle=True)
+vit_data = np.load("manuscript/figures/fig4/pretrained_vit_things.npz", allow_pickle=True)
 vit_block5 = l2_normalize(vit_data["block5"])  # (1854, 151296)
 
 n_concepts = len(concept_names)

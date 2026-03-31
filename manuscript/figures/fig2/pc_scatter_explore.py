@@ -1,4 +1,4 @@
-"""Figure 1 schematic: coarse-graining visualized in the PCA label space.
+"""Figure 2: coarse-graining visualized in the PCA label space.
 
 Projects 1 image per ImageNet class (1000 points) onto the saved fc2 PCA axes,
 then applies median splits to create visually balanced 2-way and 4-way panels.
@@ -7,8 +7,8 @@ The 1000-way panel colors each class uniquely.
 All panels share the same x/y coordinates — only the coloring changes.
 
 Usage (from project root):
-    python manuscript/figures/fig1/pc_scatter_explore.py
-    python manuscript/figures/fig1/pc_scatter_explore.py --recompute
+    python manuscript/figures/fig2/pc_scatter_explore.py
+    python manuscript/figures/fig2/pc_scatter_explore.py --recompute
 """
 
 import os

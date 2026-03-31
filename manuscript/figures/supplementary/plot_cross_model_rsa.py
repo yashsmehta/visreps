@@ -9,13 +9,13 @@ Produces a grouped bar chart with three comparison types per granularity level.
 
 Usage (from project root):
     # Compute RSMs and plot (first run — takes ~10-15 min on 4090)
-    python manuscript/figures/fig2/plot_cross_model_rsa.py
+    python manuscript/figures/fig3/plot_cross_model_rsa.py
 
     # Re-plot from cached data
-    python manuscript/figures/fig2/plot_cross_model_rsa.py --plot-only
+    python manuscript/figures/fig3/plot_cross_model_rsa.py --plot-only
 
     # Customize
-    python manuscript/figures/fig2/plot_cross_model_rsa.py --layer fc1 --n_images 1500
+    python manuscript/figures/fig3/plot_cross_model_rsa.py --layer fc1 --n_images 1500
 """
 
 import os
