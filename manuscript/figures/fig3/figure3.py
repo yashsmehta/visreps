@@ -30,7 +30,7 @@ from fig_utils import MARKER_SIZE, EDGE_COLOR, EDGE_WIDTH, setup_style
 sys.path.insert(0, "manuscript/figures/fig3")
 from shared import ARCHITECTURES, ARCH_STYLE
 from panel_raw import plot_raw
-from panel_bits import plot_bits
+from panel_bits import plot_fcm
 from schematic_utils import draw_tvsd_schematic, draw_nsd_schematic, add_brain_inset
 
 OUTPUT_DIR = "manuscript/figures/fig3"
@@ -59,9 +59,9 @@ def main():
 
     # Inner grids: bits panels at 50% width of raw panels
     inner_tvsd = [gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=outer[row, 0],
-                  wspace=0.35, width_ratios=[0.5, 1]) for row in (1, 2)]
+                  wspace=0.35, width_ratios=[0.25, 0.75]) for row in (1, 2)]
     inner_nsd = [gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=outer[row, 1],
-                 wspace=0.35, width_ratios=[0.5, 1]) for row in (1, 2)]
+                 wspace=0.35, width_ratios=[0.25, 0.75]) for row in (1, 2)]
 
     # ── Schematics (row 0) ──
     ax_tvsd_schem = fig.add_subplot(outer[0, 0])
@@ -75,13 +75,13 @@ def main():
     # Columns: 0=bits, 1=raw (TVSD); 2=bits, 3=raw (NSD)
     panel_specs = [
         # (row, col, dataset, region, plot_fn, ylabel, xlabel, inner_grid, inner_col, extra_kw)
-        (1, 0, "tvsd", "V1",                    plot_bits, True,  False, inner_tvsd[0], 0, {}),
+        (1, 0, "tvsd", "V1",                    plot_fcm,  True,  False, inner_tvsd[0], 0, {}),
         (1, 1, "tvsd", "V1",                    plot_raw,  False, False, inner_tvsd[0], 1, {}),
-        (1, 2, "nsd",  "early visual stream",   plot_bits, False, False, inner_nsd[0],  0, {}),
+        (1, 2, "nsd",  "early visual stream",   plot_fcm,  False, False, inner_nsd[0],  0, {}),
         (1, 3, "nsd",  "early visual stream",   plot_raw,  False, False, inner_nsd[0],  1, {}),
-        (2, 0, "tvsd", "IT",                    plot_bits, True,  True,  inner_tvsd[1], 0, {}),
+        (2, 0, "tvsd", "IT",                    plot_fcm,  True,  True,  inner_tvsd[1], 0, {}),
         (2, 1, "tvsd", "IT",                    plot_raw,  False, True,  inner_tvsd[1], 1, {"show_untrained_label": True}),
-        (2, 2, "nsd",  "ventral visual stream", plot_bits, False, True,  inner_nsd[1],  0, {}),
+        (2, 2, "nsd",  "ventral visual stream", plot_fcm,  False, True,  inner_nsd[1],  0, {}),
         (2, 3, "nsd",  "ventral visual stream", plot_raw,  False, True,  inner_nsd[1],  1, {"show_untrained_label": True}),
     ]
 
@@ -116,8 +116,8 @@ def main():
 
     # ── Sub-column labels ──
     sub_labels = {
-        (1, 0): "Bits to match 1000-way",  (1, 1): "V1",
-        (1, 2): "Bits to match 1000-way",  (1, 3): "Early visual stream",
+        (1, 0): "Coarse feedback\ncompression",  (1, 1): "V1",
+        (1, 2): "Coarse feedback\ncompression",  (1, 3): "Early visual stream",
         (2, 1): "IT",
         (2, 3): "Ventral visual stream",
     }

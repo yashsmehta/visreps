@@ -1,19 +1,28 @@
-"""Panel renderer: minimum bits of supervision to match 1000-way alignment."""
+"""Panel renderer: feedback coarseness margin (FCM) as rounded bar plot.
+
+FCM = (1 - log2(k*) / log2(1000)) * 100%, where k* is the minimum number
+of training classes whose alignment CI overlaps the 1000-way baseline.
+Higher FCM = the feedback signal can be coarser while preserving alignment.
+
+Visual style adapted from experiments/neurips_2025/fig2/bar_plot_nsd.py.
+"""
 
 import sys
 
 import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 import seaborn as sns
-from matplotlib.ticker import FixedLocator, FuncFormatter
+from matplotlib.ticker import MultipleLocator, AutoMinorLocator, FuncFormatter
 
 sys.path.insert(0, "manuscript/figures/fig3")
 from shared import (
-    COARSE_CFGS, ARCH_STYLE, BASELINE_1K_COLOR,
+    COARSE_CFGS, ARCH_STYLE,
     fetch_baseline_ci, fetch_coarse_ci,
 )
 
-# Architectures shown in bits panels (no Pixels)
-BITS_ARCHS = [
+# Architectures shown in FCM panels (no Pixels)
+FCM_ARCHS = [
     ("alexnet", "pca_labels_alexnet", "AlexNet"),
     ("clip",    "pca_labels_clip",    "CLIP"),
 ]
@@ -34,71 +43,84 @@ def _find_min_bits(dataset, folder, region, bl_ci_low):
     return np.nan
 
 
-def plot_bits(ax, dataset, region, show_ylabel=True, show_xlabel=True):
-    """Lollipop chart: bits of supervision needed to match 1000-way, per architecture."""
+def plot_fcm(ax, dataset, region, show_ylabel=True, show_xlabel=True):
+    """Rounded bar chart: feedback coarseness margin per label source.
+
+    Style matches NeurIPS 2025 bar plots (FancyBboxPatch with rounded corners,
+    hatching, thick spines).
+    """
     bl_mean, bl_ci_low, _ = fetch_baseline_ci(dataset, region)
     if np.isnan(bl_mean) or bl_mean == 0:
         ax.text(0.5, 0.5, "No data", ha="center", va="center",
                 transform=ax.transAxes, fontsize=7, color="#888")
         return
 
-    bits_vals = []
-    for arch_key, folder, display in BITS_ARCHS:
-        bits = _find_min_bits(dataset, folder, region, bl_ci_low)
-        bits_vals.append((arch_key, display, bits))
+    fcm_vals = []
+    for arch_key, folder, display in FCM_ARCHS:
+        min_bits = _find_min_bits(dataset, folder, region, bl_ci_low)
+        if np.isnan(min_bits):
+            fcm_vals.append((arch_key, display, np.nan))
+        else:
+            fcm = (1 - min_bits / BASELINE_BITS) * 100
+            fcm_vals.append((arch_key, display, fcm))
 
-    # Place lollipops close together, centered in the panel
-    x_pos = np.array([0.35, 0.65])
+    positions = np.arange(len(fcm_vals))
+    bar_w = 0.6
 
-    for i, (arch_key, display, h) in enumerate(bits_vals):
+    # Set hatch color to grey (NeurIPS style)
+    original_hatch_color = plt.rcParams.get("hatch.color")
+    plt.rcParams["hatch.color"] = "grey"
+
+    for i, (arch_key, display, fcm) in enumerate(fcm_vals):
         c = ARCH_STYLE[arch_key]["color"]
-        marker = ARCH_STYLE[arch_key]["marker"]
-        if np.isnan(h):
-            ax.text(x_pos[i], 1.5, "N/A", ha="center", va="bottom",
+        if np.isnan(fcm):
+            ax.text(positions[i], 5, "N/A", ha="center", va="bottom",
                     fontsize=7, color="#999", fontstyle="italic")
             continue
-        # Stem
-        ax.plot([x_pos[i], x_pos[i]], [0, h], color=c,
-                linewidth=2.0, solid_capstyle="round", zorder=3)
-        # Dot
-        ax.plot(x_pos[i], h, marker=marker, color=c, markersize=10,
-                markeredgecolor="white", markeredgewidth=1.0, zorder=4)
+        x0 = positions[i] - bar_w / 2
+        rect = mpatches.FancyBboxPatch(
+            (x0, 0), bar_w, fcm,
+            boxstyle=mpatches.BoxStyle("Round", pad=0.02, rounding_size=0.1),
+            facecolor=c, edgecolor="black",
+            linewidth=0.8, hatch="/", mutation_aspect=0.05, zorder=3,
+        )
+        ax.add_patch(rect)
 
-    # Class count labels above each lollipop, in arch color
-    for i, (arch_key, _, h) in enumerate(bits_vals):
-        if np.isnan(h):
-            continue
-        c = ARCH_STYLE[arch_key]["color"]
-        n_classes = int(2 ** h)
-        ax.text(x_pos[i], h + 0.45, f"{n_classes} cls",
-                ha="center", va="bottom", fontsize=7,
-                fontweight="semibold", color=c, zorder=5)
+    # Restore hatch color
+    if original_hatch_color is not None:
+        plt.rcParams["hatch.color"] = original_hatch_color
 
-    # 1000-way reference line at top with label
-    ax.axhline(BASELINE_BITS, color=BASELINE_1K_COLOR, linestyle="--",
-               linewidth=1.1, alpha=0.85, zorder=2)
-    ax.text(0.97, BASELINE_BITS - 0.25, "1000 cls",
-            ha="right", va="top", fontsize=7, fontweight="semibold",
-            color=BASELINE_1K_COLOR, zorder=5)
-
-    # X-axis: architecture labels, centered under each lollipop
-    ax.set_xlim(0, 1)
-    ax.set_xticks(x_pos)
-    ax.set_xticklabels([d for _, d, _ in bits_vals], fontsize=8)
-    ax.tick_params(axis="x", length=3.5, width=0.7)
+    # ── X-axis ──
+    ax.set_xticks(positions)
+    ax.set_xticklabels([d for _, d, _ in fcm_vals], fontsize=8)
+    ax.tick_params(axis="x", direction="out", bottom=False, top=False,
+                   length=4, width=1.0)
+    ax.set_xlim(-0.6, len(fcm_vals) - 0.4)
     if show_xlabel:
         ax.set_xlabel("Label source", fontsize=9, labelpad=4)
 
-    # Y-axis: consistent 0–10.5, integer ticks 1–10
-    ax.set_ylim(0, BASELINE_BITS + 0.5)
-    ax.yaxis.set_major_locator(FixedLocator(range(1, 11)))
-    ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: str(int(v))))
-    ax.tick_params(axis="y", which="major", direction="out", length=3.5, width=0.6,
-                   labelsize=7)
-    ax.yaxis.grid(True, which="major", color="#F0F0F0", linewidth=0.3, zorder=0)
+    # ── Y-axis ──
+    ax.set_ylim(0, 105)
+    ax.yaxis.set_major_locator(MultipleLocator(20))
+    ax.yaxis.set_minor_locator(AutoMinorLocator(2))
+
+    def _pct_formatter(v, _):
+        if np.isclose(v, 0):
+            return ""
+        return f"{int(v)}%"
+
+    ax.yaxis.set_major_formatter(FuncFormatter(_pct_formatter))
+    ax.tick_params(axis="y", which="major", direction="out", length=5,
+                   width=1.0, labelsize=7)
+    ax.tick_params(axis="y", which="minor", direction="out", length=3,
+                   width=0.7)
 
     if show_ylabel:
-        ax.set_ylabel("Bits of supervision", fontsize=9, labelpad=4)
+        ax.set_ylabel("Compression (%)", fontsize=9, labelpad=4)
     else:
         ax.set_ylabel("")
-    sns.despine(ax=ax, right=True, top=True, offset=3)
+
+    # ── Spines (NeurIPS style: thick bottom + left) ──
+    sns.despine(ax=ax, right=True, top=True, offset=5)
+    ax.spines["bottom"].set_linewidth(1.5)
+    ax.spines["left"].set_linewidth(1.5)
