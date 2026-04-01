@@ -14,6 +14,7 @@ Usage:
 
 import sys
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
 
 sys.path.insert(0, ".")
 from manuscript.figures.fig_utils import (
@@ -23,6 +24,7 @@ from manuscript.figures.fig_utils import (
 OUTPUT = "manuscript/figures/supplementary/supp_s3_full_per_layer.png"
 
 PANELS = [
+    # (row, col, neural_dataset, region, title)
     (0, 0, "tvsd", "V1", "TVSD V1"),
     (0, 1, "tvsd", "V4", "TVSD V4"),
     (0, 2, "tvsd", "IT", "TVSD IT"),
@@ -54,10 +56,12 @@ def main():
         plot_per_layer_panel(ax, dataset, region, pca_folder=None,
                              title=title, show_ylabel=show_ylabel,
                              show_xlabel=show_xlabel, gran_levels=GRAN_CFGS)
+        # Increase marker sizes for readability at larger figsize
         for line in ax.get_lines():
             if line.get_marker() and line.get_marker() != 'None':
                 line.set_markersize(6.5)
 
+    # Shared legend at bottom
     handles = build_per_layer_legend(GRAN_CFGS)
     fig.legend(handles=handles, loc="lower center", fontsize=10,
                frameon=False, ncol=len(handles),
