@@ -74,9 +74,9 @@ CONDITIONS = [
 BASELINE_CHECKPOINT = "/data/ymehta3/default/cfg1000a/checkpoint_epoch_20.pth"
 RETURN_NODES = ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2"]
 
-SAVE_DIR = os.path.join(ROOT, "manuscript", "figures", "supplementary")
+SAVE_DIR = os.path.join(ROOT, "manuscript", "figures", "supplementary", "extra")
 DATA_PATH = os.path.join(SAVE_DIR, "supp_s8_data.npz")
-FIG_PATH = os.path.join(SAVE_DIR, "supp_s8_stimulus_robustness.png")
+FIG_PATH = os.path.join(SAVE_DIR, "stimulus_robustness.png")
 
 
 # ---------------------------------------------------------------------------

@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 from manuscript.figures.fig_utils import setup_style
 
 OUTPUT_DIR = os.path.dirname(os.path.abspath(__file__))
-OUTPUT_PATH = os.path.join(OUTPUT_DIR, "supp_s16_levels.png")
+OUTPUT_PATH = os.path.join(OUTPUT_DIR, "levels.png")
 DATA_PATH = os.path.join(
     os.path.dirname(__file__), "..", "..", "..",
     "experiments", "levels_evaluation", "levels_summary.csv"

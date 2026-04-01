@@ -22,7 +22,7 @@ from manuscript.figures.fig_utils import (
 )
 from plotters.plotter_utils import get_condition_summary
 
-OUTPUT = "manuscript/figures/supplementary/supp_s7_nsd_synthetic.png"
+OUTPUT = "manuscript/figures/supplementary/extra/nsd_synthetic.png"
 
 DATASET = "nsd_synthetic"
 

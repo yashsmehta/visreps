@@ -30,7 +30,7 @@ setup_style()
 # ── Configuration ─────────────────────────────────────────────────────
 DATA_PATH = "experiments/representation_analysis/figs/representation_summary_data.json"
 OUTPUT_DIR = os.path.dirname(os.path.abspath(__file__))
-OUTPUT_PATH = os.path.join(OUTPUT_DIR, "supp_s12_representation_summary.png")
+OUTPUT_PATH = os.path.join(OUTPUT_DIR, "representation_summary.png")
 
 EIGENSPECTRUM_LAYER = "fc1"
 N_EIGEN_COMPONENTS = 100

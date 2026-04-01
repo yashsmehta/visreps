@@ -29,7 +29,7 @@ from manuscript.figures.fig_utils import (
     setup_style,
 )
 
-OUTPUT = "manuscript/figures/supplementary/supp_s9_score_distributions.png"
+OUTPUT = "manuscript/figures/supplementary/extra/score_distributions.png"
 DB_PATH = "results.db"
 
 UNTRAINED_COLOR = "#AAAAAA"
