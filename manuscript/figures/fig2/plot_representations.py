@@ -19,9 +19,7 @@ sys.path.insert(0, ".")
 
 from manuscript.figures.fig2.utils import (
     SCRIPT_DIR, DATA_4WAY, INSET_LAYER, REPR_COLORS_4,
-    setup_style, get_thumbnail, repel_positions,
-    discrete_align_pcs, extract_class_indices,
-    compute_centroids, closest_image_to_centroid,
+    setup_style, get_thumbnail, discrete_align_pcs,
 )
 
 N_SAMPLE = 1000  # number of individual images to show as thumbnails
