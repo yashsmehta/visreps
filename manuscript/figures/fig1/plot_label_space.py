@@ -20,8 +20,8 @@ import seaborn as sns
 
 sys.path.insert(0, ".")
 
-from manuscript.figures.fig2.utils import (
-    TOP_ROW_CACHE, PALETTE_2, PALETTE_4, INSET_CLASSES,
+from manuscript.figures.fig1.utils import (
+    CACHE_PATH, PALETTE_2, PALETTE_4, INSET_CLASSES,
     setup_style, median_split_labels, add_top_row_insets,
 )
 
@@ -100,9 +100,8 @@ def plot_label_space(save=True):
     """Generate Figure 1a: label space PCA scatter."""
     setup_style()
 
-    # Load cached PCA data (lives in fig2/ alongside the representation data)
-    print(f"Loading top-row cache: {TOP_ROW_CACHE}")
-    raw = np.load(TOP_ROW_CACHE, allow_pickle=True)
+    print(f"Loading top-row cache: {CACHE_PATH}")
+    raw = np.load(CACHE_PATH, allow_pickle=True)
     top_pcs = raw["pcs"]
     top_class_labels = raw["class_labels"]
 
@@ -175,8 +174,8 @@ if __name__ == "__main__":
                         help="Recompute shared PCA data (requires GPU + CLIP)")
     args = parser.parse_args()
 
-    if args.recompute or not os.path.exists(TOP_ROW_CACHE):
-        from manuscript.figures.fig2.pc_scatter_explore import compute_and_cache
+    if args.recompute or not os.path.exists(CACHE_PATH):
+        from manuscript.figures.fig1.compute_pca_cache import compute_and_cache
         compute_and_cache()
 
     plot_label_space()
