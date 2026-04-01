@@ -12,11 +12,12 @@ All alignment scores use Spearman $\rho$ (RSA) unless otherwise noted. Error bar
 
 ---
 
-## Figure S1. Alternative PCA source models (ViT and DINOv3)
+## Figure S1. Coarseness--alignment across all PCA label sources
 
-![Figure S1](supp_s1_alternative_pca.png)
+![Figure S1A](supp_s1a_neural.png)
+![Figure S1B](supp_s1b_behavioral.png)
 
-**Figure S1. The coarseness--alignment relationship replicates with ViT- and DINOv3-derived labels across all benchmarks.** Same visual format as main Figure 3 (raw Spearman $\rho$, broken x-axis). **(A)** Neural alignment across species: coarseness curves for models trained on ViT-Base (crimson triangles) and DINOv3 (ViT-L/16, self-supervised; teal pentagons) labels, shown for TVSD V1 and IT (left column) and NSD early and ventral visual streams (right column). **(B)** Behavioral alignment: THINGS behavioral similarity. Both architectures produce the same qualitative pattern seen with AlexNet and CLIP in the main figures: early visual regions are flat across granularity, higher regions show a gradual increase, and THINGS coarse models exceed the 1000-way baseline (orange diamond). This demonstrates that the main findings are not contingent on the specific representational geometry of any single PCA source model.
+**Figure S1. The coarseness--alignment relationship replicates across all four PCA label sources.** Same visual format as main Figure 3 (raw Spearman $\rho$, broken x-axis, jittered scatter). Four PCA label sources are overlaid per panel: AlexNet (light blue circles), CLIP (dark blue squares), ViT (crimson triangles), and DINO (teal pentagons). **(A)** Neural alignment: 2$\times$2 grid showing TVSD (top) and NSD (bottom) for early visual cortex (V1 / early visual stream, left) and higher visual cortex (IT / ventral visual stream, right). **(B)** THINGS behavioral alignment. All four label sources produce the same qualitative pattern: early visual regions are flat across granularity, higher regions show a gradual increase, and coarse models match or exceed the 1000-way baseline (orange diamond) for THINGS. This demonstrates that the main findings are not contingent on the specific representational geometry of any single PCA source model.
 
 ---
 
@@ -40,7 +41,7 @@ All alignment scores use Spearman $\rho$ (RSA) unless otherwise noted. Error bar
 
 ![Figure S4](supp_s4_finegrained_roi.png)
 
-**Figure S4. Coarseness effects at finer anatomical resolution across six individual ROIs.** Normalized coarseness curves for V1 (**a**), V2 (**b**), V3 (**c**), hV4 (**d**), FFA (**e**), and PPA (**f**), all from NSD. Four PCA source architectures are plotted (AlexNet, CLIP, ViT, Pixels). Main Figure 3 collapses these into two broad streams (early = V1+V2+V3; ventral = hV4+higher areas); this figure reveals the pattern at the level of individual retinotopic and category-selective regions. Early visual areas (V1--V3) show the characteristic flat profile: even 2-class models achieve $\sim$90--100% of 1000-way alignment. The most pronounced granularity dependence appears in category-selective cortex: FFA shows a steep ramp from $\sim$50% to $\sim$100%, and PPA from $\sim$65% to $\sim$100%, consistent with these regions' known selectivity for fine-grained object categories. Notably, even for FFA and PPA, 32-class models approach the 1000-way ceiling.
+**Figure S4. Coarseness effects at finer anatomical resolution across six individual ROIs.** Raw RSA (Spearman $\rho$) coarseness curves for V1 (**a**), V2 (**b**), V3 (**c**), hV4 (**d**), FFA (**e**), and PPA (**f**), all from NSD. Same visual format as S1 (broken x-axis, jittered scatter). Two PCA source architectures are plotted: AlexNet (light blue circles) and CLIP (dark blue squares). Main Figure 3 collapses these into two broad streams (early = V1+V2+V3; ventral = hV4+higher areas); this figure reveals the pattern at the level of individual retinotopic and category-selective regions. Early visual areas (V1--V3) show the characteristic flat profile. The most pronounced granularity dependence appears in category-selective cortex (FFA, PPA), consistent with these regions' known selectivity for fine-grained object categories.
 
 ---
 
@@ -62,9 +63,9 @@ All alignment scores use Spearman $\rho$ (RSA) unless otherwise noted. Error bar
 
 ## Figure S7. Training convergence and classification accuracy
 
-![Figure S7](supp_s7_training_summary.png)
+![Figure S7](supp_s7_training_accuracy.png)
 
-**Figure S7. All models successfully learn their respective classification tasks, with accuracy monotonically decreasing as granularity increases.** Final test accuracy (epoch 20, mean $\pm$ SEM across 3 seeds) is plotted as a function of the number of output classes on a log$_2$ scale. Models trained on AlexNet-PCA labels are shown (representative across PCA source models). Two-class models achieve $\sim$96% accuracy, while 1000-way models reach $\sim$74% -- consistent with AlexNet-class architectures trained for 20 epochs. The monotonic decrease confirms that all coarse models converge and that differences in brain-model alignment (Figures 3--4) are not attributable to training failure. Error bars are smaller than markers, indicating high reproducibility across seeds.
+**Figure S7. All models successfully learn their respective classification tasks, with accuracy monotonically decreasing as granularity increases.** Final test accuracy (epoch 20, mean $\pm$ SEM across 3 seeds) for all four PCA label sources: AlexNet (light blue circles), CLIP (dark blue squares), ViT (crimson triangles), and DINO (teal pentagons). Same visual format as S1 (broken x-axis, jittered scatter). The 1000-way baseline (orange bar, right) is shared across all sources. AlexNet-derived labels produce the easiest classification tasks ($\sim$96% at 2-way, $\sim$74% at 64-way), while DINO labels produce the hardest ($\sim$78% at 2-way, $\sim$40% at 64-way). Despite these large accuracy differences, all four sources produce comparable brain alignment (Figure S1), confirming that classification accuracy is not the driver of alignment quality.
 
 ---
 
@@ -83,12 +84,12 @@ All alignment scores use Spearman $\rho$ (RSA) unless otherwise noted. Error bar
 source .venv/bin/activate
 
 # DB-only figures (no GPU needed)
-python manuscript/figures/supplementary/supp_s1_alternative_pca.py
+python manuscript/figures/supplementary/supp_s1_coarsegrain_models.py
 python manuscript/figures/supplementary/supp_s2_wordnet.py
 python manuscript/figures/supplementary/supp_s3_full_per_layer.py
 python manuscript/figures/supplementary/supp_s4_finegrained_roi.py
 python manuscript/figures/supplementary/supp_s6_reconstruction.py
-python manuscript/figures/supplementary/supp_s7_training_summary.py
+python manuscript/figures/supplementary/supp_s7_training_accuracy.py
 python manuscript/figures/supplementary/supp_s8_seed_variability.py
 
 # Image-loading figure (needs ImageNet access)
@@ -100,7 +101,7 @@ python manuscript/figures/supplementary/supp_s5_pc_poles.py
 | Source | Location | Used By |
 |--------|----------|---------|
 | Results DB | `results.db` | S1--S4, S6, S8 |
-| Training metrics | `/data/ymehta3/{alexnet_pca,default}/cfg*/training_metrics.csv` | S7 |
+| Training metrics | `/data/ymehta3/{alexnet_pca,clip_pca,vit_pca,dino_pca,default}/cfg*/training_metrics.csv` | S7 |
 | PCA poles | `datasets/obj_cls/imagenet/pca_poles/` | S5 |
 | Eigenvalues | `datasets/obj_cls/imagenet/eigenvectors_{alexnet,clip}.npz` | S5 |
 | ImageNet images | `IMAGENET_DATA_DIR` (from `.env`) | S5 |
