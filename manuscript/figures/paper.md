@@ -108,7 +108,7 @@ Six representative ImageNet images shown as 75×75 thumbnail insets with colored
 
 - *Key message:* The coarse-graining procedure is simple and principled -- median splits along PCA axes of a pretrained feature space. Same images, same coordinates, different label assignments.
 - *Script:* `manuscript/figures/fig1/plot_label_space.py` (with `--recompute` to regenerate PCA data)
-- *Data:* `manuscript/figures/fig2/pc_scatter_1per_class.npz` (shared cache)
+- *Data:* `manuscript/figures/fig1/pc_scatter_1per_class.npz` (cached PCA, regenerate via `--recompute`)
 - *Output:* `figure1a.png` + `figure1a.svg` (14.8" × 4.8", 300 DPI)
 
 ---
@@ -215,43 +215,55 @@ Y-axis shows raw Spearman rho. Log2 x-axis (2 -> 1000) with axis break before th
 
 **Narrative role:** Present the behavioral alignment results -- the most surprising finding. Coarse models *vastly* outperform 1000-way on human similarity judgments. This figure shows the result (coarseness log plot), compares against pretrained models, and visualizes the representational geometry via PC scatter panels. Per-concept analysis and RDMs are in Figure 5; architecture generalization is in Figure 6.
 
-### Layout -- 2 rows
+### Layout -- 2 rows × 4 columns (17" × 9")
 
 ```
-+---------------+------------------+----------------------------------+
-| A: Schematic  | B: Coarseness    | C: Model Comparison              |
-| (THINGS)      | (raw Spearman)   | (coarse vs 1K bars +             |
-| (placeholder) |                  |  pretrained scatter)             |
-+---------------+------------------+----------------------------------+
-| D: 4 PC scatter panels spanning full width                          |
-| [Behavioral]  [CNN 8-class CLIP] [AlexNet 1K]   [ViT-B/16 1K]     |
-+---------------------------------------------------------------------+
++---------------+------------------+------------------+------------------+
+| A: Schematic  | B: Coarseness    | C: Model         | D: Data          |
+| (THINGS task) | (raw Spearman)   |    Comparison     |    Efficiency    |
+|               |                  |    (pretrained    |    (10K images)  |
+|               |                  |     scatter)      |                  |
++---------------+------------------+------------------+------------------+
+| E: 4 PC scatter panels spanning full width                             |
+| [Behavioral]  [CNN 8-class CLIP]  [AlexNet 1K]     [ViT-B/16 1K]     |
++------------------------------------------------------------------------+
 ```
+
+Row height ratios: [1.0, 0.88]. GridSpec hspace=0.32, wspace=0.30.
 
 ### Panel A -- THINGS schematic
 
-Schematic placeholder of the THINGS behavioral similarity task: triplet odd-one-out judgments, how behavioral RDMs are constructed, and the comparison with model RDMs.
+Schematic of the THINGS behavioral similarity task: triplet odd-one-out display (airplane, cat, dog — airplane has red border as odd-one-out), hand cursor icon, participant/trial stats (12,340 participants, 4.7M judgments), THINGS mosaic (7×7 concept tiles) → similarity embedding heatmap (16×10 grid representing 66 dimensions).
 
 - *Key message:* Introduces the behavioral benchmark before showing results.
+- *Script:* `panel_schematic.py`
 
 ### Panel B -- Coarseness log plot (raw Spearman rho)
 
-Y-axis shows raw Spearman rho. Log2 x-axis (2 -> 1000). Three PCA architectures (AlexNet, CLIP, Pixels -- same blue/amber color scheme as Figure 3).
+Y-axis shows raw Spearman rho. Log2 x-axis (2 -> 1000) with broken axis before the 1000-way position. Three PCA architectures (AlexNet, CLIP, Pixels -- same blue/amber color scheme as Figure 3).
 
 - *Key pattern:* All coarse models sit well **above** the 1000-way baseline -- the coarse advantage is dramatic. Even 2-class models exceed 1000-way. This is the headline result.
 - *Error bars:* Bootstrap 95% CIs across 3 seeds.
-- *Architectures:* AlexNet (medium blue circle), CLIP (dark blue square), Pixels (brown triangle-down), 1K (warm amber diamond).
+- *Architectures:* AlexNet (medium blue circle), CLIP (dark blue square), Pixels (brown triangle-down), 1K (warm amber diamond at broken-axis position).
+- *X-label:* "Granularity"
 
 ### Panel C -- Model comparison (coarse vs 1K + pretrained)
 
-Grouped scatter of pretrained models (supervised, self-supervised, vision-language) with architecture markers (CNN pentagon, ViT star). The 8-class CLIP-repr. coarse model and 1000-way are highlighted.
+Grouped scatter of pretrained models in 3 groups (Supervised, Self-supervised, Vision-language) with architecture markers (CNN pentagon, ViT star). Color by group: supervised (sage green #4a8c6f), self-supervised (muted lavender #6b5b95), vision-language (magenta-rose #c4377a). Dashed reference line at CLIP 8-class coarse score. Model labels on right side with repulsion algorithm.
 
 - *Key visual:* The coarse-trained model (trained from scratch) matches or exceeds many large pretrained models on behavioral alignment.
 - *Key message:* Coarse supervision is not just better than 1000-way -- it competes with the best pretrained vision models.
 
-### Panel D -- PC scatter panels (representational geometry)
+### Panel D -- Data efficiency (low-data regime)
 
-Four side-by-side PC1 vs PC2 scatter plots of THINGS concept representations, each colored by 8 super-categories derived from the 27 THINGS categories. Representative images shown as insets at category extremes.
+Same log2 x-axis and y-axis limits as Panel B (synced via `ref_ax`). Shows CLIP-labeled coarse models (2-64) trained on ~10K images (1% of ImageNet). 1000-way full-dataset score as dashed orange line; 1000-way at 10K as orange diamond at broken-axis position.
+
+- *Key pattern:* Coarse models on 1% of the data beat 1000-way trained on the full 1.2M images.
+- *Data source:* Legacy CSV at `experiments/coarse_grain_benefits/data_efficiency/legacy_results/data_efficiency_results.csv` (10K regime, not in DB).
+
+### Panel E -- PC scatter panels (representational geometry)
+
+Four side-by-side PC1 vs PC2 scatter plots of THINGS concept representations (~1,854 concepts), each colored by **6 super-categories** derived from the 27 THINGS categories: Animal (#d62728), Food (#e88a1a), Clothing (#7b4fae), Tool (#2578b2), Vehicle (#27a34a), Plant (#d65fad). Unassigned concepts shown in gray (alpha=0.45). Three concept triplet (asparagus, engine, gorilla) shown as image insets with connecting lines on all 4 panels.
 
 1. **Behavioral** (ground truth) -- human similarity structure projected into 2D
 2. **CNN 8 classes (CLIP repr.)** -- coarse-trained model captures broad categorical separation
@@ -269,7 +281,9 @@ Four side-by-side PC1 vs PC2 scatter plots of THINGS concept representations, ea
 
 **(C) Model comparison.** Best coarse model (rho ~ 0.57) substantially exceeds 1000-way (rho ~ 0.39). Among pretrained models, CLIP-L/14 and DINOv2 approach but do not exceed the coarse-trained model. Supervised CNNs cluster well below.
 
-**(D) PC scatter panels.** The behavioral ground truth shows clear super-category clustering. The CNN 8-class CLIP model reproduces this structure well. AlexNet-1K and ViT-B/16 1K show different, more diffuse geometry.
+**(D) Data efficiency.** Coarse models trained on 10K images (1% of ImageNet) exceed 1000-way trained on the full 1.2M. Y-axis synced with Panel B for direct comparison.
+
+**(E) PC scatter panels.** The behavioral ground truth shows clear super-category clustering. The CNN 8-class CLIP model reproduces this structure well. AlexNet-1K and ViT-B/16 1K show different, more diffuse geometry.
 
 ---
 
@@ -298,38 +312,43 @@ Row 2:
 
 ### Panel A -- Category-sorted RDMs
 
-Three RDMs side by side -- the most visually striking evidence for *why* coarse models win:
+Three RDMs side by side (~380 eval concepts, rank-transformed, magma colormap) -- the most visually striking evidence for *why* coarse models win:
 
 1. **Behavioral** (ground truth) -- human similarity structure from THINGS triplet judgments
 2. **8 classes (CLIP repr.)** -- coarse model captures the broad block-diagonal structure
 3. **1000-class** -- over-differentiates within categories, weaker block boundaries
 
-Concepts grouped by 8 semantic super-categories (Living things, Body & apparel, Food & drink, Home, Tools & equipment, Vehicles, Tech & leisure, Other) with colored sidebars and boundary lines overlaid. Spearman rho shown in panel titles.
+Concepts grouped by **10 semantic super-categories** with colored left/bottom sidebars and white boundary lines overlaid. Spearman rho shown in subtitles. Super-categories (ordered):
+1. Living things (#2ca02c), 2. Body & apparel (#9467bd), 3. Food & drink (#d62728), 4. Furniture & decor (#ff7f0e), 5. Containers (#e6ab02), 6. Tools & implements (#1f77b4), 7. Sports & recreation (#17becf), 8. Vehicles (#8c564b), 9. Electronics & music (#e377c2), 10. Other (#bdbdbd).
+
+Within each super-category, concepts are sorted by hierarchical clustering (average linkage) for visual coherence.
 
 - *Key visual:* The coarse model RDM captures the broad categorical block structure of human similarity much better than the 1000-way model.
 - *Key message:* Fine-grained training emphasizes within-category distinctions at the expense of the broad between-category structure that dominates human similarity judgments.
 
-### Panel B -- Per-concept scatter plot (CLIP model)
+### Panel B -- Per-category scatter plot (CLIP model)
 
-Scatter plot of per-concept RSA contribution: **8 classes (CLIP repr.)** (y-axis) vs. 1000-way (x-axis). Identity line for reference. Points color-coded by THINGS semantic category with legend showing top categories favoring each model.
+Scatter plot of **per-super-category mean** RSA correlation: **8 classes (CLIP repr.)** (x-axis) vs. 1000-way (y-axis). Identity line for reference. Each of the 10 super-categories plotted as a distinct marker shape + color (matching the RDM sidebar palette). Annotations show "18%" and "82%" (proportion of individual concepts favoring each model).
 
-- *Key pattern:* ~82% of concepts fall above the diagonal (coarse model wins). Plants, animals, clothing accessories strongly favor coarse. Body parts, drinks favor 1000-way.
+- *Key pattern:* ~82% of concepts fall above the diagonal (coarse model wins). Living things, plants strongly favor coarse. Body & apparel favor 1000-way.
 - *Key message:* The coarse model advantage is pervasive across most concept categories, not a niche effect.
 
 ### Panel C -- Per-concept advantage histogram
 
-Histogram of per-concept advantage: `(coarse_score - 1000way_score)` for each eval concept. Positive = coarse wins, negative = 1000-way wins.
+Histogram of per-concept advantage: `(coarse_score - 1000way_score)` for each eval concept, with KDE overlays. Three KDE curves: all concepts (thick line), Living things (green fill), Body & apparel (purple fill). Positive = coarse wins, negative = 1000-way wins.
 
-- *Key visual:* Distribution clearly shifted right. Vertical line at zero. Green bins for coarse advantage, percentage annotations (18% vs 82%).
+- *Key visual:* Distribution clearly shifted right. Percentage annotations (18% vs 82%).
 - *Key message:* Quantifies that the advantage is broad -- not driven by outlier concepts.
+
+**Note:** DPI is currently 200 in the script — should be updated to 300 per manuscript guidelines.
 
 ### Observed results
 
-**(A) Category-sorted RDMs.** Three RDMs sorted by 8 super-categories. The behavioral RDM shows clear block-diagonal structure. The CLIP 8-class RDM (rho_s = 0.576) captures this block structure remarkably well. The 1000-way RDM (rho_s = 0.399) has weaker block boundaries -- it over-differentiates within categories.
+**(A) Category-sorted RDMs.** Three RDMs sorted by 10 super-categories. The behavioral RDM shows clear block-diagonal structure. The CLIP 8-class RDM (rho_s = 0.576) captures this block structure remarkably well. The 1000-way RDM (rho_s = 0.399) has weaker block boundaries -- it over-differentiates within categories.
 
-**(B) Per-concept scatter.** ~82% of concepts fall above the diagonal (coarse wins). Green-colored clusters (plants, animals) are consistently above; orange clusters (body parts, drinks) are below.
+**(B) Per-category scatter.** ~82% of individual concepts favor the coarse model. Living things consistently above the diagonal; Body & apparel below.
 
-**(C) Histogram.** Delta-rho distribution is right-shifted. 82% of concepts favor the coarse model, 18% favor 1000-way. The positive tail is substantially longer.
+**(C) Histogram.** Delta-rho distribution is right-shifted. 82% of concepts favor the coarse model, 18% favor 1000-way. The positive tail is substantially longer. KDE overlays highlight Living things (green) vs Body & apparel (purple) distributions.
 
 ---
 
@@ -349,11 +368,11 @@ Histogram of per-concept advantage: `(coarse_score - 1000way_score)` for each ev
 +-------------------+-------------------+-------------------+
 ```
 
-Each panel shows THINGS behavioral alignment (Spearman rho) vs. label granularity (2-64 classes on log x-axis), with a 1000-class baseline bar. All use CLIP-derived coarse labels, epoch 20, seed 1.
+Each panel shows THINGS behavioral alignment (Spearman rho) vs. granularity (2-64 classes on log x-axis, x-label: "Granularity"), with a 1000-class baseline diamond at the broken-axis position. All use CLIP-derived coarse labels, epoch 20, seed 1. Figure size: 13" × 4.0".
 
 ### Panels a-c -- THINGS coarseness per architecture
 
-Same style as Figure 4B: coarse conditions as blue scatter (CLIP labels), 1000-way as amber bar, untrained as dashed line. Axis break before 1000-way bar. ResNet-50 and ConvNeXt share y-axis limits for direct comparison; ViT-B/16 has its own scale.
+Same style as Figure 4B: coarse conditions as dark blue squares (CLIP labels), 1000-way as amber diamond (#e8963e) at broken-axis position with dashed reference line, untrained as gray dashed line. Axis break before 1000-way position. ResNet-50 and ConvNeXt share y-axis limits (both starting at 0.1) for direct comparison; ViT-B/16 has its own scale (also starting at 0.1). Architecture names shown as gray subtitles above each panel.
 
 - *Key message:* The coarseness finding generalizes across architectures. In all three architectures, coarse-trained models (as few as 2-8 classes) match or exceed the fully supervised 1000-class baseline on behavioral alignment.
 - *Architecture-specific patterns:*

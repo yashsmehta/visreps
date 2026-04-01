@@ -42,7 +42,7 @@ All 6 main figures (Fig. 1–6) are up to date. See `figures/paper.md` for detai
 
 | Figure | Script | Description |
 |--------|--------|-------------|
-| Fig 1 | — | Schematic (method and experimental pipeline overview) |
+| Fig 1 | `fig1/plot_label_space.py` | Schematic (method and experimental pipeline overview) |
 | Fig 2 | `fig2/figure2.py` | Categorical nature of representations (PCA scatter + learned representation scatter) |
 | Fig 3 | `fig3/figure3.py` | TVSD + NSD neural alignment (2×3 with schematics) |
 | Fig 4 | `fig4/figure4.py` | THINGS: schematic + coarseness + model comparison + PC scatter |

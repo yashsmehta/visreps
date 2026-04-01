@@ -1,0 +1,6 @@
+# Figure 5: The coarse-model advantage extends across semantic categories
+
+**Fig. 5 | The coarse-model advantage extends across semantic categories.**
+**a**, Representational dissimilarity matrices (RDMs) for the THINGS behavioural embedding (ground truth), a CNN trained with 8 CLIP-derived classes and a CNN trained with 1,000 classes. Evaluation concepts (*n* = 380) are grouped into 10 super-categories (coloured sidebars) and sorted by hierarchical clustering within each group. The 8-class model ($\rho_s$ = 0.576) captures the block-diagonal structure of human similarity more faithfully than the 1,000-class model ($\rho_s$ = 0.392).
+**b**, Mean per-concept alignment for each super-category, plotted for the 8-class model (x-axis) versus the 1,000-class model (y-axis). Points below the diagonal indicate categories where the coarse model achieves higher alignment. The majority of categories fall below the diagonal.
+**c**, Distribution of per-concept advantage ($\Delta\rho_s$ = 8-class $-$ 1,000-class) across all evaluation concepts. Kernel density estimates are shown separately for all concepts, Living things and Body & apparel. 82% of individual concepts are better captured by the coarse model.

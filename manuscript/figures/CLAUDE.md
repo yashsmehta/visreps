@@ -2,6 +2,8 @@
 
 6 main figures. Each lives in its own `fig{N}/` subfolder. Shared utilities in `fig_utils.py` and `things_utils.py`. All figures save at 300 DPI.
 
+Each figure directory contains a `figure{N}_description.md` file with the Nature-style figure caption — a self-contained description of the figure that a reader could understand by looking at the figure alongside the caption.
+
 ## Figure 1: Schematic (`fig1/`)
 
 Method and experimental pipeline overview. The schematic itself is assembled externally (vector editor).
@@ -10,22 +12,23 @@ Method and experimental pipeline overview. The schematic itself is assembled ext
 
 **Files:**
 - `plot_label_space.py` — generates figure1a
+- `utils.py` — constants (palettes, inset classes), style, median split labels, image inset overlay
+- `compute_pca_cache.py` — extracts CLIP features and caches PCA projections (run with `--recompute`)
 
-**Data:** `fig2/pc_scatter_1per_class.npz` (cached PCA coordinates, shared with fig2), ImageNet images via `IMAGENET_DATA_DIR`.
+**Data:** `pc_scatter_1per_class.npz` (cached PCA coordinates, 1 image per class), ImageNet images via `IMAGENET_DATA_DIR`.
 
 ## Figure 2: Categorical Nature of Representations (`fig2/`)
 
 Shows how coarse vs fine-grained labels shape learned representations.
 
-- **2b** (`figure2b.png`): Learned representation mosaic — FC1 PCA projections of CNN trained on 1000 classes vs 4 derived classes, with image thumbnails at per-class centroid positions.
+- **2b** (`figure2.png`): Learned representation mosaic — FC1 PCA projections of CNN trained on 1000 classes vs 4 derived classes, with image thumbnails at per-class centroid positions.
 
 **Files:**
 - `figure2.py` — orchestrator
-- `plot_representations.py` — generates 2b
-- `utils.py` — shared helpers (image loading, repulsion, PCA alignment, style) used by both fig1 and fig2
-- `pc_scatter_explore.py` — computes and caches shared PCA data
+- `plot_representations.py` — generates figure2
+- `utils.py` — image thumbnails, PCA sign-flip alignment, style
 
-**Data:** `pc_scatter_1per_class.npz` (cached PCA), `experiments/representation_analysis/2pcs_compare/data_{2,4}way_alexnet.npz`, ImageNet images via `IMAGENET_DATA_DIR`.
+**Data:** `experiments/representation_analysis/2pcs_compare/data_4way_alexnet.npz`, ImageNet images via `IMAGENET_DATA_DIR`.
 
 ## Figure 3: Neural Alignment Across Species (`fig3/`)
 
