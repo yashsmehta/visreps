@@ -1,10 +1,11 @@
 """Supplementary Figure S2: WordNet Hierarchy Labels -- Coarseness Comparison.
 
-Single-row bar plot (5 panels):
-  TVSD V1 | TVSD IT | NSD Early | NSD Ventral | THINGS
+Two separate figures:
+  (a) Neural: 2x2 scatter grid — TVSD (V1, IT) top row, NSD (Early, Ventral) bottom row
+  (b) Behavioral: single THINGS panel
 
-Each panel shows WordNet coarseness levels (2, 3, 4, 10, 20, 57) as blue-gradient
-bars, with horizontal reference lines for the 1000-way model and best PCA-coarse model.
+Each panel shows WordNet coarseness levels (2, 3, 4, 10, 20, 57) as scatter points
+with broken x-axis, a 1000-way diamond, and untrained baseline — matching Figure 3 style.
 
 Usage:
     python manuscript/figures/supplementary/supp_s2_wordnet.py
@@ -14,10 +15,10 @@ import sys
 import sqlite3
 
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 import matplotlib.gridspec as gridspec
-from matplotlib.ticker import AutoMinorLocator, FuncFormatter
+from matplotlib.ticker import AutoMinorLocator, FixedLocator, FuncFormatter, NullLocator
 from matplotlib.lines import Line2D
 import seaborn as sns
 
@@ -25,8 +26,11 @@ sys.path.insert(0, ".")
 sys.path.insert(0, "plotters")
 sys.path.insert(0, "manuscript/figures")
 
-from plotter_utils import get_condition_summary, get_bootstrap_ci
-from fig_utils import setup_style, find_best_coarse_model, DB_PATH
+from plotter_utils import get_condition_summary
+from fig_utils import (
+    setup_style, DB_PATH, BREAK_1K_POS, draw_xaxis_break,
+    EDGE_COLOR, EDGE_WIDTH, MARKER_SIZE,
+)
 
 OUTPUT_DIR = "manuscript/figures/supplementary"
 
@@ -34,44 +38,24 @@ OUTPUT_DIR = "manuscript/figures/supplementary"
 WORDNET_CFGS = [2, 3, 4, 10, 20, 57]
 WORDNET_FOLDER = "pca_labels_wordnet"
 
-# Blue gradient for WordNet bars (light -> dark, 6 levels)
-WORDNET_COLORS = {
-    2:  "#c6dbef",
-    3:  "#9ecae1",
-    4:  "#6baed6",
-    10: "#4292c6",
-    20: "#2171b5",
-    57: "#084594",
-}
+# WordNet style — distinct hexagon marker in forest green
+WORDNET_COLOR = "#2ca02c"
+WORDNET_MARKER = "h"  # hexagon
 
-# Reference line styles
-COLOR_1K = "#e6550d"
-COLOR_BEST_COARSE = "#2ca02c"
+# Reference styles (matching Figure 3)
+BASELINE_1K_COLOR = "#e8963e"
 
-# Panels
-PANELS = [
-    ("tvsd", "V1",                    "V1"),
-    ("tvsd", "IT",                    "IT"),
-    ("nsd",  "early visual stream",   "Early Visual"),
-    ("nsd",  "ventral visual stream", "Ventral Visual"),
-    ("things-behavior", "N/A",        "THINGS"),
+# Neural panel definitions (row, col, dataset, region, panel_title)
+NEURAL_PANELS = [
+    (0, 0, "tvsd", "V1",                    "V1"),
+    (0, 1, "tvsd", "IT",                    "IT"),
+    (1, 0, "nsd",  "early visual stream",   "Early Visual Stream"),
+    (1, 1, "nsd",  "ventral visual stream", "Ventral Visual Stream"),
 ]
-
-
-def _draw_rounded_bar(ax, x, height, width, color, hatch="", zorder=3,
-                      edgecolor="#555555", alpha=1.0):
-    rect = mpatches.FancyBboxPatch(
-        (x - width / 2, 0), width, height,
-        boxstyle=mpatches.BoxStyle("Round", pad=0.012, rounding_size=0.05),
-        facecolor=color, edgecolor=edgecolor, alpha=alpha,
-        linewidth=0.5, hatch=hatch, mutation_aspect=0.04, zorder=zorder,
-    )
-    ax.add_patch(rect)
 
 
 def get_wordnet_summary(neural_dataset, region, cfg_id):
     """Get mean score (+ cross-subject SEM) for a WordNet condition."""
-    import pandas as pd
     conn = sqlite3.connect(DB_PATH)
     df = pd.read_sql("""
         SELECT score FROM results
@@ -82,147 +66,267 @@ def get_wordnet_summary(neural_dataset, region, cfg_id):
     conn.close()
 
     if df.empty:
-        return {"mean": np.nan, "ci_low": np.nan, "ci_high": np.nan}
+        return np.nan, 0, 0
 
     mean = df["score"].mean()
     if len(df) > 1:
         sem = df["score"].std() / np.sqrt(len(df))
-        ci_low = mean - 1.96 * sem
-        ci_high = mean + 1.96 * sem
+        err_lo = 1.96 * sem
+        err_hi = 1.96 * sem
     else:
-        ci_low, ci_high = np.nan, np.nan
+        err_lo, err_hi = 0, 0
 
-    return {"mean": mean, "ci_low": ci_low, "ci_high": ci_high}
+    return mean, err_lo, err_hi
 
 
-def plot_wordnet_panel(ax, neural_dataset, region, title, show_ylabel=True):
-    """Draw one panel: WordNet bars + 1K and best-coarse reference lines."""
-    bar_width = 0.55
-    n = len(WORDNET_CFGS)
-    x = np.arange(n, dtype=float)
+def _format_broken_xaxis(ax, show_xlabel):
+    """Log-scale x-axis with WordNet ticks + broken gap before 1000."""
+    ax.set_xscale("log", base=2)
+    all_x = WORDNET_CFGS + [BREAK_1K_POS]
+    label_map = {v: str(v) for v in WORDNET_CFGS}
+    label_map[BREAK_1K_POS] = "1000"
+    ax.xaxis.set_major_locator(FixedLocator(all_x))
+    if show_xlabel:
+        ax.xaxis.set_major_formatter(FuncFormatter(
+            lambda val, pos: label_map.get(int(round(val)), "")))
+        ax.set_xlabel("Granularity", fontsize=9, labelpad=4)
+    else:
+        ax.xaxis.set_major_formatter(FuncFormatter(lambda val, pos: ""))
+    ax.xaxis.set_minor_locator(NullLocator())
+    ax.tick_params(axis="x", which="minor", bottom=False)
+    ax.tick_params(axis="x", which="major", length=3.5, width=0.7, labelsize=8)
+    ax.set_xlim(1.5, BREAK_1K_POS * 1.5)
 
-    vals = [get_wordnet_summary(neural_dataset, region, cfg) for cfg in WORDNET_CFGS]
 
-    baseline_1k = get_condition_summary(
+def _format_yaxis(ax, tick_interval=None):
+    """Y-axis with minor ticks, grid, and trimmed numeric labels."""
+    if tick_interval is not None:
+        from matplotlib.ticker import MultipleLocator
+        ax.yaxis.set_major_locator(MultipleLocator(tick_interval))
+    ax.tick_params(axis="y", which="major", direction="out", length=3.5, width=0.6)
+    ax.yaxis.set_minor_locator(AutoMinorLocator(2))
+    ax.tick_params(axis="y", which="minor", direction="out", length=2, width=0.4)
+    ax.yaxis.grid(True, which="major", color="#F0F0F0", linewidth=0.3, zorder=0)
+    ax.yaxis.set_major_formatter(FuncFormatter(
+        lambda v, _: f"{v:.2f}".rstrip("0").rstrip(".")))
+
+
+def plot_wordnet_scatter(ax, neural_dataset, region,
+                         show_ylabel=True, show_xlabel=True,
+                         show_untrained_label=False):
+    """Draw one scatter panel: WordNet points + 1K diamond + untrained baseline."""
+    # Fetch 1000-way baseline
+    bl = get_condition_summary(
         neural_dataset, region, "imagenet1k", 1000, "spearman", epoch=20, analysis="rsa")
-    best_coarse = find_best_coarse_model(neural_dataset, region)
+    bl_mean, bl_ci_low, bl_ci_high = bl["mean"], bl["ci_low"], bl["ci_high"]
 
-    all_means = [v["mean"] for v in vals if not np.isnan(v["mean"])]
-    ref_vals = [baseline_1k["mean"], best_coarse["mean"]]
-    ref_vals = [v for v in ref_vals if not np.isnan(v)]
-    y_max = max(all_means + ref_vals) * 1.22 if (all_means or ref_vals) else 0.1
-    ax.set_ylim(0, y_max)
+    # Fetch untrained baseline
+    un = get_condition_summary(
+        neural_dataset, region, "imagenet1k", 1000, "spearman", epoch=0, analysis="rsa")
+    untrained_mean = un["mean"]
 
-    if not np.isnan(baseline_1k["mean"]):
-        ax.axhline(baseline_1k["mean"], color=COLOR_1K, linestyle="-",
-                   linewidth=1.0, zorder=1, alpha=0.7)
-    if not np.isnan(best_coarse["mean"]):
-        ax.axhline(best_coarse["mean"], color=COLOR_BEST_COARSE, linestyle="--",
-                   linewidth=0.9, zorder=1, alpha=0.7)
+    # Collect all y-values for axis limits
+    all_y = []
+    if not np.isnan(bl_mean):
+        all_y.append(bl_mean)
+    if not np.isnan(untrained_mean):
+        all_y.append(untrained_mean)
 
-    plt.rcParams["hatch.color"] = "#666666"
-    for i, (cfg, val) in enumerate(zip(WORDNET_CFGS, vals)):
-        mean = val["mean"]
+    # WordNet scatter points (2, 3, 4, 10, 20, 57)
+    for cfg in WORDNET_CFGS:
+        mean, err_lo, err_hi = get_wordnet_summary(neural_dataset, region, cfg)
         if np.isnan(mean):
             continue
-        _draw_rounded_bar(ax, x[i], mean, bar_width, WORDNET_COLORS[cfg],
-                          hatch="/", edgecolor="#444444")
-        ci_lo, ci_hi = val.get("ci_low", np.nan), val.get("ci_high", np.nan)
-        if not np.isnan(ci_lo) and not np.isnan(ci_hi):
-            err_lo = max(mean - ci_lo, 0)
-            err_hi = max(ci_hi - mean, 0)
-            if err_lo > 0 or err_hi > 0:
-                ax.errorbar(x[i], mean, yerr=[[err_lo], [err_hi]],
-                            fmt="none", ecolor="#333333", elinewidth=0.6,
-                            capsize=2, capthick=0.6, zorder=5)
+        all_y.extend([mean - err_lo, mean + err_hi])
+        ax.errorbar(cfg, mean,
+                    yerr=[[err_lo], [err_hi]],
+                    fmt=WORDNET_MARKER, color=WORDNET_COLOR,
+                    markersize=MARKER_SIZE,
+                    markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
+                    capsize=1.5, capthick=0.5,
+                    ecolor=WORDNET_COLOR, elinewidth=0.7, zorder=4)
 
-    ax.set_xticks(x)
-    ax.set_xticklabels([str(c) for c in WORDNET_CFGS], fontsize=7)
-    ax.set_xlabel("WordNet classes", fontsize=8, labelpad=4)
-    ax.set_xlim(-0.55, n - 0.45)
-    ax.tick_params(axis="x", direction="out", bottom=False, length=0, pad=2)
+    # 1000-way diamond at break position
+    if not np.isnan(bl_mean):
+        bl_err_lo = max(bl_mean - bl_ci_low, 0) if not np.isnan(bl_ci_low) else 0
+        bl_err_hi = max(bl_ci_high - bl_mean, 0) if not np.isnan(bl_ci_high) else 0
+        ax.errorbar(BREAK_1K_POS, bl_mean,
+                    yerr=[[bl_err_lo], [bl_err_hi]],
+                    fmt="D", color=BASELINE_1K_COLOR, markersize=MARKER_SIZE,
+                    markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
+                    capsize=1.5, capthick=0.5,
+                    ecolor=BASELINE_1K_COLOR, elinewidth=0.7, zorder=5)
+        # Dashed reference line at 1000-way level
+        ax.plot([1.5, BREAK_1K_POS], [bl_mean, bl_mean],
+                color=BASELINE_1K_COLOR, linestyle="--",
+                linewidth=1.0, alpha=0.6, zorder=2, clip_on=False)
+
+    # Untrained baseline
+    if not np.isnan(untrained_mean):
+        ax.axhline(untrained_mean, color="#AAAAAA", linestyle="--",
+                    linewidth=1.25, alpha=0.6, zorder=2)
+        if show_untrained_label:
+            ax.text(0.97, untrained_mean, "Untrained",
+                    fontsize=8, fontstyle="italic", color="#999999",
+                    ha="right", va="bottom",
+                    transform=ax.get_yaxis_transform(), zorder=10)
+
+    # Axis formatting
+    if not all_y:
+        ax.text(0.5, 0.5, "No data", ha="center", va="center",
+                transform=ax.transAxes, fontsize=7, color="#888")
+        return
+
+    y_min, y_max = min(all_y), max(all_y)
+    y_range = y_max - y_min
+    ax.set_ylim(y_min - y_range * 0.12, y_max + y_range * 0.10)
+
+    _format_broken_xaxis(ax, show_xlabel)
+    draw_xaxis_break(ax)
+    _format_yaxis(ax)
 
     if show_ylabel:
-        ax.set_ylabel(r"Spearman $\rho$", fontsize=8, labelpad=3)
-    ax.set_title(title, fontsize=9, fontweight="bold", pad=5, color="#2c2c2c")
-
-    ax.yaxis.set_major_formatter(FuncFormatter(
-        lambda v, pos: "" if np.isclose(v, 0) else f"{v:.2f}"))
-    ax.yaxis.set_minor_locator(AutoMinorLocator(2))
-    ax.tick_params(axis="y", which="major", direction="out", length=3,
-                   width=0.5, labelsize=6.5)
-    ax.tick_params(axis="y", which="minor", direction="out", length=1.8, width=0.4)
-    ax.set_axisbelow(True)
+        ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=9, labelpad=4)
+    else:
+        ax.set_ylabel("")
     sns.despine(ax=ax, right=True, top=True, offset=3)
-    ax.spines["bottom"].set_linewidth(0.6)
-    ax.spines["left"].set_linewidth(0.6)
 
 
-def main():
+def plot_neural_figure():
+    """Generate the 2x2 neural figure (TVSD top, NSD bottom)."""
     setup_style()
     plt.rcParams.update({
-        "axes.linewidth": 0.6,
-        "xtick.major.width": 0.5,
-        "ytick.major.width": 0.5,
-        "font.size": 7,
+        "axes.labelsize": 9,
+        "axes.titlesize": 10,
+        "xtick.labelsize": 8,
+        "ytick.labelsize": 8,
+        "axes.linewidth": 0.7,
+        "xtick.major.width": 0.7,
+        "ytick.major.width": 0.7,
     })
 
-    fig = plt.figure(figsize=(14, 3.6))
+    fig = plt.figure(figsize=(11, 7.5))
     gs = gridspec.GridSpec(
-        1, 5, figure=fig,
-        wspace=0.12,
-        top=0.76, bottom=0.17, left=0.05, right=0.98,
+        2, 2, figure=fig,
+        wspace=0.25, hspace=0.30,
+        top=0.88, bottom=0.08, left=0.12, right=0.96,
     )
 
-    header_y = 0.87
-    header_kw = dict(fontsize=9.5, fontweight="bold", ha="center", va="bottom",
-                     color="#2c2c2c", fontfamily="sans-serif")
-
-    axes = [fig.add_subplot(gs[0, i]) for i in range(5)]
-
-    for idx, (ax, (nd, region, title)) in enumerate(zip(axes, PANELS)):
+    axes = {}
+    for row, col, nd, region, title in NEURAL_PANELS:
+        ax = fig.add_subplot(gs[row, col])
+        show_ylabel = (col == 0)
+        show_xlabel = (row == 1)
+        show_untrained = (row == 1)  # label untrained on bottom row only
         print(f"Drawing: {nd} / {region}")
-        plot_wordnet_panel(ax, nd, region, title, show_ylabel=(idx == 0))
+        plot_wordnet_scatter(ax, nd, region,
+                             show_ylabel=show_ylabel,
+                             show_xlabel=show_xlabel,
+                             show_untrained_label=show_untrained)
+        axes[(row, col)] = ax
 
-    # Section headers
-    def _mid_x(ax):
-        return ax.get_position().x0 + ax.get_position().width / 2
+    # Column headers (cortical level)
+    fig.canvas.draw()
+    for col, label in [(0, "Early Visual Cortex"), (1, "Higher Visual Cortex")]:
+        pos = axes[(0, col)].get_position()
+        x_center = (pos.x0 + pos.x1) / 2
+        fig.text(x_center, pos.y1 + 0.045, label,
+                 fontsize=11, fontweight="bold", color="#333333",
+                 ha="center", va="bottom")
 
-    tvsd_center = (_mid_x(axes[0]) + _mid_x(axes[1])) / 2
-    nsd_center = (_mid_x(axes[2]) + _mid_x(axes[3])) / 2
-    things_center = _mid_x(axes[4])
+    # Row headers (dataset + species, left side — two vertically-stacked rotated texts)
+    row_headers = {0: ("TVSD", "Macaque"), 1: ("NSD", "Human fMRI")}
+    for row_idx, (title, subtitle) in row_headers.items():
+        ax = axes[(row_idx, 0)]
+        pos = ax.get_position()
+        y_center = (pos.y0 + pos.y1) / 2
+        x_label = pos.x0 - 0.078
+        fig.text(x_label, y_center + 0.015, title,
+                 fontsize=11, fontweight="bold", color="#1a1a1a",
+                 ha="center", va="bottom", rotation=90, fontfamily="sans-serif")
+        fig.text(x_label, y_center - 0.015, subtitle,
+                 fontsize=8.5, fontweight="normal", color="#777777",
+                 fontstyle="italic",
+                 ha="center", va="top", rotation=90, fontfamily="sans-serif")
 
-    fig.text(tvsd_center, header_y, "TVSD (Macaque)", **header_kw)
-    fig.text(nsd_center, header_y, "NSD (Human fMRI)", **header_kw)
-    fig.text(things_center, header_y, "THINGS (Behavioral)", **header_kw)
+    # Region sub-labels above each panel
+    region_labels = {
+        (0, 0): "V1",       (0, 1): "IT",
+        (1, 0): "Early visual stream", (1, 1): "Ventral visual stream",
+    }
+    for key, label in region_labels.items():
+        pos = axes[key].get_position()
+        fig.text((pos.x0 + pos.x1) / 2, pos.y1 + 0.012, label,
+                 fontsize=9, color="#666666", ha="center", va="bottom")
 
-    # Vertical separators
-    def _gap_x(ax_l, ax_r):
-        return (ax_l.get_position().x1 + ax_r.get_position().x0) / 2
+    # Panel labels (a–d)
+    panel_labels = [(0, 0, "a"), (0, 1, "b"), (1, 0, "c"), (1, 1, "d")]
+    for row, col, label in panel_labels:
+        pos = axes[(row, col)].get_position()
+        fig.text(pos.x0 - 0.018, pos.y1 + 0.022, label,
+                 fontsize=13, fontweight="bold", va="bottom", ha="left")
 
-    for sx in [_gap_x(axes[1], axes[2]), _gap_x(axes[3], axes[4])]:
-        fig.add_artist(Line2D(
-            [sx, sx], [0.10, 0.80], transform=fig.transFigure,
-            color="#DCDCDC", linewidth=0.5, linestyle="-", zorder=0))
-
-    # Legend
+    # Legend (inside panel b — just WordNet marker)
     legend_handles = [
-        mpatches.Patch(facecolor="#4292c6", edgecolor="#444444", linewidth=0.5,
-                       hatch="/", label="WordNet coarse"),
-        Line2D([], [], color=COLOR_1K, linestyle="-", linewidth=1.0,
-               alpha=0.7, label="1000-way"),
-        Line2D([], [], color=COLOR_BEST_COARSE, linestyle="--", linewidth=0.9,
-               alpha=0.7, label="Best PCA-coarse"),
+        Line2D([], [], marker=WORDNET_MARKER, color="none",
+               markerfacecolor=WORDNET_COLOR,
+               markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
+               markersize=MARKER_SIZE, label="WordNet labels"),
     ]
-    fig.legend(handles=legend_handles, fontsize=7, loc="upper center",
-               bbox_to_anchor=(0.5, 0.99), frameon=True, edgecolor="#dddddd",
-               fancybox=False, handletextpad=0.4, borderpad=0.4,
-               labelspacing=0.3, framealpha=0.94, ncol=3)
+    axes[(0, 1)].legend(handles=legend_handles, fontsize=7.5, frameon=True,
+                        fancybox=False, framealpha=0.92, edgecolor="#dddddd",
+                        borderpad=0.5, handletextpad=0.4, labelspacing=0.3,
+                        loc="upper right")
 
-    out = f"{OUTPUT_DIR}/supp_s2_wordnet.png"
+    out = f"{OUTPUT_DIR}/supp_s2_wordnet_neural.png"
     fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()
+
+
+def plot_behavioral_figure():
+    """Generate the single-panel THINGS behavioral figure."""
+    setup_style()
+    plt.rcParams.update({
+        "axes.labelsize": 9,
+        "axes.titlesize": 10,
+        "xtick.labelsize": 8,
+        "ytick.labelsize": 8,
+        "axes.linewidth": 0.7,
+        "xtick.major.width": 0.7,
+        "ytick.major.width": 0.7,
+    })
+
+    fig, ax = plt.subplots(figsize=(5, 3.5))
+
+    print("Drawing: things-behavior / N/A")
+    plot_wordnet_scatter(ax, "things-behavior", "N/A",
+                         show_ylabel=True, show_xlabel=True)
+
+    ax.set_title("THINGS (Behavioral)", fontsize=11, fontweight="bold",
+                 color="#333333", pad=8)
+
+    # Legend — just WordNet marker
+    legend_handles = [
+        Line2D([], [], marker=WORDNET_MARKER, color="none",
+               markerfacecolor=WORDNET_COLOR,
+               markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
+               markersize=MARKER_SIZE, label="WordNet labels"),
+    ]
+    ax.legend(handles=legend_handles, fontsize=7.5, frameon=True,
+              fancybox=False, framealpha=0.92, edgecolor="#dddddd",
+              borderpad=0.5, handletextpad=0.4, labelspacing=0.3,
+              loc="upper right")
+
+    out = f"{OUTPUT_DIR}/supp_s2_wordnet_behavioral.png"
+    fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
+    print(f"Saved -> {out}")
+    plt.close()
+
+
+def main():
+    plot_neural_figure()
+    plot_behavioral_figure()
 
 
 if __name__ == "__main__":
