@@ -1,18 +1,8 @@
 """Figure 3: Neural alignment across species — TVSD + NSD.
 
-2 rows x 4 columns + schematic row on top:
-  Columns grouped by dataset: TVSD (macaque) | NSD (human)
-  Within each pair: bits-to-match | raw Spearman rho
-  Rows: early visual cortex (top) | higher visual cortex (bottom)
-
-  Schematics with example stimuli + species icons span each dataset pair.
-  Brain region insets (nilearn for human, SVG for macaque) on bits panels.
-
-Panel modules:
-  - panel_bits.py: Minimum bits of supervision to match 1000-way
-  - panel_raw.py: Raw Spearman rho scatter (all architectures)
-  - schematic_utils.py: Dataset schematics + brain insets
-  - shared.py: Style constants, data fetching, axis formatting
+2 rows (TVSD | NSD) x 3 cols (schematic | early cortex | higher cortex).
+Each data cell: horizontal lollipop strip (min classes to match 1K) above
+               raw Spearman rho scatter with broken x-axis.
 
 Usage:
     python manuscript/figures/fig3/figure3.py
@@ -25,13 +15,13 @@ import matplotlib.gridspec as gridspec
 from matplotlib.lines import Line2D
 
 sys.path.insert(0, "manuscript/figures")
-from fig_utils import MARKER_SIZE, EDGE_COLOR, EDGE_WIDTH, setup_style
+from fig_utils import EDGE_COLOR, EDGE_WIDTH, setup_style
 
 sys.path.insert(0, "manuscript/figures/fig3")
 from shared import ARCHITECTURES, ARCH_STYLE
 from panel_raw import plot_raw
-from panel_bits import plot_fcm
-from schematic_utils import draw_tvsd_schematic, draw_nsd_schematic, add_brain_inset
+from panel_bits import plot_lollipop
+from schematic_utils import draw_tvsd_schematic, draw_nsd_schematic
 
 OUTPUT_DIR = "manuscript/figures/fig3"
 
@@ -48,101 +38,104 @@ def main():
         "ytick.major.width": 0.7,
     })
 
-    fig = plt.figure(figsize=(14.5, 9.0))
+    fig = plt.figure(figsize=(14, 8.5))
 
-    # Outer grid: 3 rows (schematics + 2 data rows) x 2 cols (TVSD | NSD)
-    outer = gridspec.GridSpec(3, 2, figure=fig,
-                              height_ratios=[0.40, 1, 1],
-                              width_ratios=[1, 1],
-                              hspace=0.38, wspace=0.18,
-                              left=0.06, right=0.97, top=0.89, bottom=0.08)
+    # 2 rows (TVSD | NSD) x 3 cols (schematic | early | higher), equal widths
+    outer = gridspec.GridSpec(2, 3, figure=fig,
+                              height_ratios=[1, 1],
+                              width_ratios=[1, 1, 1],
+                              hspace=0.25, wspace=0.20,
+                              left=0.06, right=0.97, top=0.88, bottom=0.08)
 
-    # Inner grids: bits panels at 50% width of raw panels
-    inner_tvsd = [gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=outer[row, 0],
-                  wspace=0.35, width_ratios=[0.25, 0.75]) for row in (1, 2)]
-    inner_nsd = [gridspec.GridSpecFromSubplotSpec(1, 2, subplot_spec=outer[row, 1],
-                 wspace=0.35, width_ratios=[0.25, 0.75]) for row in (1, 2)]
-
-    # ── Schematics (row 0) ──
+    # ── Schematics (col 0, horizontal layout) ──
     ax_tvsd_schem = fig.add_subplot(outer[0, 0])
     draw_tvsd_schematic(ax_tvsd_schem)
 
-    ax_nsd_schem = fig.add_subplot(outer[0, 1])
+    ax_nsd_schem = fig.add_subplot(outer[1, 0])
     draw_nsd_schematic(ax_nsd_schem)
 
-    # ── Data panels (rows 1–2) ──
-    # Row 1 = early visual cortex, row 2 = higher visual cortex
-    # Columns: 0=bits, 1=raw (TVSD); 2=bits, 3=raw (NSD)
-    panel_specs = [
-        # (row, col, dataset, region, plot_fn, ylabel, xlabel, inner_grid, inner_col, extra_kw)
-        (1, 0, "tvsd", "V1",                    plot_fcm,  True,  False, inner_tvsd[0], 0, {}),
-        (1, 1, "tvsd", "V1",                    plot_raw,  False, False, inner_tvsd[0], 1, {}),
-        (1, 2, "nsd",  "early visual stream",   plot_fcm,  False, False, inner_nsd[0],  0, {}),
-        (1, 3, "nsd",  "early visual stream",   plot_raw,  False, False, inner_nsd[0],  1, {}),
-        (2, 0, "tvsd", "IT",                    plot_fcm,  True,  True,  inner_tvsd[1], 0, {}),
-        (2, 1, "tvsd", "IT",                    plot_raw,  False, True,  inner_tvsd[1], 1, {"show_untrained_label": True}),
-        (2, 2, "nsd",  "ventral visual stream", plot_fcm,  False, True,  inner_nsd[1],  0, {}),
-        (2, 3, "nsd",  "ventral visual stream", plot_raw,  False, True,  inner_nsd[1],  1, {"show_untrained_label": True}),
+    # ── Data panels (cols 1–2): each cell = lollipop + scatter ──
+    panel_defs = [
+        # (row, col, dataset, region, show_ylabel, show_xlabel)
+        (0, 1, "tvsd", "V1",                    True,  False),
+        (0, 2, "tvsd", "IT",                    False, False),
+        (1, 1, "nsd",  "early visual stream",   True,  True),
+        (1, 2, "nsd",  "ventral visual stream", False, True),
     ]
 
-    axes = {}
-    for row, col, ds, region, fn, ylabel, xlabel, inner, icol, extra_kw in panel_specs:
-        ax = fig.add_subplot(inner[0, icol])
-        fn(ax, ds, region, show_ylabel=ylabel, show_xlabel=xlabel, **extra_kw)
-        axes[(row, col)] = ax
+    axes_scatter = {}
+    axes_lollipop = {}
 
-    # ── Column-pair headers (dataset name + stimulus type subtitle) ──
-    for cols, schem_ax, title, subtitle in [
-        ((0, 1), ax_tvsd_schem, "TVSD", "Object images"),
-        ((2, 3), ax_nsd_schem,  "NSD",  "Natural scenes"),
+    for orow, ocol, ds, region, ylabel, xlabel in panel_defs:
+        inner = gridspec.GridSpecFromSubplotSpec(
+            2, 1, subplot_spec=outer[orow, ocol],
+            height_ratios=[0.14, 0.86], hspace=0.10)
+
+        ax_raw = fig.add_subplot(inner[1, 0])
+        show_untrained = (orow == 1)  # bottom row shows untrained label
+        plot_raw(ax_raw, ds, region,
+                 show_ylabel=ylabel, show_xlabel=xlabel,
+                 show_untrained_label=show_untrained)
+        axes_scatter[(orow, ocol)] = ax_raw
+
+        ax_lol = fig.add_subplot(inner[0, 0], sharex=ax_raw)
+        plot_lollipop(ax_lol, ds, region, show_ylabel=True)
+        axes_lollipop[(orow, ocol)] = ax_lol
+
+    # ── Force-align lollipop plot areas to scatter plot areas ──
+    for _ in range(2):
+        fig.canvas.draw()
+        for key in axes_lollipop:
+            scat_pos = axes_scatter[key].get_position()
+            lol_pos = axes_lollipop[key].get_position()
+            axes_lollipop[key].set_position(
+                [scat_pos.x0, lol_pos.y0, scat_pos.width, lol_pos.height])
+
+    # ── Row headers (dataset name + stimulus type, above schematics) ──
+    for schem_ax, title, subtitle in [
+        (ax_tvsd_schem, "TVSD", "Object images"),
+        (ax_nsd_schem,  "NSD",  "Natural scenes"),
     ]:
-        left = axes[(1, cols[0])].get_position().x0
-        right = axes[(1, cols[1])].get_position().x1
-        x_center = (left + right) / 2
-        y_top = schem_ax.get_position().y1
-        fig.text(x_center, y_top + 0.035, title,
-                 fontsize=14, fontweight="bold",
+        pos = schem_ax.get_position()
+        x_center = (pos.x0 + pos.x1) / 2
+        fig.text(x_center, pos.y1 + 0.030, title,
+                 fontsize=13, fontweight="bold",
                  color="#1a1a1a", ha="center", va="bottom")
-        fig.text(x_center, y_top + 0.015, subtitle,
-                 fontsize=10, color="#777777", fontstyle="italic",
+        fig.text(x_center, pos.y1 + 0.010, subtitle,
+                 fontsize=9, color="#777777", fontstyle="italic",
                  ha="center", va="bottom")
 
-    # ── Row labels ──
-    for row, label in [(1, "Early Visual\nCortex"), (2, "Higher Visual\nCortex")]:
-        pos = axes[(row, 0)].get_position()
-        fig.text(0.012, (pos.y0 + pos.y1) / 2, label,
-                 fontsize=10, fontweight="bold", color="#444444",
-                 ha="center", va="center", rotation=90, linespacing=1.3)
+    # ── Column headers (cortical level, above top-row data panels) ──
+    for col, label in [(1, "Early Visual Cortex"), (2, "Higher Visual Cortex")]:
+        pos = axes_lollipop[(0, col)].get_position()
+        x_center = (pos.x0 + pos.x1) / 2
+        fig.text(x_center, pos.y1 + 0.045, label,
+                 fontsize=11, fontweight="bold", color="#333333",
+                 ha="center", va="bottom")
 
-    # ── Sub-column labels ──
-    sub_labels = {
-        (1, 0): "Coarse feedback\ncompression",  (1, 1): "V1",
-        (1, 2): "Coarse feedback\ncompression",  (1, 3): "Early visual stream",
-        (2, 1): "IT",
-        (2, 3): "Ventral visual stream",
+    # ── Region sub-labels (above lollipops) ──
+    region_labels = {
+        (0, 1): "V1",       (0, 2): "IT",
+        (1, 1): "Early visual stream", (1, 2): "Ventral visual stream",
     }
-    for key, label in sub_labels.items():
-        pos = axes[key].get_position()
-        fig.text((pos.x0 + pos.x1) / 2, pos.y1 + 0.018, label,
+    for key, label in region_labels.items():
+        pos = axes_lollipop[key].get_position()
+        fig.text((pos.x0 + pos.x1) / 2, pos.y1 + 0.012, label,
                  fontsize=9, color="#666666", ha="center", va="bottom")
 
-    # ── Panel labels (a–h) ──
-    for i, key in enumerate([(1, 0), (1, 1), (1, 2), (1, 3),
-                             (2, 0), (2, 1), (2, 2), (2, 3)]):
-        pos = axes[key].get_position()
-        fig.text(pos.x0 - 0.015, pos.y1 + 0.028, chr(ord("a") + i),
+    # ── Panel labels (a–f) ──
+    # Schematics (a, d) use schematic axes; data panels (b, c, e, f) use lollipop axes
+    schem_panels = [(0, ax_tvsd_schem, "a"), (1, ax_nsd_schem, "d")]
+    for _, schem_ax, label in schem_panels:
+        pos = schem_ax.get_position()
+        fig.text(pos.x0 - 0.010, pos.y1 + 0.012, label,
                  fontsize=13, fontweight="bold", va="bottom", ha="left")
 
-    # ── Vertical separator between TVSD and NSD ──
-    tvsd_right = axes[(1, 1)].get_position().x1
-    nsd_left = axes[(1, 2)].get_position().x0
-    sep_x = (tvsd_right + nsd_left) / 2
-    bottom_y = axes[(2, 0)].get_position().y0 - 0.02
-    top_y = ax_tvsd_schem.get_position().y1 + 0.01
-    fig.add_artist(plt.Line2D(
-        [sep_x, sep_x], [bottom_y, top_y],
-        transform=fig.transFigure, color="#dddddd",
-        linewidth=0.8, zorder=0))
+    data_labels = [((0, 1), "b"), ((0, 2), "c"), ((1, 1), "e"), ((1, 2), "f")]
+    for key, label in data_labels:
+        pos = axes_lollipop[key].get_position()
+        fig.text(pos.x0 - 0.018, pos.y1 + 0.022, label,
+                 fontsize=13, fontweight="bold", va="bottom", ha="left")
 
     # ── Legend ──
     handles = [Line2D([], [], marker=ARCH_STYLE[k]["marker"], color="none",
@@ -150,15 +143,15 @@ def main():
                       markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
                       markersize=6, label=d)
                for k, _, d in ARCHITECTURES]
-    axes[(1, 1)].legend(handles=handles, fontsize=7.5, frameon=True,
+    axes_scatter[(0, 1)].legend(handles=handles, fontsize=7.5, frameon=True,
                         fancybox=False, framealpha=0.92, edgecolor="#dddddd",
                         borderpad=0.5, handletextpad=0.4, labelspacing=0.3,
                         title="Coarse label source", title_fontsize=7.5,
-                        loc="lower right")
+                        loc="right", bbox_to_anchor=(1.0, 0.35))
 
     # ── Save ──
     out = f"{OUTPUT_DIR}/figure3.png"
-    fig.savefig(out, dpi=200, bbox_inches="tight", facecolor="white", edgecolor="none")
+    fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()
 

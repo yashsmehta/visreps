@@ -29,6 +29,7 @@ TVSD_STIMULI = [
     ("butterfly", "butterfly_01b.jpg"),
     ("dog", "dog_01b.jpg"),
     ("hammer", "hammer_01b.jpg"),
+    ("flower", "flower_01b.jpg"),
 ]
 NSD_STIMULI = [
     "nsd_beach_kite.png",
@@ -36,6 +37,7 @@ NSD_STIMULI = [
     "nsd_parrots.png",
     "nsd_horse_girl.png",
     "nsd_tennis.png",
+    "nsd_cat_bucket.png",
 ]
 
 # Brain region highlight style
@@ -80,13 +82,14 @@ def load_nsd_image(filename, size=120):
 
 
 def add_image_to_ax(ax, img, xy, zoom=0.12, border_color="#cccccc", border_width=0.8):
-    """Place a PIL image on an axes as an AnnotationBbox with a border."""
+    """Place a PIL image on an axes as an AnnotationBbox with an optional border."""
     oi = OffsetImage(np.array(img), zoom=zoom)
     oi.image.axes = ax
-    ab = AnnotationBbox(oi, xy, frameon=True, pad=0.15,
+    frameon = border_width > 0
+    ab = AnnotationBbox(oi, xy, frameon=frameon, pad=0.15 if frameon else 0,
                         bboxprops=dict(edgecolor=border_color,
                                        linewidth=border_width,
-                                       facecolor="white"))
+                                       facecolor="white") if frameon else None)
     ax.add_artist(ab)
     return ab
 
@@ -131,74 +134,61 @@ def add_brain_inset(ax, brain_type, region, inset_bounds=(0.65, 0.58, 0.32, 0.38
 
 # ── Schematic panels ────────────────────────────────────────────────────
 
-def _place_svg_icon(ax, svg_path, xy, zoom, crop_box=None, flip_lr=False):
-    """Load an SVG, optionally crop/flip, and place on axes."""
-    img = load_svg_as_image(svg_path, width=400)
-    if crop_box:
-        w, h = img.size
-        img = img.crop((int(w * crop_box[0]), int(h * crop_box[1]),
-                         int(w * crop_box[2]), int(h * crop_box[3])))
+def _place_png_icon(ax, png_path, xy, zoom, flip_lr=False):
+    """Load a PNG and place on axes without a border."""
+    img = Image.open(png_path).convert("RGBA")
     if flip_lr:
         img = img.transpose(Image.FLIP_LEFT_RIGHT)
-    oi = OffsetImage(np.array(img), zoom=zoom)
-    ax.add_artist(AnnotationBbox(oi, xy, frameon=False))
+    add_image_to_ax(ax, img, xy, zoom=zoom, border_color="none", border_width=0)
 
 
-def _draw_schematic_base(ax, stimuli_loader, stim_items,
-                         species_svg, species_xy, species_zoom,
-                         device_svg, device_xy, device_zoom, device_label,
-                         species_crop=None, species_flip=False,
-                         device_crop=None):
-    """Shared layout: 5 images in horizontal strip → species icon + device."""
+def _draw_image_grid(ax, stimuli_loader, stim_items, grid_center,
+                     grid_width=0.30, grid_height=0.48, img_zoom=0.11,
+                     rows=2, cols=3):
+    """Draw a grid of stimulus images centered at grid_center."""
+    cx, cy = grid_center
+    xs = np.linspace(cx - grid_width / 2, cx + grid_width / 2, cols)
+    ys = np.linspace(cy + grid_height / 2, cy - grid_height / 2, rows)
+    idx = 0
+    for r in range(rows):
+        for c in range(cols):
+            if idx < len(stim_items):
+                img = stimuli_loader(stim_items[idx], size=250)
+                add_image_to_ax(ax, img, (xs[c], ys[r]), zoom=img_zoom,
+                                border_color="#cccccc", border_width=0.5)
+                idx += 1
+
+
+def _draw_schematic_base(ax, stimuli_loader, stim_items, icons):
+    """Shared layout: 3×2 image grid → right arrow → icon(s).
+
+    icons: list of (png_path, xy, zoom, flip_lr) tuples.
+    """
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.axis("off")
 
-    # 5 images in a horizontal strip
-    n = len(stim_items)
-    x_positions = np.linspace(0.04, 0.40, n)
-    for x, item in zip(x_positions, stim_items):
-        img = stimuli_loader(item, size=250)
-        add_image_to_ax(ax, img, (x, 0.45), zoom=0.15,
-                        border_color="#999999", border_width=1.2)
-
-    # Arrow: images → species
-    ax.annotate("", xy=(0.58, 0.45), xytext=(0.50, 0.45),
-                arrowprops=dict(arrowstyle="->,head_width=0.35,head_length=0.18",
-                                color="#666666", lw=2.5),
+    _draw_image_grid(ax, stimuli_loader, stim_items,
+                     grid_center=(0.25, 0.50), grid_width=0.28,
+                     grid_height=0.65, img_zoom=0.12,
+                     rows=3, cols=2)
+    ax.annotate("", xy=(0.55, 0.50), xytext=(0.47, 0.50),
+                arrowprops=dict(arrowstyle="->,head_width=0.22,head_length=0.10",
+                                color="#666666", lw=1.4),
                 zorder=5)
 
-    # Species icon
-    _place_svg_icon(ax, species_svg, species_xy, species_zoom,
-                    crop_box=species_crop, flip_lr=species_flip)
-
-    # Recording device icon
-    _place_svg_icon(ax, device_svg, device_xy, device_zoom,
-                    crop_box=device_crop)
-
-    # Device label only
-    ax.text(device_xy[0], 0.42, device_label, fontsize=6.5, ha="center",
-            va="top", color="#777777", fontstyle="italic", zorder=10)
+    for png_path, xy, zoom, flip_lr in icons:
+        _place_png_icon(ax, png_path, xy, zoom, flip_lr=flip_lr)
 
 
 def draw_tvsd_schematic(ax):
-    """TVSD schematic: object images → macaque brain + electrode array."""
+    """TVSD schematic: object images → monkey icon."""
     def _load(item, size):
         return load_things_image(item[0], item[1], size)
 
-    _draw_schematic_base(
-        ax,
-        stimuli_loader=_load,
-        stim_items=TVSD_STIMULI,
-        species_svg=ASSETS_DIR / "macaque_brain.svg",
-        species_xy=(0.74, 0.47),
-        species_zoom=0.30,
-        device_svg=ASSETS_DIR / "utah_array.svg",
-        device_xy=(0.93, 0.22),
-        device_zoom=0.20,
-        device_label="Electrode\narray",
-        device_crop=(0.05, 0.18, 0.75, 0.55),
-    )
+    _draw_schematic_base(ax, _load, TVSD_STIMULI, icons=[
+        (ASSETS_DIR / "monkey.png", (0.68, 0.50), 0.08, False),
+    ])
 
 
 def draw_nsd_schematic(ax):
@@ -206,17 +196,9 @@ def draw_nsd_schematic(ax):
     def _load(item, size):
         return load_nsd_image(item, size)
 
-    _draw_schematic_base(
-        ax,
-        stimuli_loader=_load,
-        stim_items=NSD_STIMULI,
-        species_svg=ASSETS_DIR / "human_head.svg",
-        species_xy=(0.72, 0.50),
-        species_zoom=0.32,
-        device_svg=ASSETS_DIR / "mri_scanner.svg",
-        device_xy=(0.92, 0.22),
-        device_zoom=0.22,
-        device_label="fMRI",
-        species_crop=(0, 0, 1.0, 0.65),
-        species_flip=True,
-    )
+    _draw_schematic_base(ax, _load, NSD_STIMULI, icons=[
+        (ASSETS_DIR / "human.png", (0.63, 0.50), 0.08, False),
+        (ASSETS_DIR / "fmri.png", (0.80, 0.50), 0.08, False),
+    ])
+
+

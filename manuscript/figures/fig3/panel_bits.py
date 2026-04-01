@@ -1,126 +1,141 @@
-"""Panel renderer: feedback coarseness margin (FCM) as rounded bar plot.
+"""Panel renderer: horizontal lollipop showing min classes to match 1000-way.
 
-FCM = (1 - log2(k*) / log2(1000)) * 100%, where k* is the minimum number
-of training classes whose alignment CI overlaps the 1000-way baseline.
-Higher FCM = the feedback signal can be coarser while preserving alignment.
-
-Visual style adapted from experiments/neurips_2025/fig2/bar_plot_nsd.py.
+Each lollipop is a thin stem from the y-axis to x=k*, where k* is the minimum
+number of training classes whose 95% CI overlaps the 1000-way baseline.
+A vertical dashed orange line at x=BREAK_1K_POS marks the 1000-way reference.
 """
 
 import sys
 
 import numpy as np
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 import seaborn as sns
-from matplotlib.ticker import MultipleLocator, AutoMinorLocator, FuncFormatter
+from matplotlib.ticker import FixedLocator, NullLocator
 
 sys.path.insert(0, "manuscript/figures/fig3")
 from shared import (
-    COARSE_CFGS, ARCH_STYLE,
+    COARSE_CFGS, ARCH_STYLE, BASELINE_1K_COLOR,
     fetch_baseline_ci, fetch_coarse_ci,
 )
 
-# Architectures shown in FCM panels (no Pixels)
-FCM_ARCHS = [
+sys.path.insert(0, "manuscript/figures")
+from fig_utils import BREAK_1K_POS, EDGE_COLOR, EDGE_WIDTH
+
+# AlexNet on bottom (y=0), CLIP on top (y=1)
+LOLLIPOP_ARCHS = [
     ("alexnet", "pca_labels_alexnet", "AlexNet"),
     ("clip",    "pca_labels_clip",    "CLIP"),
 ]
 
-BASELINE_BITS = np.log2(1000)  # ~9.97
+STEM_LW = 2.2
+MARKER_SZ = 6.5
+X_START = 1.5  # matches xlim left — stems start at the y-axis
 
 
-def _find_min_bits(dataset, folder, region, bl_ci_low):
-    """Find minimum training classes whose CI overlaps with baseline CI.
+def _draw_lollipop_break(ax):
+    """Draw interlocking jagged break through the gray lollipop box.
 
-    Returns log2(classes) for the first coarse condition whose ci_high >= bl_ci_low,
-    or NaN if no condition reaches the baseline.
+    The gray background keeps jagged edges on both sides of the break.
+    A white polygon fills the gap between the interlocking edges.
+    Uses pure axes-fraction coordinates for visual consistency on log axes.
     """
+    from matplotlib.patches import Polygon
+    import math
+
+    # Compute break midpoint as axes fraction (log2 scale)
+    x_lo, x_hi = 1.5, BREAK_1K_POS * 1.5
+    mid_data = math.exp((math.log(64) + math.log(BREAK_1K_POS)) / 2)
+    mid_frac = (math.log2(mid_data) - math.log2(x_lo)) / (math.log2(x_hi) - math.log2(x_lo))
+
+    trans = ax.transAxes
+
+    # Zigzag parameters (axes fraction)
+    n_teeth = 4
+    tooth_dx = 0.010   # how far each tooth protrudes into the gap
+    gap = 0.045        # base separation between edges
+    y_pts = np.linspace(-0.1, 1.1, n_teeth * 2 + 1)
+    zigzag = np.array([(-1) ** k for k in range(len(y_pts))])
+
+    # Interlocking: left edge bumps right when right edge bumps left
+    left_edge_x = mid_frac - gap / 2 + tooth_dx * zigzag
+    right_edge_x = mid_frac + gap / 2 - tooth_dx * zigzag  # inverted
+
+    # Single white polygon filling the gap between the two jagged edges
+    # Trace left edge top-to-bottom, then right edge bottom-to-top
+    verts = (list(zip(left_edge_x, y_pts))
+             + list(zip(right_edge_x[::-1], y_pts[::-1])))
+    ax.add_patch(Polygon(verts, facecolor="white", edgecolor="none",
+                         transform=trans, clip_on=False, zorder=9))
+
+    # Subtle edge lines on the gray side for definition
+    ax.plot(left_edge_x, y_pts, transform=trans, color='#bbbbbb',
+            linewidth=0.6, clip_on=True, zorder=11)
+    ax.plot(right_edge_x, y_pts, transform=trans, color='#bbbbbb',
+            linewidth=0.6, clip_on=True, zorder=11)
+
+
+def _find_min_classes(dataset, folder, region, bl_ci_low):
+    """Return the first coarse cfg whose ci_high >= bl_ci_low, else NaN."""
     for cfg in COARSE_CFGS:
         _, _, ci_high = fetch_coarse_ci(dataset, folder, region, cfg)
         if not np.isnan(ci_high) and ci_high >= bl_ci_low:
-            return np.log2(cfg)
+            return cfg
     return np.nan
 
 
-def plot_fcm(ax, dataset, region, show_ylabel=True, show_xlabel=True):
-    """Rounded bar chart: feedback coarseness margin per label source.
-
-    Style matches NeurIPS 2025 bar plots (FancyBboxPatch with rounded corners,
-    hatching, thick spines).
-    """
+def plot_lollipop(ax, dataset, region, show_ylabel=True):
+    """Horizontal lollipop strip: min classes to match 1000-way, per label source."""
     bl_mean, bl_ci_low, _ = fetch_baseline_ci(dataset, region)
     if np.isnan(bl_mean) or bl_mean == 0:
-        ax.text(0.5, 0.5, "No data", ha="center", va="center",
-                transform=ax.transAxes, fontsize=7, color="#888")
+        ax.axis("off")
         return
 
-    fcm_vals = []
-    for arch_key, folder, display in FCM_ARCHS:
-        min_bits = _find_min_bits(dataset, folder, region, bl_ci_low)
-        if np.isnan(min_bits):
-            fcm_vals.append((arch_key, display, np.nan))
-        else:
-            fcm = (1 - min_bits / BASELINE_BITS) * 100
-            fcm_vals.append((arch_key, display, fcm))
+    # Dim gray background
+    ax.set_facecolor("#f5f5f5")
 
-    positions = np.arange(len(fcm_vals))
-    bar_w = 0.6
+    y_positions = list(range(len(LOLLIPOP_ARCHS)))
 
-    # Set hatch color to grey (NeurIPS style)
-    original_hatch_color = plt.rcParams.get("hatch.color")
-    plt.rcParams["hatch.color"] = "grey"
+    for i, (arch_key, folder, display) in enumerate(LOLLIPOP_ARCHS):
+        style = ARCH_STYLE[arch_key]
+        k_star = _find_min_classes(dataset, folder, region, bl_ci_low)
+        y = y_positions[i]
 
-    for i, (arch_key, display, fcm) in enumerate(fcm_vals):
-        c = ARCH_STYLE[arch_key]["color"]
-        if np.isnan(fcm):
-            ax.text(positions[i], 5, "N/A", ha="center", va="bottom",
-                    fontsize=7, color="#999", fontstyle="italic")
+        if np.isnan(k_star):
+            # Faded stem to 64 indicating no match found
+            ax.plot([X_START, 64], [y, y], color=style["color"], linewidth=STEM_LW,
+                    alpha=0.25, solid_capstyle="round", zorder=3)
+            ax.text(64 * 1.15, y, "—", fontsize=7, color="#999",
+                    va="center", ha="left")
             continue
-        x0 = positions[i] - bar_w / 2
-        rect = mpatches.FancyBboxPatch(
-            (x0, 0), bar_w, fcm,
-            boxstyle=mpatches.BoxStyle("Round", pad=0.02, rounding_size=0.1),
-            facecolor=c, edgecolor="black",
-            linewidth=0.8, hatch="/", mutation_aspect=0.05, zorder=3,
-        )
-        ax.add_patch(rect)
 
-    # Restore hatch color
-    if original_hatch_color is not None:
-        plt.rcParams["hatch.color"] = original_hatch_color
+        # Thin stem from y-axis to k*
+        ax.plot([X_START, k_star], [y, y], color=style["color"], linewidth=STEM_LW,
+                solid_capstyle="round", zorder=3)
+        # Marker at k*
+        ax.plot(k_star, y, marker=style["marker"], color=style["color"],
+                markersize=MARKER_SZ, markeredgecolor=EDGE_COLOR,
+                markeredgewidth=EDGE_WIDTH, zorder=4)
 
-    # ── X-axis ──
-    ax.set_xticks(positions)
-    ax.set_xticklabels([d for _, d, _ in fcm_vals], fontsize=8)
-    ax.tick_params(axis="x", direction="out", bottom=False, top=False,
-                   length=4, width=1.0)
-    ax.set_xlim(-0.6, len(fcm_vals) - 0.4)
-    if show_xlabel:
-        ax.set_xlabel("Label source", fontsize=9, labelpad=4)
+    # 1000-way reference: vertical dashed line
+    ax.axvline(BREAK_1K_POS, color=BASELINE_1K_COLOR, linestyle="--",
+               linewidth=1.0, alpha=0.7, zorder=2)
 
-    # ── Y-axis ──
-    ax.set_ylim(0, 105)
-    ax.yaxis.set_major_locator(MultipleLocator(20))
-    ax.yaxis.set_minor_locator(AutoMinorLocator(2))
+    # ── Axis formatting ──
+    ax.set_ylim(-0.6, len(LOLLIPOP_ARCHS) - 0.4)
 
-    def _pct_formatter(v, _):
-        if np.isclose(v, 0):
-            return ""
-        return f"{int(v)}%"
-
-    ax.yaxis.set_major_formatter(FuncFormatter(_pct_formatter))
-    ax.tick_params(axis="y", which="major", direction="out", length=5,
-                   width=1.0, labelsize=7)
-    ax.tick_params(axis="y", which="minor", direction="out", length=3,
-                   width=0.7)
-
+    # Y-axis: architecture labels with ticks
+    ax.set_yticks(y_positions)
     if show_ylabel:
-        ax.set_ylabel("Compression (%)", fontsize=9, labelpad=4)
+        ax.set_yticklabels([d for _, _, d in LOLLIPOP_ARCHS], fontsize=7.5)
     else:
-        ax.set_ylabel("")
+        ax.set_yticklabels([])
+    ax.tick_params(axis="y", length=3, width=0.7, pad=3)
 
-    # ── Spines (NeurIPS style: thick bottom + left) ──
-    sns.despine(ax=ax, right=True, top=True, offset=5)
-    ax.spines["bottom"].set_linewidth(1.5)
-    ax.spines["left"].set_linewidth(1.5)
+    # Hide x-axis ticks/labels (scatter below handles it)
+    ax.tick_params(axis="x", labelbottom=False, length=0, bottom=False)
+
+    # Left spine visible (aligns with scatter y-axis), others hidden
+    sns.despine(ax=ax, bottom=True, right=True, top=True, left=False)
+    ax.spines["left"].set_linewidth(0.7)
+
+    # Break in the gray box matching the scatter x-axis break
+    _draw_lollipop_break(ax)

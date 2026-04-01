@@ -41,9 +41,9 @@ def plot_top_panel(ax, pcs, labels, n_classes, colors, title,
                edgecolors="white", linewidths=0.3,
                rasterized=True, zorder=2)
 
-    ax.set_xlabel("PC 1", fontsize=10, labelpad=4)
+    ax.set_xlabel("PC 1", fontsize=10, labelpad=1)
     if show_ylabel:
-        ax.set_ylabel("PC 2", fontsize=10, labelpad=4)
+        ax.set_ylabel("PC 2", fontsize=10, labelpad=1)
     if subtitle:
         ax.set_title(title, fontsize=12, fontweight="bold", pad=18)
         ax.text(0.5, 1.01, subtitle, transform=ax.transAxes,
@@ -57,10 +57,10 @@ def plot_top_panel(ax, pcs, labels, n_classes, colors, title,
 
     for idx in [0, 1]:
         lo, hi = pcs[:, idx].min(), pcs[:, idx].max()
-        margin = (hi - lo) * 0.10
+        margin = (hi - lo) * 0.04
         (ax.set_xlim if idx == 0 else ax.set_ylim)(lo - margin, hi + margin)
 
-    sns.despine(ax=ax, offset=5, left=not show_ylabel)
+    sns.despine(ax=ax, offset=2, left=not show_ylabel)
 
     if decision_lines is not None:
         split_kw = dict(color="#222222", linestyle="--", linewidth=1.3,
@@ -110,73 +110,49 @@ def plot_label_space(save=True):
     labels_4 = median_split_labels(top_pcs, 4)
     colors_1k = _make_1k_colors(top_class_labels)
 
-    # Layout: [2-class | 4-class | 1000-class]
-    fig = plt.figure(figsize=(14, 4.8))
-    gs = gridspec.GridSpec(1, 3, figure=fig,
-                           width_ratios=[1, 1, 1.15], wspace=0.15,
-                           left=0.04, right=0.97, top=0.86, bottom=0.10)
-    axes = [fig.add_subplot(gs[0, i]) for i in range(3)]
+    # Layout: [1000-class | divider | 2-class | 4-class]
+    fig = plt.figure(figsize=(14.8, 4.8))
+    gs = gridspec.GridSpec(1, 4, figure=fig,
+                           width_ratios=[1.15, 0.02, 1, 1], wspace=0.12,
+                           left=0.01, right=0.99, top=0.97, bottom=0.06)
+    ax_1k = fig.add_subplot(gs[0, 0])
+    ax_div = fig.add_subplot(gs[0, 1])
+    ax_2 = fig.add_subplot(gs[0, 2])
+    ax_4 = fig.add_subplot(gs[0, 3])
 
-    plot_top_panel(axes[0], top_pcs, labels_2, 2, PALETTE_2, "",
-                   show_ylabel=True)
-    plot_top_panel(axes[1], top_pcs, labels_4, 4, PALETTE_4, "",
+    plot_top_panel(ax_1k, top_pcs, top_class_labels, 1000, colors_1k,
+                   "", point_size=20, alpha=0.70, show_ylabel=True)
+    plot_top_panel(ax_2, top_pcs, labels_2, 2, PALETTE_2, "",
                    show_ylabel=False)
-    plot_top_panel(axes[2], top_pcs, top_class_labels, 1000, colors_1k,
-                   "", point_size=20, alpha=0.70, show_ylabel=False)
+    plot_top_panel(ax_4, top_pcs, labels_4, 4, PALETTE_4, "",
+                   show_ylabel=False)
+
+    # Subtle vertical divider between fine-grained and coarse panels
+    ax_div.set_xlim(0, 1)
+    ax_div.set_ylim(0, 1)
+    ax_div.axvline(0.5, ymin=0.08, ymax=0.92, color="#cccccc",
+                   linewidth=1.2, linestyle="-", alpha=0.7)
+    ax_div.set_axis_off()
 
     # Image insets
     from dotenv import load_dotenv
     load_dotenv()
     imagenet_dir = os.environ.get("IMAGENET_DATA_DIR", "")
     if imagenet_dir and os.path.isdir(imagenet_dir):
-        for i, (labels, colors) in enumerate([
-            (labels_2, PALETTE_2),
-            (labels_4, PALETTE_4),
-            (top_class_labels, colors_1k),
-        ]):
-            add_top_row_insets(axes[i], top_pcs, top_class_labels,
+        for ax, labels, colors in [
+            (ax_1k, top_class_labels, colors_1k),
+            (ax_2, labels_2, PALETTE_2),
+            (ax_4, labels_4, PALETTE_4),
+        ]:
+            add_top_row_insets(ax, top_pcs, top_class_labels,
                                labels, colors, INSET_CLASSES,
-                               imagenet_dir, zoom=0.40, thumb_size=68)
+                               imagenet_dir, zoom=0.44, thumb_size=75)
     else:
         print(f"WARNING: ImageNet dir not found ({imagenet_dir}), skipping insets")
 
-    # Unified header
-    pos0 = axes[0].get_position()
-    pos1 = axes[1].get_position()
-    pos2 = axes[2].get_position()
-    header_y = pos0.y1 + 0.06
-    sub_y = pos0.y1 + 0.02
-
-    cx0 = (pos0.x0 + pos0.x1) / 2
-    cx1 = (pos1.x0 + pos1.x1) / 2
-    cx2 = (pos2.x0 + pos2.x1) / 2
-
-    fig.text(cx0, header_y, "2 classes", ha="center", va="bottom",
-             fontsize=12, fontweight="bold", color="#1a1a1a",
-             transform=fig.transFigure)
-    fig.text(cx1, header_y, "4 classes", ha="center", va="bottom",
-             fontsize=12, fontweight="bold", color="#1a1a1a",
-             transform=fig.transFigure)
-    fig.text(cx2, header_y, "1000 classes", ha="center", va="bottom",
-             fontsize=12, fontweight="bold", color="#1a1a1a",
-             transform=fig.transFigure)
-
-    fig.text(cx0, sub_y, "median split on PC 1", ha="center", va="bottom",
-             fontsize=8, color="#888888", fontstyle="italic",
-             transform=fig.transFigure)
-    fig.text(cx1, sub_y, "+ split on PC 2", ha="center", va="bottom",
-             fontsize=8, color="#888888", fontstyle="italic",
-             transform=fig.transFigure)
-    fig.text(cx2, sub_y, "default ImageNet", ha="center", va="bottom",
-             fontsize=8, color="#888888", fontstyle="italic",
-             transform=fig.transFigure)
-
-    gap_cx = (pos1.x1 + pos2.x0) / 2
-    fig.text(gap_cx, header_y + 0.005,
-             "8  \u00b7  16  \u00b7  32  \u00b7  64 classes",
-             ha="center", va="bottom",
-             fontsize=9.5, fontweight="normal", color="#999999",
-             transform=fig.transFigure)
+    # Nudge 1000-class panel left xlim to prevent chair inset overlapping PC2 label
+    xl = ax_1k.get_xlim()
+    ax_1k.set_xlim(xl[0] - (xl[1] - xl[0]) * 0.06, xl[1])
 
     if save:
         out_png = os.path.join(SCRIPT_DIR, "figure1a.png")
