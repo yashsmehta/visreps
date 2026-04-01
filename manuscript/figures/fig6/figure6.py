@@ -28,7 +28,8 @@ import seaborn as sns
 
 sys.path.insert(0, "manuscript/figures")
 from fig_utils import (
-    COARSE_CFGS, MARKER_SIZE, EDGE_COLOR, EDGE_WIDTH, setup_style,
+    COARSE_CFGS, MARKER_SIZE, EDGE_COLOR, EDGE_WIDTH, BREAK_1K_POS,
+    setup_style, draw_xaxis_break,
 )
 
 # ── Config ────────────────────────────────────────────────────────────────
@@ -177,33 +178,41 @@ def plot_things_coarseness(ax, model_name, display_name,
     y_max = max(all_y_vals)
     y_range = y_max - y_min if y_max > y_min else 0.05
 
-    # ── 1000-way dashed reference line ──
+    # ── 1000-way baseline: orange diamond at broken-axis position + dashed line ──
     if baseline:
+        bl_err_lo = max(baseline["score"] - baseline["ci_low"], 0) if pd.notna(baseline["ci_low"]) else 0
+        bl_err_hi = max(baseline["ci_high"] - baseline["score"], 0) if pd.notna(baseline["ci_high"]) else 0
+        ax.errorbar(BREAK_1K_POS, baseline["score"],
+                    yerr=[[bl_err_lo], [bl_err_hi]],
+                    fmt="D", color=BASELINE_1K_COLOR, markersize=MARKER_SIZE,
+                    markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
+                    capsize=1.5, capthick=0.5,
+                    ecolor=BASELINE_1K_COLOR, elinewidth=0.7, zorder=5)
         ax.axhline(baseline["score"], color=BASELINE_1K_COLOR, linestyle="--",
-                   linewidth=1.1, alpha=0.85, zorder=2)
-        y_offset = y_range * 0.015
-        ax.text(180 * 0.95, baseline["score"] + y_offset, "Trained, 1000 classes",
-                fontsize=6, fontstyle="italic", color=BASELINE_1K_COLOR,
-                ha="right", va="bottom", zorder=10)
+                   linewidth=1.0, alpha=0.6, zorder=2)
 
     # ── Untrained dashed line ──
     if untrained is not None:
         ax.axhline(untrained, color="#AAAAAA", linestyle="--",
                    linewidth=0.9, alpha=0.7, zorder=1)
         y_offset = y_range * 0.015
-        ax.text(180 * 0.95, untrained + y_offset, "Untrained",
+        ax.text(0.97, untrained + y_offset, "Untrained",
                 fontsize=6, fontstyle="italic", color="#AAAAAA",
-                ha="right", va="bottom", zorder=10)
+                ha="right", va="bottom",
+                transform=ax.get_yaxis_transform(), zorder=10)
 
-    # ── Axis formatting — clean log₂ x-axis, coarse ticks only ──
+    # ── Axis formatting — broken x-axis with 1000 ──
     ax.set_xscale("log", base=2)
-    ax.xaxis.set_major_locator(FixedLocator(COARSE_CFGS))
+    all_x = COARSE_CFGS + [BREAK_1K_POS]
+    label_map = {v: str(v) for v in COARSE_CFGS}
+    label_map[BREAK_1K_POS] = "1000"
+    ax.xaxis.set_major_locator(FixedLocator(all_x))
     ax.xaxis.set_major_formatter(FuncFormatter(
-        lambda val, pos: str(int(val)) if int(round(val)) in set(COARSE_CFGS) else ""))
+        lambda val, pos: label_map.get(int(round(val)), "")))
     ax.xaxis.set_minor_locator(NullLocator())
     ax.tick_params(axis="x", which="minor", bottom=False)
     ax.tick_params(axis="x", which="major", length=3.5, width=0.6, labelsize=10)
-    ax.set_xlim(1.5, 180)
+    ax.set_xlim(1.5, BREAK_1K_POS * 1.5)
 
     ax.tick_params(axis="y", which="major", direction="out", length=3.5,
                    width=0.6)
@@ -223,12 +232,13 @@ def plot_things_coarseness(ax, model_name, display_name,
         ax.set_ylim(y_min - y_range * 0.12, y_max + y_range * 0.10)
 
     if show_xlabel:
-        ax.set_xlabel("Training classes", fontsize=9, labelpad=6)
+        ax.set_xlabel("Granularity", fontsize=9, labelpad=6)
     if show_ylabel:
         ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=9, labelpad=3)
     else:
         ax.set_ylabel("")
     sns.despine(ax=ax, right=True, top=True, offset=3)
+    draw_xaxis_break(ax)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────
@@ -236,10 +246,10 @@ def plot_things_coarseness(ax, model_name, display_name,
 def main():
     setup_style()
     plt.rcParams.update({
-        "axes.labelsize": 9,
-        "axes.titlesize": 10,
-        "xtick.labelsize": 7.5,
-        "ytick.labelsize": 7.5,
+        "axes.labelsize": 10.5,
+        "axes.titlesize": 12,
+        "xtick.labelsize": 9,
+        "ytick.labelsize": 9,
         "axes.linewidth": 0.6,
         "xtick.major.width": 0.6,
         "ytick.major.width": 0.6,

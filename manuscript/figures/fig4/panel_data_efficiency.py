@@ -16,7 +16,7 @@ sys.path.insert(0, "plotters")
 from plotter_utils import get_condition_summary
 
 sys.path.insert(0, "manuscript/figures")
-from fig_utils import COARSE_CFGS, MARKER_SIZE, EDGE_COLOR, EDGE_WIDTH
+from fig_utils import COARSE_CFGS, MARKER_SIZE, EDGE_COLOR, EDGE_WIDTH, BREAK_1K_POS, draw_xaxis_break
 
 COARSE_CFGS_SET = set(COARSE_CFGS)
 
@@ -76,24 +76,33 @@ def plot_data_efficiency(ax, ref_ax=None):
         y_lo, y_hi = y_min - y_range * 0.12, y_max + y_range * 0.10
     ax.set_ylim(y_lo, y_hi)
 
-    # Dashed line: 1000-way trained on full 1.2M ImageNet
+    # 1000-way dashed line: full 1.2M ImageNet (no marker)
     if data_1m:
         ax.axhline(y=data_1m["score"], color=BASELINE_1K_COLOR, linestyle="--",
-                   linewidth=1.1, alpha=0.85, zorder=2)
-        ax.text(180 * 0.95, data_1m["score"] + (y_hi - y_lo) * 0.015,
-                "1,000 classes (100% training data)",
-                fontsize=6, fontstyle="italic", color=BASELINE_1K_COLOR,
-                ha="right", va="bottom", zorder=10)
+                   linewidth=1.0, alpha=0.6, zorder=2)
+        y_off = (y_hi - y_lo) * 0.02
+        ax.text(0.97, data_1m["score"] + y_off,
+                "Trained, 1000 classes",
+                fontsize=6.5, fontstyle="italic", color=BASELINE_1K_COLOR,
+                ha="right", va="bottom",
+                transform=ax.get_yaxis_transform(), zorder=10)
+        ax.text(0.97, data_1m["score"] - y_off,
+                "Full dataset",
+                fontsize=6.5, fontstyle="italic", color=BASELINE_1K_COLOR,
+                ha="right", va="top",
+                transform=ax.get_yaxis_transform(), zorder=10)
 
-    # Dashed line: 1000-way trained on 10K images
+    # 1000-way diamond: 10K images (1% training data, no dashed line)
     if 1000 in data_10k:
         d = data_10k[1000]
-        ax.axhline(y=d["score"], color=BASELINE_1K_COLOR, linestyle="--",
-                   linewidth=1.1, alpha=0.85, zorder=2)
-        ax.text(180 * 0.95, d["score"] + (y_hi - y_lo) * 0.015,
-                "1,000 classes (1% training data)",
-                fontsize=6, fontstyle="italic", color=BASELINE_1K_COLOR,
-                ha="right", va="bottom", zorder=10)
+        e_lo = max(d["score"] - d["ci_low"], 0) if not np.isnan(d["ci_low"]) else 0
+        e_hi = max(d["ci_high"] - d["score"], 0) if not np.isnan(d["ci_high"]) else 0
+        ax.errorbar(BREAK_1K_POS, d["score"],
+                    yerr=[[e_lo], [e_hi]],
+                    fmt="D", color=BASELINE_1K_COLOR, markersize=MARKER_SIZE,
+                    markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
+                    capsize=1.5, capthick=0.5,
+                    ecolor=BASELINE_1K_COLOR, elinewidth=0.7, zorder=5)
 
     # Coarse markers
     for cond in COARSE_CFGS:
@@ -109,15 +118,18 @@ def plot_data_efficiency(ax, ref_ax=None):
                     capsize=1.5, capthick=0.5,
                     ecolor=CLIP_STYLE["color"], elinewidth=0.7, zorder=4)
 
-    # ── Axis formatting ──
+    # ── Axis formatting (broken x-axis matching fig3) ──
     ax.set_xscale("log", base=2)
-    ax.xaxis.set_major_locator(FixedLocator(COARSE_CFGS))
+    all_x = COARSE_CFGS + [BREAK_1K_POS]
+    label_map = {v: str(v) for v in COARSE_CFGS}
+    label_map[BREAK_1K_POS] = "1000"
+    ax.xaxis.set_major_locator(FixedLocator(all_x))
     ax.xaxis.set_major_formatter(FuncFormatter(
-        lambda val, pos: str(int(val)) if int(round(val)) in COARSE_CFGS_SET else ""))
+        lambda val, pos: label_map.get(int(round(val)), "")))
     ax.xaxis.set_minor_locator(NullLocator())
     ax.tick_params(axis="x", which="minor", bottom=False)
     ax.tick_params(axis="x", which="major", direction="out")
-    ax.set_xlim(1.5, 180)
+    ax.set_xlim(1.5, BREAK_1K_POS * 1.5)
 
     ax.set_ylabel("")
     ax.yaxis.set_minor_locator(AutoMinorLocator(2))
@@ -128,8 +140,9 @@ def plot_data_efficiency(ax, ref_ax=None):
     ax.yaxis.grid(True, which="major", color="#F0F0F0", linewidth=0.3, zorder=0)
     ax.set_axisbelow(True)
 
-    ax.set_xlabel("Training classes", fontsize=9, labelpad=6)
+    ax.set_xlabel("Granularity", fontsize=9, labelpad=6)
     sns.despine(ax=ax, right=True, top=True, offset=4)
+    draw_xaxis_break(ax)
 
     ax.set_title("Low Data Regime", fontsize=11, fontweight="semibold", pad=8)
     ax.text(0.5, 0.96, "10K images (1% of ImageNet)", transform=ax.transAxes,

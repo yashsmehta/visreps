@@ -21,12 +21,13 @@ import matplotlib.gridspec as gridspec
 from matplotlib.lines import Line2D
 
 sys.path.insert(0, "manuscript/figures")
-from fig_utils import setup_style, draw_schematic_placeholder
+from fig_utils import setup_style
 
 sys.path.insert(0, "manuscript/figures/fig4")
 from panel_coarseness import plot_coarseness
 from panel_comparison import plot_comparison
 from panel_data_efficiency import plot_data_efficiency
+from panel_schematic import plot_schematic
 from panel_scatter import (
     load_pc_scatter_data, draw_image_insets,
     PC_PANELS,
@@ -42,10 +43,10 @@ OUTPUT_DIR = "manuscript/figures/fig4"
 def main():
     setup_style()
     plt.rcParams.update({
-        "axes.labelsize": 9,
-        "axes.titlesize": 10,
-        "xtick.labelsize": 8.5,
-        "ytick.labelsize": 8.5,
+        "axes.labelsize": 10.5,
+        "axes.titlesize": 12,
+        "xtick.labelsize": 10,
+        "ytick.labelsize": 10,
         "axes.linewidth": 0.8,
         "xtick.major.width": 0.8,
         "ytick.major.width": 0.8,
@@ -69,8 +70,7 @@ def main():
 
     # ── Top row panels ───────────────────────────────────────────────────
     ax_schematic = fig.add_subplot(gs[0, 0])
-    draw_schematic_placeholder(ax_schematic,
-                               "THINGS\nBehavioral Similarity\n(schematic)")
+    plot_schematic(ax_schematic)
 
     ax_coarse = fig.add_subplot(gs[0, 1])
     plot_coarseness(ax_coarse)

@@ -15,7 +15,10 @@ sys.path.insert(0, "plotters")
 from plotter_utils import get_condition_summary
 
 sys.path.insert(0, "manuscript/figures")
-from fig_utils import COARSE_CFGS, MARKER_SIZE, EDGE_COLOR, EDGE_WIDTH, UNTRAINED_LINE_STYLE, compute_jitter
+from fig_utils import (
+    COARSE_CFGS, MARKER_SIZE, EDGE_COLOR, EDGE_WIDTH, UNTRAINED_LINE_STYLE,
+    BREAK_1K_POS, compute_jitter, draw_xaxis_break,
+)
 
 COARSE_CFGS_SET = set(COARSE_CFGS)
 
@@ -77,9 +80,19 @@ def plot_coarseness(ax):
                         capsize=1.5, capthick=0.5,
                         ecolor=style["color"], elinewidth=0.7, zorder=4)
 
+    # 1000-way baseline: orange diamond at broken-axis position
+    bl_err_lo = max(bl_mean - bl["ci_low"], 0) if not np.isnan(bl["ci_low"]) else 0
+    bl_err_hi = max(bl["ci_high"] - bl_mean, 0) if not np.isnan(bl["ci_high"]) else 0
+    ax.errorbar(BREAK_1K_POS, bl_mean,
+                yerr=[[bl_err_lo], [bl_err_hi]],
+                fmt="D", color=BASELINE_1K_COLOR, markersize=MARKER_SIZE,
+                markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
+                capsize=1.5, capthick=0.5,
+                ecolor=BASELINE_1K_COLOR, elinewidth=0.7, zorder=5)
+
     # 1000-way dashed reference line
     ax.axhline(bl_mean, color=BASELINE_1K_COLOR, linestyle="--",
-               linewidth=1.1, alpha=0.85, zorder=2)
+               linewidth=1.0, alpha=0.6, zorder=2)
 
     # Untrained baseline (epoch=0)
     un = get_condition_summary("things-behavior", "N/A", "imagenet1k", 1000,
@@ -90,19 +103,19 @@ def plot_coarseness(ax):
 
     y_min, y_max = min(all_y_vals), max(all_y_vals)
     y_range = y_max - y_min
-    ax.text(180 * 0.95, bl_mean + y_range * 0.015, "Trained, 1000 classes",
-            fontsize=6, fontstyle="italic", color=BASELINE_1K_COLOR,
-            ha="right", va="bottom", zorder=10)
 
-    # ── Axis formatting ──
+    # ── Axis formatting (broken x-axis matching fig3) ──
     ax.set_xscale("log", base=2)
-    ax.xaxis.set_major_locator(FixedLocator(COARSE_CFGS))
+    all_x = COARSE_CFGS + [BREAK_1K_POS]
+    label_map = {v: str(v) for v in COARSE_CFGS}
+    label_map[BREAK_1K_POS] = "1000"
+    ax.xaxis.set_major_locator(FixedLocator(all_x))
     ax.xaxis.set_major_formatter(FuncFormatter(
-        lambda val, pos: str(int(val)) if int(round(val)) in COARSE_CFGS_SET else ""))
+        lambda val, pos: label_map.get(int(round(val)), "")))
     ax.xaxis.set_minor_locator(NullLocator())
     ax.tick_params(axis="x", which="minor", bottom=False)
     ax.tick_params(axis="x", which="major", direction="out")
-    ax.set_xlim(1.5, 180)
+    ax.set_xlim(1.5, BREAK_1K_POS * 1.5)
 
     ax.tick_params(axis="y", which="major", direction="out")
     ax.yaxis.set_minor_locator(AutoMinorLocator(2))
@@ -112,9 +125,10 @@ def plot_coarseness(ax):
         lambda v, _: f"{v:.2f}".rstrip("0").rstrip(".")))
     ax.set_ylim(y_min - y_range * 0.12, y_max + y_range * 0.10)
 
-    ax.set_xlabel("Training classes", fontsize=9, labelpad=6)
+    ax.set_xlabel("Granularity", fontsize=9, labelpad=6)
     ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=9, labelpad=3)
     sns.despine(ax=ax, right=True, top=True, offset=4)
+    draw_xaxis_break(ax)
     ax.set_title("Alignment vs. Granularity",
                  fontsize=11, fontweight="semibold", pad=8)
 
