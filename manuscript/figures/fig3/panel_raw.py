@@ -37,7 +37,7 @@ def _format_broken_xaxis(ax, show_xlabel):
 
 
 def plot_raw(ax, dataset, region, show_ylabel=True, show_xlabel=True,
-             show_untrained_label=False):
+             show_untrained_label=False, tick_interval=None):
     """Raw Spearman rho scatter (all architectures) + 1000-way marker + broken axis."""
     bl_mean, bl_ci_low, bl_ci_high = fetch_baseline_ci(dataset, region)
     if np.isnan(bl_mean) or bl_mean == 0:
@@ -48,6 +48,10 @@ def plot_raw(ax, dataset, region, show_ylabel=True, show_xlabel=True,
     untrained_mean = fetch_baseline(dataset, region, epoch=0)
 
     all_y = [bl_mean]
+    if not np.isnan(bl_ci_low):
+        all_y.append(bl_ci_low)
+    if not np.isnan(bl_ci_high):
+        all_y.append(bl_ci_high)
     if not np.isnan(untrained_mean):
         all_y.append(untrained_mean)
 
@@ -55,7 +59,9 @@ def plot_raw(ax, dataset, region, show_ylabel=True, show_xlabel=True,
     for arch_idx, (arch_key, folder, _) in enumerate(ARCHITECTURES):
         style = ARCH_STYLE[arch_key]
         means, errs_lo, errs_hi = fetch_arch_data(dataset, folder, region)
-        all_y.extend(m for m in means if not np.isnan(m))
+        for i, m in enumerate(means):
+            if not np.isnan(m):
+                all_y.extend([m - errs_lo[i], m + errs_hi[i]])
         jitter = compute_jitter(arch_idx, len(ARCHITECTURES))
 
         for i, cfg in enumerate(COARSE_CFGS):
@@ -100,7 +106,7 @@ def plot_raw(ax, dataset, region, show_ylabel=True, show_xlabel=True,
     _format_broken_xaxis(ax, show_xlabel)
     draw_xaxis_break(ax)
     ax.set_ylim(y_min - y_range * 0.12, y_max + y_range * 0.10)
-    format_yaxis(ax)
+    format_yaxis(ax, tick_interval=tick_interval)
 
     if show_ylabel:
         ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=9, labelpad=4)

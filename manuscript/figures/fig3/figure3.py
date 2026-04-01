@@ -56,17 +56,17 @@ def main():
 
     # ── Data panels (cols 1–2): each cell = lollipop + scatter ──
     panel_defs = [
-        # (row, col, dataset, region, show_ylabel, show_xlabel)
-        (0, 1, "tvsd", "V1",                    True,  False),
-        (0, 2, "tvsd", "IT",                    False, False),
-        (1, 1, "nsd",  "early visual stream",   True,  True),
-        (1, 2, "nsd",  "ventral visual stream", False, True),
+        # (row, col, dataset, region, show_ylabel, show_xlabel, tick_interval)
+        (0, 1, "tvsd", "V1",                    True,  False, None),
+        (0, 2, "tvsd", "IT",                    False, False, 0.05),
+        (1, 1, "nsd",  "early visual stream",   True,  True,  None),
+        (1, 2, "nsd",  "ventral visual stream", False, True,  None),
     ]
 
     axes_scatter = {}
     axes_lollipop = {}
 
-    for orow, ocol, ds, region, ylabel, xlabel in panel_defs:
+    for orow, ocol, ds, region, ylabel, xlabel, ytick in panel_defs:
         inner = gridspec.GridSpecFromSubplotSpec(
             2, 1, subplot_spec=outer[orow, ocol],
             height_ratios=[0.14, 0.86], hspace=0.10)
@@ -75,7 +75,8 @@ def main():
         show_untrained = (orow == 1)  # bottom row shows untrained label
         plot_raw(ax_raw, ds, region,
                  show_ylabel=ylabel, show_xlabel=xlabel,
-                 show_untrained_label=show_untrained)
+                 show_untrained_label=show_untrained,
+                 tick_interval=ytick)
         axes_scatter[(orow, ocol)] = ax_raw
 
         ax_lol = fig.add_subplot(inner[0, 0], sharex=ax_raw)
