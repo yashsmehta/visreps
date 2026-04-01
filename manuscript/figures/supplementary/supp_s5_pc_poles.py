@@ -35,14 +35,18 @@ MODELS = {
     "alexnet": {
         "poles_file": "pca_poles_alexnet.csv",
         "eigvec_file": "eigenvectors_alexnet.npz",
-        "display": "AlexNet",
+        "display": "AlexNet representations",
     },
     "clip": {
         "poles_file": "pca_poles_clip_vit.csv",
         "eigvec_file": "eigenvectors_clip.npz",
-        "display": "CLIP ViT-L/14",
+        "display": "CLIP representations",
     },
 }
+
+# Sub-header colors
+LEAST_ACTIVATING_COLOR = "#1b5e20"   # dark green
+MOST_ACTIVATING_COLOR = "#e65100"    # deep orange
 
 N_PCS = 6
 N_PER_POLE = 5
@@ -88,18 +92,23 @@ def load_model_data(model_key: str, imagenet_dir: str):
 
 def make_figure(model_data: dict) -> plt.Figure:
     """Create composite figure with both models side by side."""
-    n_cols_per_block = 2 * N_PER_POLE + 1  # 5 high + 1 gap + 5 low = 11
+    # Layout: 5 low + gap + 5 high per block, with PC labels before each block
+    n_cols_per_block = 2 * N_PER_POLE + 1  # 5 low + 1 gap + 5 high = 11
 
     cell_size = 0.75
     gap_ratio = 0.3
     model_gap = 1.0
-    left_margin = 0.9
+    pc_label_ratio = 0.6  # space for PC label column per model
+    left_margin = 0.1
     top_margin = 0.7
     bottom_margin = 0.1
 
     block_ratios = [1.0] * N_PER_POLE + [gap_ratio] + [1.0] * N_PER_POLE
     model_gap_ratio = model_gap / cell_size
-    all_ratios = block_ratios + [model_gap_ratio] + block_ratios
+    # Each model block: pc_label + 11 image columns
+    all_ratios = ([pc_label_ratio] + block_ratios
+                  + [model_gap_ratio]
+                  + [pc_label_ratio] + block_ratios)
 
     fig_w = left_margin + sum(r * cell_size for r in all_ratios)
     fig_h = top_margin + N_PCS * cell_size + bottom_margin
@@ -119,16 +128,22 @@ def make_figure(model_data: dict) -> plt.Figure:
     )
 
     model_keys = list(model_data.keys())
+    # Column offsets: model 0 starts at col 0 (label) + 1 (images)
+    # model 1 starts after model 0's block + gap
+    block_width = 1 + n_cols_per_block  # pc_label col + 11 image cols
+    model_offsets = [0, block_width + 1]  # +1 for the model gap column
 
     for model_idx, model_key in enumerate(model_keys):
         all_high, all_low, var_explained = model_data[model_key]
         display = MODELS[model_key]["display"]
 
-        col_offset = model_idx * (n_cols_per_block + 1)
+        base_col = model_offsets[model_idx]
+        pc_label_col = base_col          # column for PC labels
+        img_offset = base_col + 1        # first image column
 
         # Model title
-        block_left = gs[0, col_offset].get_position(fig).x0
-        block_right = gs[0, col_offset + n_cols_per_block - 1].get_position(fig).x1
+        block_left = gs[0, img_offset].get_position(fig).x0
+        block_right = gs[0, img_offset + n_cols_per_block - 1].get_position(fig).x1
         title_x = (block_left + block_right) / 2
         title_y = 1.0 - 0.15 / fig_h
 
@@ -136,39 +151,41 @@ def make_figure(model_data: dict) -> plt.Figure:
                  ha="center", va="bottom",
                  fontsize=12, fontweight="bold")
 
-        # Sub-headers
-        high_left = gs[0, col_offset].get_position(fig).x0
-        high_right = gs[0, col_offset + N_PER_POLE - 1].get_position(fig).x1
-        low_left = gs[0, col_offset + N_PER_POLE + 1].get_position(fig).x0
-        low_right = gs[0, col_offset + n_cols_per_block - 1].get_position(fig).x1
+        # Sub-headers: Least Activating (left, green) | Most Activating (right, orange)
+        low_left = gs[0, img_offset].get_position(fig).x0
+        low_right = gs[0, img_offset + N_PER_POLE - 1].get_position(fig).x1
+        high_left = gs[0, img_offset + N_PER_POLE + 1].get_position(fig).x0
+        high_right = gs[0, img_offset + n_cols_per_block - 1].get_position(fig).x1
 
         header_y = 1.0 - 0.40 / fig_h
-        fig.text((high_left + high_right) / 2, header_y, "Most Activating",
-                 ha="center", va="bottom", fontsize=8, color="#555555")
         fig.text((low_left + low_right) / 2, header_y, "Least Activating",
-                 ha="center", va="bottom", fontsize=8, color="#555555")
+                 ha="center", va="bottom", fontsize=8,
+                 fontweight="bold", color=LEAST_ACTIVATING_COLOR)
+        fig.text((high_left + high_right) / 2, header_y, "Most Activating",
+                 ha="center", va="bottom", fontsize=8,
+                 fontweight="bold", color=MOST_ACTIVATING_COLOR)
 
         for row_idx, pc in enumerate(range(1, N_PCS + 1)):
-            # PC label (only for left-most model)
-            if model_idx == 0:
-                tmp_ax = fig.add_subplot(gs[row_idx, 0])
-                bbox = tmp_ax.get_position()
-                row_center_y = (bbox.y0 + bbox.y1) / 2
-                tmp_ax.remove()
+            # PC label + variance % for EVERY model
+            tmp_ax = fig.add_subplot(gs[row_idx, pc_label_col])
+            bbox = tmp_ax.get_position()
+            row_center_y = (bbox.y0 + bbox.y1) / 2
+            label_x = (bbox.x0 + bbox.x1) / 2
+            tmp_ax.remove()
 
-                var_pct = var_explained[pc - 1]
-                fig.text(left_margin / fig_w - 0.01, row_center_y + 0.008,
-                         f"PC {pc}",
-                         ha="right", va="center",
-                         fontsize=10, fontweight="bold", color="#2a2a2a")
-                fig.text(left_margin / fig_w - 0.01, row_center_y - 0.018,
-                         f"{var_pct:.1f}%",
-                         ha="right", va="center",
-                         fontsize=7.5, color="#888888")
+            var_pct = var_explained[pc - 1]
+            fig.text(label_x, row_center_y + 0.008,
+                     f"PC {pc}",
+                     ha="center", va="center",
+                     fontsize=10, fontweight="bold", color="#2a2a2a")
+            fig.text(label_x, row_center_y - 0.018,
+                     f"{var_pct:.1f}%",
+                     ha="center", va="center",
+                     fontsize=7.5, color="#888888")
 
-            # High-pole images
-            for col, img in enumerate(all_high[pc]):
-                ax = fig.add_subplot(gs[row_idx, col_offset + col])
+            # Low-pole images (LEFT side)
+            for col, img in enumerate(all_low[pc]):
+                ax = fig.add_subplot(gs[row_idx, img_offset + col])
                 ax.imshow(img, interpolation="lanczos")
                 for spine in ax.spines.values():
                     spine.set_visible(True)
@@ -177,9 +194,9 @@ def make_figure(model_data: dict) -> plt.Figure:
                 ax.set_xticks([])
                 ax.set_yticks([])
 
-            # Low-pole images
-            for col, img in enumerate(all_low[pc]):
-                ax = fig.add_subplot(gs[row_idx, col_offset + N_PER_POLE + 1 + col])
+            # High-pole images (RIGHT side)
+            for col, img in enumerate(all_high[pc]):
+                ax = fig.add_subplot(gs[row_idx, img_offset + N_PER_POLE + 1 + col])
                 ax.imshow(img, interpolation="lanczos")
                 for spine in ax.spines.values():
                     spine.set_visible(True)
@@ -214,7 +231,7 @@ def main():
     print(f"\nCreating figure with {len(model_data)} model(s)...")
     fig = make_figure(model_data)
 
-    fig.savefig(OUTPUT, dpi=150, bbox_inches="tight", facecolor="white", edgecolor="none")
+    fig.savefig(OUTPUT, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
     plt.close(fig)
     print(f"Saved: {OUTPUT}")
 
