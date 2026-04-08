@@ -81,7 +81,8 @@ def load_nsd_image(filename, size=120):
         (size, size), Image.LANCZOS)
 
 
-def add_image_to_ax(ax, img, xy, zoom=0.12, border_color="#cccccc", border_width=0.8):
+def add_image_to_ax(ax, img, xy, zoom=0.12, border_color="#cccccc",
+                    border_width=0.8, zorder=3):
     """Place a PIL image on an axes as an AnnotationBbox with an optional border."""
     oi = OffsetImage(np.array(img), zoom=zoom)
     oi.image.axes = ax
@@ -90,6 +91,7 @@ def add_image_to_ax(ax, img, xy, zoom=0.12, border_color="#cccccc", border_width
                         bboxprops=dict(edgecolor=border_color,
                                        linewidth=border_width,
                                        facecolor="white") if frameon else None)
+    ab.set_zorder(zorder)
     ax.add_artist(ab)
     return ab
 
@@ -134,12 +136,13 @@ def add_brain_inset(ax, brain_type, region, inset_bounds=(0.65, 0.58, 0.32, 0.38
 
 # ── Schematic panels ────────────────────────────────────────────────────
 
-def _place_png_icon(ax, png_path, xy, zoom, flip_lr=False):
+def _place_png_icon(ax, png_path, xy, zoom, flip_lr=False, zorder=6):
     """Load a PNG and place on axes without a border."""
     img = Image.open(png_path).convert("RGBA")
     if flip_lr:
         img = img.transpose(Image.FLIP_LEFT_RIGHT)
-    add_image_to_ax(ax, img, xy, zoom=zoom, border_color="none", border_width=0)
+    add_image_to_ax(ax, img, xy, zoom=zoom, border_color="none",
+                    border_width=0, zorder=zorder)
 
 
 def _draw_image_grid(ax, stimuli_loader, stim_items, grid_center,
@@ -159,36 +162,53 @@ def _draw_image_grid(ax, stimuli_loader, stim_items, grid_center,
                 idx += 1
 
 
-def _draw_schematic_base(ax, stimuli_loader, stim_items, icons):
+def _draw_schematic_base(ax, stimuli_loader, stim_items, icons,
+                         arrow_xytext=(0.28, 0.50), arrow_xy=(0.62, 0.50),
+                         stats_lines=None):
     """Shared layout: 3×2 image grid → right arrow → icon(s).
 
     icons: list of (png_path, xy, zoom, flip_lr) tuples.
+    stats_lines: optional list of gray stats strings drawn below the scene.
     """
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.axis("off")
 
     _draw_image_grid(ax, stimuli_loader, stim_items,
-                     grid_center=(0.25, 0.50), grid_width=0.28,
-                     grid_height=0.65, img_zoom=0.12,
+                     grid_center=(0.14, 0.52), grid_width=0.24,
+                     grid_height=0.62, img_zoom=0.12,
                      rows=3, cols=2)
-    ax.annotate("", xy=(0.55, 0.50), xytext=(0.47, 0.50),
+
+    # Arrow drawn behind the icons (low zorder) so it tucks under the person.
+    ax.annotate("", xy=arrow_xy, xytext=arrow_xytext,
                 arrowprops=dict(arrowstyle="->,head_width=0.22,head_length=0.10",
-                                color="#666666", lw=1.4),
-                zorder=5)
+                                color="#888888", lw=1.4),
+                zorder=2)
 
     for png_path, xy, zoom, flip_lr in icons:
-        _place_png_icon(ax, png_path, xy, zoom, flip_lr=flip_lr)
+        _place_png_icon(ax, png_path, xy, zoom, flip_lr=flip_lr, zorder=6)
+
+    if stats_lines:
+        for i, line in enumerate(stats_lines):
+            ax.text(0.50, 0.08 - i * 0.08, line,
+                    fontsize=8, color="#888888", style="italic",
+                    ha="center", va="center", transform=ax.transAxes)
 
 
 def draw_tvsd_schematic(ax):
-    """TVSD schematic: object images → monkey icon."""
+    """TVSD schematic: object images → macaque icon."""
     def _load(item, size):
         return load_things_image(item[0], item[1], size)
 
-    _draw_schematic_base(ax, _load, TVSD_STIMULI, icons=[
-        (ASSETS_DIR / "monkey.png", (0.68, 0.50), 0.08, False),
-    ])
+    _draw_schematic_base(
+        ax, _load, TVSD_STIMULI,
+        icons=[(ASSETS_DIR / "monkey.png", (0.55, 0.50), 0.08, False)],
+        arrow_xytext=(0.28, 0.50), arrow_xy=(0.56, 0.50),
+        stats_lines=[
+            "~22,248 object images",
+            "2 macaques · V1, V4, IT",
+        ],
+    )
 
 
 def draw_nsd_schematic(ax):
@@ -196,9 +216,17 @@ def draw_nsd_schematic(ax):
     def _load(item, size):
         return load_nsd_image(item, size)
 
-    _draw_schematic_base(ax, _load, NSD_STIMULI, icons=[
-        (ASSETS_DIR / "human.png", (0.63, 0.50), 0.08, False),
-        (ASSETS_DIR / "fmri.png", (0.80, 0.50), 0.08, False),
-    ])
+    _draw_schematic_base(
+        ax, _load, NSD_STIMULI,
+        icons=[
+            (ASSETS_DIR / "human.png", (0.55, 0.50), 0.08, False),
+            (ASSETS_DIR / "fmri.png", (0.78, 0.50), 0.10, False),
+        ],
+        arrow_xytext=(0.28, 0.50), arrow_xy=(0.68, 0.50),
+        stats_lines=[
+            "73,000 natural scenes",
+            "8 human subjects · 7T fMRI",
+        ],
+    )
 
 
