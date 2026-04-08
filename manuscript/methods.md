@@ -8,7 +8,7 @@ A central challenge in studying how label granularity shapes learned representat
 
 We extract image representations from the entire ImageNet-1K training set (Deng et al., 2009; 1,261,406 images) using a pretrained source model, then apply principal component analysis (PCA) to identify the dominant axes of variance in the resulting feature space. These principal components serve as a natural basis for recursively partitioning images into progressively coarser categories.
 
-Concretely, all 1,261,406 feature vectors are mean-centred and projected onto the top 6 principal components. For each PC, a binary indicator is computed using a global median threshold: images whose projection falls above the median are assigned to one group, and those below to the other. To generate $K = 2^n$ classes, the binary indicators for the first $n$ PCs are concatenated and interpreted as a binary integer, yielding class assignments from 0 to $K - 1$. This produces a strictly nested hierarchy: the 2-class partition is a coarsening of the 4-class partition, which is a coarsening of the 8-class partition, and so on up to 64 classes (using 6 PCs). The resulting class sizes are approximately balanced (e.g., for the 32-class AlexNet-derived partition: minimum 15,923, maximum 76,584, mean 39,419 images per class).
+Concretely, all 1,261,406 feature vectors are mean-centred and projected onto the leading principal components. For each PC, a binary indicator is computed using a global median threshold: images whose projection falls above the median are assigned to one group, and those below to the other. To generate $K = 2^n$ classes, the binary indicators for the first $n$ PCs are concatenated and interpreted as a binary integer, yielding class assignments from 0 to $K - 1$. This produces a strictly nested hierarchy: the 2-class partition (using PC1 only) is a coarsening of the 4-class partition (PCs 1–2), which is a coarsening of the 8-class partition (PCs 1–3), and so on up to 64 classes (using PCs 1–6). The resulting class sizes are approximately balanced (e.g., for the 32-class AlexNet-derived partition: minimum 15,923, maximum 76,584, mean 39,419 images per class).
 
 ### Source models for label generation
 
@@ -23,6 +23,10 @@ To ensure that our findings are not contingent on the particular representationa
 
 All features are L2-normalised before PCA. The use of multiple source models — spanning supervised, self-supervised, and multimodal training — allows us to test whether the relationship between granularity and brain alignment is robust to the representational prior used to define the coarse labels.
 
+### Pixel-based labels (negative control)
+
+As a negative control, we also generate coarse labels from raw pixel statistics rather than learned representations. Images are resized to $64 \times 64$ pixels, flattened to 12,288-dimensional vectors, and PCA is applied directly on the raw pixel intensities (without L2 normalisation). The same median-split procedure is used, yielding 2–64 pixel-based classes. Because raw pixel PCA captures low-level image statistics (e.g., mean luminance, dominant colour) rather than semantic or object-level structure, models trained on pixel-derived labels serve as a baseline for the minimum alignment achievable with coarse labels that lack meaningful visual category structure.
+
 ### No information leakage
 
 Although the principal components are derived from pretrained source models, there is no information leakage into the downstream analysis. Every model evaluated in this study is trained entirely from scratch with randomly initialised weights. The PCA-based labels define only the classification targets; the network architecture, optimisation, and all model parameters are independent of the source model. This is a critical distinction from approaches that fine-tune or adapt pretrained representations, and it ensures that any alignment differences we observe are attributable to the granularity of the learning objective, not to transferred features.
@@ -35,11 +39,11 @@ Although the principal components are derived from pretrained source models, the
 
 A key feature of our experimental design is that every model is trained from scratch on the complete ImageNet training set (~1.26 million images). This stands in contrast to the common practice in brain-model alignment studies of evaluating off-the-shelf pretrained models from standard libraries (e.g., torchvision). While convenient, the off-the-shelf approach confounds the effects of architecture, training recipe, and label structure, since each pretrained model typically reflects a unique combination of these factors. By training all models ourselves under identical conditions — varying only the granularity of the classification labels — we achieve strict experimental control over the variable of interest.
 
-In total, we train 87 models: for each of the four PCA source models (AlexNet, CLIP, DINO, ViT), we train at six coarseness levels ($K \in \{2, 4, 8, 16, 32, 64\}$), each with 3 independent random seeds, yielding 72 coarse-trained models. We additionally train 3 baseline models at the standard 1000-class granularity (one per seed) and 3 untrained (randomly initialised) models that serve as a lower bound. Every trained model sees the same ~1.26 million images for the same number of epochs; only the label mapping changes.
+In total, we train over a hundred neural network models from scratch on ImageNet. For the primary experiments, custom CNN models are trained across five label sources (AlexNet, CLIP, DINOv3, ViT, and pixel-based) at six coarseness levels ($K \in \{2, 4, 8, 16, 32, 64\}$), each with multiple independent random seeds, alongside standard 1000-class baselines and untrained (randomly initialised) controls that serve as lower bounds. Every trained model sees the same ~1.26 million images for the same number of epochs; only the label mapping changes.
 
 ### Architecture
 
-All experiments use a custom CNN following the AlexNet blueprint (Krizhevsky et al., 2012), modified with modern training practices. The network comprises five convolutional layers and two fully connected hidden layers, with batch normalisation after every convolutional and fully connected layer (except the final classifier), ReLU activations, max pooling after layers 1, 2, and 5, and dropout ($p = 0.3$) before each fully connected layer. Adaptive average pooling reduces feature maps to $3 \times 3$ spatial dimensions before the classifier. The final output layer has $K$ units, where $K$ matches the granularity condition. He (Kaiming) initialisation is used throughout.
+The primary experiments use a custom CNN following the AlexNet blueprint (Krizhevsky et al., 2012), modified with modern training practices. The network comprises five convolutional layers and two fully connected hidden layers, with batch normalisation after every convolutional and fully connected layer (except the final classifier), ReLU activations, max pooling after layers 1, 2, and 5, and dropout ($p = 0.3$) before each fully connected layer. Adaptive average pooling reduces feature maps to $3 \times 3$ spatial dimensions before the classifier. The final output layer has $K$ units, where $K$ matches the granularity condition. He (Kaiming) initialisation is used throughout.
 
 | Layer | Operation | Channels/Units | Kernel | Stride | Padding | Spatial output |
 |---|---|---|---|---|---|---|
@@ -57,13 +61,27 @@ The total parameter count is approximately 34 million for 1000-class models and 
 
 ### Optimisation
 
-All models are trained for 20 epochs using AdamW (Loshchilov & Hutter, 2019) with a learning rate of $5 \times 10^{-4}$, weight decay of $10^{-3}$ (applied to weight matrices only; biases and batch normalisation parameters are excluded), and gradient clipping at a maximum norm of 1.0. We use cross-entropy loss with label smoothing ($\varepsilon = 0.1$) and a batch size of 32. The learning rate follows a cosine annealing schedule with linear warmup: the learning rate increases linearly from $0.25 \times \text{lr}$ to $\text{lr}$ over the first 2 epochs, then decays following a cosine schedule to $0.05 \times \text{lr}$ over the remaining 18 epochs.
+All custom CNN models are trained for 20 epochs using AdamW (Loshchilov & Hutter, 2019) with a learning rate of $5 \times 10^{-4}$, weight decay of $10^{-3}$ (applied to weight matrices only; biases and batch normalisation parameters are excluded), and gradient clipping at a maximum norm of 1.0. We use cross-entropy loss with label smoothing ($\varepsilon = 0.1$) and a batch size of 32. The learning rate follows a cosine annealing schedule with linear warmup: the learning rate increases linearly from $0.25 \times \text{lr}$ to $\text{lr}$ over the first 2 epochs, then decays following a cosine schedule to $0.05 \times \text{lr}$ over the remaining 18 epochs.
 
 Training images are resized to 256 pixels along the shorter edge, centre-cropped to $224 \times 224$, augmented with random horizontal flips ($p = 0.5$) and random rotations ($\pm 10°$), and normalised with ImageNet channel statistics (mean = [0.485, 0.456, 0.406], std = [0.229, 0.224, 0.225]). Evaluation images undergo the same resize and centre-crop without augmentation.
 
+### Architecture generalisation
+
+To test whether the granularity–alignment relationship extends beyond AlexNet-class CNNs, we train three additional architectures from scratch using CLIP-derived coarse labels: ResNet-50 (He et al., 2016), ConvNeXt-Base (Liu et al., 2022), and ViT-B/16 (Dosovitskiy et al., 2021). Each architecture is trained at six coarseness levels ($K \in \{2, 4, 8, 16, 32, 64\}$) plus a 1000-class baseline. All models are initialised with random weights (`pretrained_dataset=none`) and trained on the full ImageNet training set with architecture-specific optimisation recipes, as detailed below. All models use cross-entropy loss with label smoothing ($\varepsilon = 0.1$) and standard data augmentation (RandomResizedCrop to $224 \times 224$ + RandomHorizontalFlip). Results are evaluated at epoch 20 to match the custom CNN training horizon.
+
+| | ResNet-50 | ConvNeXt-Base | ViT-B/16 |
+|---|---|---|---|
+| Optimiser | SGD | AdamW | AdamW |
+| Learning rate | 0.0125 | $3 \times 10^{-4}$ | $3 \times 10^{-4}$ |
+| Weight decay | $10^{-4}$ | 0.05 | 0.3 |
+| LR scheduler | StepLR | Cosine annealing | Cosine annealing |
+| Warmup epochs | 0 | 2 | 5 |
+| Total epochs | 90 | 20 | 90 |
+| Mixed precision | Yes | Yes | Yes |
+
 ### Reproducibility and seeds
 
-Each granularity condition is trained with 3 independent random seeds (1, 2, 3). Deterministic training is enforced (`torch.manual_seed(seed)`, `cudnn.deterministic=True`, `cudnn.benchmark=False`). The ImageNet train/test split uses a fixed generator seed (42) with an 80/20 ratio, ensuring identical train and test images across all conditions and seeds.
+Each granularity condition is trained with multiple independent random seeds. Deterministic training is enforced (`torch.manual_seed(seed)`, `cudnn.deterministic=True`, `cudnn.benchmark=False`). The ImageNet train/test split uses a fixed generator seed (42) with an 80/20 ratio, ensuring identical train and test images across all conditions and seeds.
 
 ---
 
@@ -71,21 +89,21 @@ Each granularity condition is trained with 3 independent random seeds (1, 2, 3).
 
 ### Feature extraction via forward hooks
 
-To compare model representations with neural and behavioural data, we extract internal activations from every layer of each trained model. Activations are captured via forward hooks attached to each convolutional and fully connected layer, recording the output of both the raw linear transformation (pre-activation) and the subsequent batch normalisation plus ReLU (post-activation). This yields 14 candidate extraction points per model (7 layers $\times$ 2 activation stages), providing fine-grained coverage of the representational hierarchy.
+To compare model representations with neural and behavioural data, we extract internal activations from every layer of each trained model. Activations are captured via forward hooks attached to each convolutional and fully connected layer, recording the output of both the raw linear transformation (pre-activation) and the subsequent batch normalisation plus ReLU (post-activation). For the custom CNN, this yields 14 candidate extraction points (7 layers $\times$ 2 activation stages), providing fine-grained coverage of the representational hierarchy. The number of extraction points varies for other architectures (e.g., 9 subsampled residual blocks for ResNet-50, 12 transformer blocks for ViT-B/16).
 
 ### Sparse random projection
 
-Extracting full-resolution activations from all 14 candidate layers simultaneously would exceed available GPU memory for datasets of the scale we evaluate (thousands of high-resolution images $\times$ up to 64,896-dimensional feature maps per layer). We address this using sparse random projection (SRP), a dimensionality reduction technique grounded in the Johnson–Lindenstrauss lemma: distances and inner products in high-dimensional space are approximately preserved when projected to a lower-dimensional subspace via a random linear map.
+Extracting full-resolution activations from all candidate layers simultaneously would exceed available GPU memory for datasets of the scale we evaluate (thousands of high-resolution images $\times$ up to 64,896-dimensional feature maps per layer). We address this using sparse random projection (SRP), a dimensionality reduction technique grounded in the Johnson–Lindenstrauss lemma: distances and inner products in high-dimensional space are approximately preserved when projected to a lower-dimensional subspace via a random linear map.
 
-For each layer, we project activations to $k = \min(4096, D)$ dimensions, where $D$ is the native flattened dimensionality. The projection uses scikit-learn's `SparseRandomProjection` with automatic density selection (approximately $1/\sqrt{D}$). The sparse projection matrix is converted to a PyTorch sparse tensor on GPU and applied on-the-fly during the forward pass via sparse matrix multiplication, enabling efficient extraction of all 14 layers in a single pass. Fitted projection matrices are cached to disk for reuse across evaluation runs.
+For each layer, we project activations to $k = \min(4096, D)$ dimensions, where $D$ is the native flattened dimensionality. The projection uses scikit-learn's `SparseRandomProjection` with automatic density selection (approximately $1/\sqrt{D}$). The sparse projection matrix is converted to a PyTorch sparse tensor on GPU and applied on-the-fly during the forward pass via sparse matrix multiplication, enabling efficient extraction of all layers in a single pass. Fitted projection matrices are cached to disk for reuse across evaluation runs.
 
-Crucially, SRP serves different roles in our two alignment analyses. For representational similarity analysis (RSA), SRP is used only during layer selection to identify the most brain-aligned layer; the selected layer's activations are then re-extracted at full resolution without SRP for the final test evaluation, ensuring that test-phase RDMs are computed from exact, unprojected activations. For encoding score analysis, SRP-projected activations are used throughout, as the ridge regression operates on these projected features and the Johnson–Lindenstrauss guarantee ensures that the linear mapping quality is approximately preserved.
+SRP is used only during layer selection to identify the most brain-aligned layer; the selected layer's activations are then re-extracted at full resolution without SRP for the final test evaluation, ensuring that test-phase RDMs are computed from exact, unprojected activations.
 
 ---
 
 ## 4. Evaluation datasets
 
-We evaluate brain-model alignment across four datasets spanning three measurement modalities — functional MRI in humans, multi-unit electrophysiology in macaques, and behavioural similarity judgments — providing converging evidence across species and levels of neural organisation.
+We evaluate brain-model alignment across three datasets spanning three measurement modalities — functional MRI in humans, multi-unit electrophysiology in macaques, and behavioural similarity judgments — providing converging evidence across species and levels of neural organisation.
 
 ### 4.1 Natural Scenes Dataset (NSD)
 
@@ -95,28 +113,16 @@ The Natural Scenes Dataset (Allen et al., 2022) is the largest publicly availabl
 
 **Train/test split.** For each subject, stimuli were divided into subject-specific unique images (training set, ~9,000 per subject) and a set of ~1,000 images shared across all 8 subjects (test set). Using the shared test set ensures that test-phase representational dissimilarity matrices (RDMs) are computed over identical stimuli across subjects, enabling meaningful cross-subject comparisons.
 
-**Brain regions.** We analyse two broad cortical streams and six individual regions of interest, spanning the full hierarchy from retinotopic cortex to category-selective areas:
+**Brain regions.** We analyse two broad cortical streams, spanning the hierarchy from retinotopic cortex to category-selective areas:
 
 | Region | Definition | Source |
 |---|---|---|
 | Early visual stream | V1, V2, V3 (bilateral) | NSD streams atlas |
 | Ventral visual stream | hV4, LO, and category-selective cortex (FFA, PPA, EBA) | NSD streams atlas |
-| V1, V2, V3 | Union of dorsal and ventral subdivisions | Population receptive field (pRF) mapping |
-| hV4 | Ventral V4 | pRF mapping |
-| FFA (fusiform face area) | FFA-1 and FFA-2 | Functional localiser (faces) |
-| PPA (parahippocampal place area) | PPA | Functional localiser (scenes) |
 
-The early and ventral stream ROIs were defined using the NSD-provided streams atlas, which delineates subject-specific volumetric masks based on pRF retinotopic mapping (for early areas) and functional localiser experiments (for higher-level areas). Individual ROIs (V1–hV4) were defined from pRF mapping, while FFA and PPA were defined from category-selective functional localiser scans, both acquired as part of the NSD protocol.
+The early and ventral stream ROIs were defined using the NSD-provided streams atlas, which delineates subject-specific volumetric masks based on pRF retinotopic mapping (for early areas) and functional localiser experiments (for higher-level areas).
 
-### 4.2 NSD-Synthetic (out-of-distribution evaluation)
-
-To test whether coarse-grained training yields representations that generalise beyond the distribution of natural images, we evaluate on NSD-Synthetic (Gifford et al., 2026), a companion dataset comprising 284 synthetic stimuli presented to the same 8 NSD participants under identical scanning conditions (same 7T scanner, same EPI sequence, same 1.8 mm resolution). The stimuli were designed to be maximally distinct from natural scenes and include white and pink noise patterns, contrast- and phase-coherence-modulated scenes, spiral gratings at varying spatial frequencies and orientations, single words at different screen positions, line drawings, Mooney images, and upside-down scenes. All stimuli were generated through parametric, low- and mid-level feature manipulations rather than learned generative models, providing a principled test of out-of-distribution robustness.
-
-Of the 284 stimuli, all were viewed by all 8 subjects, and 220 are used in our analyses (following the shared stimulus set provided by the dataset). fMRI responses were preprocessed identically to NSD (GLMsingle pipeline, z-scored betas, averaged across repetitions), and the same ROI definitions apply.
-
-NSD-Synthetic serves as a test-only evaluation. Because no training data exist for these synthetic stimuli, layer selection cannot be performed independently; instead, we inherit the best layer identified during the corresponding standard NSD evaluation for each (subject, region) pair. This design ensures that the OOD evaluation is not biased by layer selection on the synthetic stimuli themselves, and instead reflects the model's genuine generalisation capacity.
-
-### 4.3 TVSD (macaque electrophysiology)
+### 4.2 TVSD (macaque electrophysiology)
 
 The Temporal Visual Stream Dataset (Papale et al., 2025) provides multi-unit spiking activity (MUA) recordings from 2 adult male rhesus macaques (*Macaca mulatta*) across three cortical areas that form the core of the primate ventral object recognition pathway: V1 (primary visual cortex), V4 (intermediate visual area), and IT (inferotemporal cortex). Including macaque electrophysiology alongside human fMRI serves two purposes: it tests whether granularity effects on brain-model alignment generalise across species, and it provides a complementary recording modality — direct electrical recordings of neuronal population activity at millisecond resolution, rather than the indirect, haemodynamically delayed BOLD signal measured by fMRI.
 
@@ -126,7 +132,7 @@ The Temporal Visual Stream Dataset (Papale et al., 2025) provides multi-unit spi
 
 **Evaluation structure.** TVSD follows the same evaluation paradigm as NSD: a single forward pass extracts model activations for all stimuli, then per-subject (per-monkey) per-region alignment is computed independently.
 
-### 4.4 THINGS (behavioural similarity)
+### 4.3 THINGS (behavioural similarity)
 
 The THINGS dataset provides a complementary, behaviour-level measure of human visual representation, independent of any particular brain region or recording modality. The THINGS object concept database (Hebart et al., 2019) comprises 1,854 diverse object concepts — spanning animals, plants, food, tools, clothing, furniture, vehicles, and more — with over 26,000 high-quality naturalistic photographs (approximately 12–14 images per concept, mean resolution ~996 $\times$ 996 pixels).
 
@@ -144,9 +150,9 @@ All evaluation images — regardless of dataset — undergo the same preprocessi
 
 ## 5. Representational similarity analysis (RSA)
 
-Representational similarity analysis (Kriegeskorte, 2008) provides an unweighted, geometry-preserving comparison between two representational spaces. Unlike encoding models that fit linear mappings (Section 6), RSA compares the *intrinsic structure* of representations without any learned transformation — making it sensitive to whether the model's representational geometry already resembles that of the brain, rather than whether brain-like information can be linearly extracted. This distinction is central to our study: if coarse-grained models achieve high RSA scores, it suggests that their representations are inherently more brain-like in structure, not merely that they contain recoverable information.
+Representational similarity analysis (Kriegeskorte, 2008) provides an unweighted, geometry-preserving comparison between two representational spaces. RSA compares the *intrinsic structure* of representations without any learned transformation — making it sensitive to whether the model's representational geometry already resembles that of the brain, rather than whether brain-like information can be linearly extracted. This distinction is central to our study: if coarse-grained models achieve high RSA scores, it suggests that their representations are inherently more brain-like in structure, not merely that they contain recoverable information.
 
-Our RSA pipeline is implemented from scratch using PyTorch and SciPy primitives, without reliance on existing RSA toolboxes (e.g., rsatoolbox). RDM construction uses GPU-accelerated matrix operations in PyTorch for efficiency, while RDM comparison statistics (Spearman's $\rho$, Kendall's $\tau$) are computed via SciPy.
+Our RSA pipeline is implemented from scratch using PyTorch and SciPy primitives, without reliance on existing RSA toolboxes (e.g., rsatoolbox). RDM construction uses GPU-accelerated matrix operations in PyTorch for efficiency, while RDM comparison statistics (Spearman's $\rho$) are computed via SciPy.
 
 ### 5.1 Representational dissimilarity matrices
 
@@ -158,17 +164,15 @@ where $\rho(a_i, a_j)$ is the Pearson correlation between the vectorized activat
 
 ### 5.2 RDM comparison
 
-To quantify the alignment between a model RDM and a neural (or behavioural) RDM, we extract the upper triangle of each matrix (excluding the diagonal), yielding $N(N{-}1)/2$ pairwise dissimilarity values, and compute Spearman's rank correlation between the two vectors. Using rank correlation makes the comparison invariant to monotonic nonlinearities, capturing the ordinal structure of representational geometry rather than exact distance magnitudes. All reported RSA results use Spearman's $\rho$ unless otherwise noted.
+To quantify the alignment between a model RDM and a neural (or behavioural) RDM, we extract the upper triangle of each matrix (excluding the diagonal), yielding $N(N{-}1)/2$ pairwise dissimilarity values, and compute Spearman's rank correlation between the two vectors. Using rank correlation makes the comparison invariant to monotonic nonlinearities, capturing the ordinal structure of representational geometry rather than exact distance magnitudes. All reported RSA results use Spearman's $\rho$.
 
 ### 5.3 Layer selection
 
 Because different layers of a deep network capture features at different levels of abstraction, identifying the most neurally aligned layer is a necessary step before evaluating test-set performance. We perform layer selection on training data only, strictly separated from the test set, to prevent overfitting to the evaluation stimuli.
 
-**NSD and TVSD.** For each (subject, region) pair, we randomly subsample 1,000 training stimuli (without replacement, seed = 42) — a subset large enough to yield stable RDM estimates while keeping computation tractable over the large NSD training sets (~9,000 stimuli per subject). For each of the 14 candidate extraction points, we construct a model RDM from SRP-projected activations and a neural RDM from the corresponding voxel (or channel) responses, then compare them via Spearman correlation. The extraction point yielding the highest correlation is selected as the best layer for that (subject, region) pair. Layer selection is performed independently for each subject and region, reflecting the possibility that different cortical areas may be best captured by different stages of the processing hierarchy.
+**NSD and TVSD.** For each (subject, region) pair, we randomly subsample 1,000 training stimuli (without replacement, seed = 42) — a subset large enough to yield stable RDM estimates while keeping computation tractable over the large NSD training sets (~9,000 stimuli per subject). For each candidate extraction point, we construct a model RDM from SRP-projected activations and a neural RDM from the corresponding voxel (or channel) responses, then compare them via Spearman correlation. The extraction point yielding the highest correlation is selected as the best layer for that (subject, region) pair. Layer selection is performed independently for each subject and region, reflecting the possibility that different cortical areas may be best captured by different stages of the processing hierarchy.
 
 **THINGS.** All ~370 concepts in the 20% selection split are used (no further subsampling). We compare concept-averaged SRP activations to the THINGS behavioural embedding via RSA for each candidate layer.
-
-**NSD-Synthetic.** Because NSD-Synthetic is a test-only dataset with no associated training data, layer selection cannot be performed independently. Instead, we look up the best layer identified during the corresponding standard NSD evaluation for each (subject, region) pair and apply it directly to the synthetic stimuli. This ensures that the OOD evaluation reflects the model's generalisation capacity rather than an artefact of layer selection on unrepresentative stimuli.
 
 ### 5.4 Test evaluation with exact activations
 
@@ -181,7 +185,7 @@ The procedure is as follows:
 3. Construct the neural (or behavioural) RDM from the corresponding test-set responses.
 4. Compute Spearman's $\rho$ between the upper triangles of the two RDMs.
 
-Test set sizes are approximately 1,000 stimuli for NSD, 220 for NSD-Synthetic, 100 for TVSD, and 1,484 concepts for THINGS.
+Test set sizes are approximately 1,000 stimuli for NSD, 100 for TVSD, and 1,484 concepts for THINGS.
 
 ### 5.5 Bootstrap confidence intervals
 
@@ -191,68 +195,15 @@ Subsampling without replacement (rather than with replacement, as in the classic
 
 ---
 
-## 6. Encoding score (voxelwise linear prediction)
-
-While RSA tests whether the model's representational geometry already resembles that of the brain, encoding score analysis asks a complementary question: does the model's representation contain sufficient information to predict neural responses after a learned linear transformation? This distinction is conceptually important. A model with low RSA but high encoding score would indicate that brain-relevant information is present but not naturally emphasised in the model's geometry — it requires reweighting to align with the neural code. Conversely, a model with high RSA reflects an inherently brain-like representational structure. Running both analyses allows us to disentangle these two aspects of alignment and to test, in particular, whether coarse-grained training improves the intrinsic geometry (RSA) or the recoverable information content (encoding), or both.
-
-### 6.1 Ridge regression
-
-For each voxel (or recording channel), we fit a ridge regression from model activations to neural responses using the himalaya library (Dupré la Tour et al., 2022), a GPU-accelerated implementation optimised for mass-univariate voxelwise encoding models in neuroimaging. Himalaya performs banded ridge regression with efficient cross-validated regularisation parameter selection, scaling to hundreds of thousands of target voxels simultaneously on GPU. The regularisation strength $\alpha$ is selected from 20 log-spaced candidates spanning $10^{-10}$ to $10^{10}$, using 5-fold cross-validation within the training set. The intercept is not fitted because all features are pre-normalised to zero mean (see below).
-
-### 6.2 Feature and response normalisation
-
-Both model activations and neural responses are z-normalised per feature (or voxel) dimension prior to fitting. To prevent data leakage, normalisation statistics (mean and standard deviation, with a stabiliser of $10^{-8}$) are computed exclusively from the training (or fit) split. Validation and test data are normalised using these same training-derived statistics. This protocol is applied consistently at both the layer selection and final evaluation stages.
-
-### 6.3 Layer selection
-
-Layer selection for encoding follows the same principle as for RSA — identify the most neurally predictive layer using training data only — but with a procedure tailored to the regression setting. For each (subject, region) pair, the training set is split 80/20 into fit and validation subsets using a seeded random permutation. For each of the 14 candidate extraction points:
-
-1. SRP-projected activations are z-normalised using fit-split statistics.
-2. Ridge regression with 5-fold CV is fitted on the fit split.
-3. Predictions are generated for the validation split.
-4. The selection score is the mean Pearson $r$ across all voxels between predicted and observed validation responses.
-
-The layer achieving the highest mean validation Pearson $r$ is selected. Unlike RSA (which subsamples 1,000 training stimuli for efficiency), encoding layer selection uses the full 80% fit split, because the ridge regression fitting cost scales linearly with the number of features (after SRP projection to $k = 4096$) rather than quadratically with the number of stimuli (as in RDM construction).
-
-### 6.4 Test evaluation
-
-After identifying the best layer, the encoding model is refit on the **complete training set** (restoring the 20% validation data to maximise the training signal) for that single layer. Predictions are generated for the held-out test stimuli, and the encoding score is defined as the mean Pearson $r$ across all voxels between predicted and observed test responses.
-
-Unlike RSA, encoding score uses SRP-projected activations ($k = 4096$) at all stages — layer selection and final evaluation alike. Re-extraction at full resolution is unnecessary here because the ridge regression is fitted on the projected features: the model learns a linear mapping in the SRP-projected space, and the Johnson–Lindenstrauss guarantee ensures that the quality of this linear mapping is approximately preserved under the random projection.
-
-### 6.5 Bootstrap confidence intervals
-
-Bootstrap CIs for encoding scores follow the same protocol as RSA: 1,000 iterations, 90% stimulus subsampling without replacement, and 95% CIs from the 2.5th and 97.5th percentiles. The key difference is efficiency: the ridge model is fitted once on the full training set, and the resulting test predictions are cached. Each bootstrap iteration merely subsamples the cached predictions and observed test responses, then recomputes the mean voxelwise Pearson $r$, without refitting the regression. This is valid because the bootstrap estimates uncertainty in the test-set correlation statistic, not in the model parameters.
-
-### 6.6 Applicability
-
-Encoding score evaluation is conducted for NSD and TVSD, which provide high-dimensional voxelwise (or channelwise) neural responses suitable for regression. It is not applicable to the THINGS behavioural dataset, which provides 66-dimensional concept-level embeddings rather than voxelwise data amenable to mass-univariate prediction.
-
----
-
-## 7. PCA reconstruction control
-
-A natural concern is that models trained on coarser labels might achieve higher alignment scores simply because they produce lower-dimensional representations — effectively filtering out high-frequency noise in the feature space — rather than because they learn qualitatively different visual features. To address this, we compare coarse-trained models against a PCA reconstruction baseline derived from the standard 1000-class model.
-
-For each layer of the 1000-class model, we extract activations for the evaluation stimuli, project them onto the top $M$ principal components ($M = 1, 2, \ldots, 15$), and reconstruct the activations in this reduced subspace. We then compute RSA scores from these reconstructed activations and compare them to the scores achieved by models trained directly at the corresponding granularity level. If a $K$-way trained model outperforms the best $M$-component reconstruction of the 1000-class model, this constitutes evidence that the coarse-grained training objective induces representational structure that is not a simple low-rank projection of the fine-grained model's features — that is, the coarse-trained model has learned qualitatively distinct representations.
-
-This control is conducted across NSD, TVSD, and THINGS, using the standard 1000-class model (3 seeds) with $M$ ranging from 1 to 15 components per layer.
-
----
-
-## 8. Statistical reporting
+## 6. Statistical reporting
 
 ### Confidence intervals
 
-All reported confidence intervals are 95% bootstrap CIs derived from 1,000 stimulus-level iterations with 90% subsampling without replacement (Sections 5.5 and 6.5). For summary plots showing results averaged across subjects, error bars or shaded regions reflect the distribution across subjects and/or seeds (the exact statistic is specified per figure).
+All reported confidence intervals are 95% bootstrap CIs derived from 1,000 stimulus-level iterations with 90% subsampling without replacement (Section 5.5).
 
 ### Aggregation across seeds and subjects
 
-Each experimental condition is evaluated with 3 independently trained models (seeds 1–3). For NSD (8 subjects) and TVSD (2 monkeys), alignment is computed independently per subject, with layer selection also performed per subject. Main figures report subject-averaged results; per-subject breakdowns are provided in supplementary materials.
-
-### Complementary alignment metrics
-
-RSA scores (Spearman's $\rho$ between model and neural RDMs) and encoding scores (mean voxelwise Pearson $r$) are not directly comparable in magnitude. RSA measures the geometric similarity of representational structure without any fitted transformation; encoding score measures variance explained after linear fitting. A model can in principle achieve high encoding score but low RSA if it contains brain-relevant information in a format that requires linear reweighting to match the neural code. We report both metrics to provide a complete picture of how granularity affects different aspects of brain-model alignment.
+Each experimental condition is evaluated across multiple independently trained models (random seeds). For NSD (8 subjects) and TVSD (2 monkeys), alignment is computed independently per subject, with layer selection also performed per subject. Main figures report subject-averaged results; per-subject breakdowns are provided in supplementary materials.
 
 ---
 
@@ -266,9 +217,7 @@ Deng, J., Dong, W., Socher, R., Li, L.-J., Li, K., & Fei-Fei, L. (2009). ImageNe
 
 Dosovitskiy, A., Beyer, L., Kolesnikov, A., Weissenborn, D., Zhai, X., Unterthiner, T., Dehghani, M., Minderer, M., Heigold, G., Gelly, S., Uszkoreit, J., & Houlsby, N. (2021). An image is worth 16x16 words: Transformers for image recognition at scale. In *Proceedings of the International Conference on Learning Representations (ICLR)*. https://arxiv.org/abs/2010.11929
 
-Dupré la Tour, T., Eickenberg, M., Nunez-Elizalde, A. O., & Gallant, J. L. (2022). Feature-space selection with banded ridge regression. *NeuroImage*, 264, 119728. https://doi.org/10.1016/j.neuroimage.2022.119728
-
-Gifford, A. T., Cichy, R. M., Naselaris, T., & Kay, K. (2026). A 7T fMRI dataset of synthetic images for out-of-distribution modeling of vision. *Nature Communications*, 17(1), 1589. https://doi.org/10.1038/s41467-026-69345-9
+He, K., Zhang, X., Ren, S., & Sun, J. (2016). Deep residual learning for image recognition. In *Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)* (pp. 770–778). https://doi.org/10.1109/CVPR.2016.90
 
 Hebart, M. N., Dickter, A. H., Kidder, A., Kwok, W. Y., Corriveau, A., Van Wicklin, C., & Baker, C. I. (2019). THINGS: A database of 1,854 object concepts and more than 26,000 naturalistic object images. *PLoS ONE*, 14(10), e0223792. https://doi.org/10.1371/journal.pone.0223792
 
@@ -281,6 +230,8 @@ Kriegeskorte, N. (2008). Representational similarity analysis — connecting the
 Krizhevsky, A., Sutskever, I., & Hinton, G. E. (2012). ImageNet classification with deep convolutional neural networks. In *Advances in Neural Information Processing Systems* (Vol. 25, pp. 1097–1105).
 
 Lin, T.-Y., Maire, M., Belongie, S., Hays, J., Perona, P., Ramanan, D., Dollár, P., & Zitnick, C. L. (2014). Microsoft COCO: Common objects in context. In *Proceedings of the European Conference on Computer Vision (ECCV)* (pp. 740–755). https://doi.org/10.1007/978-3-319-10602-1_48
+
+Liu, Z., Mao, H., Wu, C.-Y., Feichtenhofer, C., Darrell, T., & Xie, S. (2022). A ConvNet for the 2020s. In *Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)* (pp. 11976–11986). https://doi.org/10.1109/CVPR52688.2022.01167
 
 Loshchilov, I., & Hutter, F. (2019). Decoupled weight decay regularization. In *Proceedings of the International Conference on Learning Representations (ICLR)*. https://arxiv.org/abs/1711.05101
 
