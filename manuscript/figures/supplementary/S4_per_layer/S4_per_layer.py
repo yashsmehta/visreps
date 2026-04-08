@@ -20,7 +20,7 @@ from manuscript.figures.fig_utils import (
     setup_style, plot_per_layer_panel, build_per_layer_legend, GRAN_CFGS,
 )
 
-OUTPUT = "manuscript/figures/supplementary/supp_s3_full_per_layer.png"
+OUTPUT = "manuscript/figures/supplementary/S4_per_layer/S4_per_layer.png"
 
 PANELS = [
     (0, 0, "tvsd", "V1", "TVSD V1"),

@@ -27,7 +27,7 @@ from PIL import Image
 from manuscript.figures.fig_utils import setup_style
 
 # Config
-OUTPUT = "manuscript/figures/supplementary/supp_s5_pc_poles.png"
+OUTPUT = "manuscript/figures/supplementary/S6_pc_poles/S6_pc_poles.png"
 POLES_DIR = "datasets/obj_cls/imagenet/pca_poles"
 EIGVEC_DIR = "datasets/obj_cls/imagenet"
 

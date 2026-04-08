@@ -33,7 +33,7 @@ from fig_utils import (
 from shared import fetch_baseline, fetch_baseline_ci, format_yaxis
 from plotter_utils import get_condition_summary
 
-OUTPUT = "manuscript/figures/supplementary/supp_s4_finegrained_roi.png"
+OUTPUT = "manuscript/figures/supplementary/S5_finegrained_roi/S5_finegrained_roi.png"
 
 # ── PCA label sources — same colors as S1 / Figure 3 ────────────────────
 ARCHITECTURES = [

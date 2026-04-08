@@ -100,18 +100,19 @@ Tests whether the coarseness advantage generalizes to standard architectures.
 
 ## Supplementary Figures (`supplementary/`)
 
-Supplementary figures live in `manuscript/figures/supplementary/` (NOT `manuscript/supplementary/`). Each figure is a standalone `supp_sN_*.py` script with output PNGs in the same directory. See `supplementary/supplementary.md` for the full index and captions.
+Supplementary figures live in `manuscript/figures/supplementary/` (NOT `manuscript/supplementary/`). Each figure lives in its own `SN_*/` subfolder containing the script and its output PNG(s) — mirroring the `figN/` layout of the main figures. See `supplementary/supplementary.md` for the full index and captions.
 
 **Style:** Must match main Figure 3's scatter format exactly (same `panel_raw.py` approach). See `supplementary/figure_style.md` for the complete style reference.
 
 **Key scripts:**
-- `supp_s1_coarsegrain_models.py` — S1A (neural: 2x2 TVSD+NSD) + S1B (THINGS behavioral), all 4 PCA sources
-- `supp_s2_wordnet.py` — WordNet-derived labels
-- `supp_s3_full_per_layer.py` — Full per-layer profiles
-- `supp_s4_finegrained_roi.py` — Fine-grained ROI decomposition (NSD), raw RSA, AlexNet+CLIP
-- `supp_s5_pc_poles.py` — PCA pole images
-- `supp_s6_reconstruction.py` — Reconstruction control
-- `supp_s7_training_accuracy.py` — Training accuracy (scatter + 1000-way bar), all 4 PCA sources
-- `supp_s8_seed_variability.py` — Seed variability
+- `S1_coarsegrain_models/S1_coarsegrain_models.py` — S1A (neural: 2x2 TVSD+NSD) + S1B (THINGS behavioral), all 4 PCA sources
+- `S2_encoding_scores/S2_encoding_scores.py` — 2x2 neural panel using encoding-score (RidgeCV Pearson r) instead of RSA; AlexNet + CLIP (no Pixels — absent from DB)
+- `S3_wordnet/S3_wordnet.py` — WordNet-derived labels
+- `S4_per_layer/S4_per_layer.py` — Full per-layer profiles
+- `S5_finegrained_roi/S5_finegrained_roi.py` — Fine-grained ROI decomposition (NSD), raw RSA, AlexNet+CLIP
+- `S6_pc_poles/S6_pc_poles.py` — PCA pole images
+- `S7_reconstruction/S7_reconstruction.py` — Reconstruction control
+- `S8_training_accuracy/S8_training_accuracy.py` — Training accuracy (scatter + 1000-way bar), all 4 PCA sources
+- `S9_seed_variability/S9_seed_variability.py` — Seed variability
 
-**Consistent style across S1, S4, S7:** All use the same Figure 3 scatter format (broken x-axis, jittered markers, no connecting lines). Legend shows only PCA label sources — no 1000-way or untrained entries. Colors: AlexNet `#6baed6`, CLIP `#08519c`, ViT `#c0392b`, DINO `#1a8a7a`.
+**Consistent style across S1, S2, S5, S8:** All use the same Figure 3 scatter format (broken x-axis, jittered markers, no connecting lines). Legend shows only PCA label sources — no 1000-way or untrained entries. Colors: AlexNet `#6baed6`, CLIP `#08519c`, ViT `#c0392b`, DINO `#1a8a7a`.

@@ -35,7 +35,7 @@ from fig_utils import (
 from shared import fetch_baseline, fetch_baseline_ci, format_yaxis
 from plotter_utils import get_condition_summary
 
-OUTPUT_DIR = "manuscript/figures/supplementary"
+OUTPUT_DIR = "manuscript/figures/supplementary/S1_coarsegrain_models"
 
 # ── All four PCA label sources ──────────────────────────────────────────
 # AlexNet + CLIP colors match Figure 3's shared.py exactly.
@@ -266,7 +266,7 @@ def generate_s1a():
         title="Coarse label source", title_fontsize=7.5,
         loc="right", bbox_to_anchor=(1.0, 0.30))
 
-    out = f"{OUTPUT_DIR}/supp_s1a_neural.png"
+    out = f"{OUTPUT_DIR}/S1a_neural.png"
     fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()
@@ -340,7 +340,7 @@ def generate_s1b():
               loc="right", bbox_to_anchor=(1.0, 0.32))
 
     plt.tight_layout()
-    out = f"{OUTPUT_DIR}/supp_s1b_behavioral.png"
+    out = f"{OUTPUT_DIR}/S1b_behavioral.png"
     fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()

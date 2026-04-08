@@ -32,7 +32,7 @@ from experiments.reconstruction_analysis.plot_utils import (
     aggregate_curve,
 )
 
-OUTPUT_DIR = "manuscript/figures/supplementary"
+OUTPUT_DIR = "manuscript/figures/supplementary/S7_reconstruction"
 
 # Colors — unified blue for all coarse models, orange for 1000-way
 COARSE_COLOR = "#084594"   # 64-way blue (unified for all coarse)
@@ -210,7 +210,7 @@ def generate_neural():
         borderpad=0.5, handletextpad=0.4, labelspacing=0.3,
         loc="right", bbox_to_anchor=(1.0, 0.45))
 
-    out = f"{OUTPUT_DIR}/supp_s6_reconstruction_neural.png"
+    out = f"{OUTPUT_DIR}/S7_reconstruction_neural.png"
     fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()
@@ -240,7 +240,7 @@ def generate_behavioral():
               borderpad=0.5, handletextpad=0.4, labelspacing=0.3,
               loc="lower right")
 
-    out = f"{OUTPUT_DIR}/supp_s6_reconstruction_behavioral.png"
+    out = f"{OUTPUT_DIR}/S7_reconstruction_behavioral.png"
     fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()

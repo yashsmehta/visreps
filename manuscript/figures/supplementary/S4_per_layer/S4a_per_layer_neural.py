@@ -20,7 +20,7 @@ from manuscript.figures.fig_utils import (
     setup_style, plot_per_layer_panel, build_per_layer_legend, GRAN_CFGS,
 )
 
-OUTPUT = "manuscript/figures/supplementary/supp_s3a_per_layer_neural.png"
+OUTPUT = "manuscript/figures/supplementary/S4_per_layer/S4a_per_layer_neural.png"
 PCA_FOLDER = "pca_labels_clip"
 
 PANELS = [

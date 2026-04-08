@@ -17,7 +17,7 @@ from manuscript.figures.fig_utils import (
     setup_style, plot_per_layer_panel, build_per_layer_legend, GRAN_CFGS,
 )
 
-OUTPUT = "manuscript/figures/supplementary/supp_s3b_per_layer_behavioral.png"
+OUTPUT = "manuscript/figures/supplementary/S4_per_layer/S4b_per_layer_behavioral.png"
 PCA_FOLDER = "pca_labels_clip"
 
 

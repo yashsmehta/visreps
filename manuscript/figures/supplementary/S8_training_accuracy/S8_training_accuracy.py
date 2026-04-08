@@ -23,7 +23,7 @@ from manuscript.figures.fig_utils import (
     setup_style, COARSE_CFGS, MARKER_SIZE, EDGE_COLOR, EDGE_WIDTH,
 )
 
-OUTPUT = "manuscript/figures/supplementary/supp_s7_training_accuracy.png"
+OUTPUT = "manuscript/figures/supplementary/S8_training_accuracy/S8_training_accuracy.png"
 
 SEED_LETTERS = ["a", "b", "c"]
 FINAL_EPOCH = 20

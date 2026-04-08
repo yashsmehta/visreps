@@ -30,7 +30,7 @@ from fig_utils import (
     EDGE_COLOR, EDGE_WIDTH, MARKER_SIZE,
 )
 
-OUTPUT_DIR = "manuscript/figures/supplementary"
+OUTPUT_DIR = "manuscript/figures/supplementary/S9_seed_variability"
 DB_PATH = "results.db"
 
 # Coarse conditions (CLIP labels, full range) + 1000-way baseline
@@ -326,7 +326,7 @@ def generate_neural():
 
     conn.close()
 
-    out = f"{OUTPUT_DIR}/supp_s8_seed_variability_neural.png"
+    out = f"{OUTPUT_DIR}/S9_seed_variability_neural.png"
     fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()
@@ -360,7 +360,7 @@ def generate_behavioral():
 
     conn.close()
 
-    out = f"{OUTPUT_DIR}/supp_s8_seed_variability_behavioral.png"
+    out = f"{OUTPUT_DIR}/S9_seed_variability_behavioral.png"
     fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()

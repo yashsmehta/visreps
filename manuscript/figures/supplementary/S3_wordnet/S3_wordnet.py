@@ -32,7 +32,7 @@ from fig_utils import (
     EDGE_COLOR, EDGE_WIDTH, MARKER_SIZE,
 )
 
-OUTPUT_DIR = "manuscript/figures/supplementary"
+OUTPUT_DIR = "manuscript/figures/supplementary/S3_wordnet"
 
 # WordNet config
 WORDNET_CFGS = [2, 3, 4, 10, 20, 57]
@@ -278,7 +278,7 @@ def plot_neural_figure():
                         borderpad=0.5, handletextpad=0.4, labelspacing=0.3,
                         loc="upper right")
 
-    out = f"{OUTPUT_DIR}/supp_s2_wordnet_neural.png"
+    out = f"{OUTPUT_DIR}/S3_wordnet_neural.png"
     fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()
@@ -318,7 +318,7 @@ def plot_behavioral_figure():
               borderpad=0.5, handletextpad=0.4, labelspacing=0.3,
               loc="upper right")
 
-    out = f"{OUTPUT_DIR}/supp_s2_wordnet_behavioral.png"
+    out = f"{OUTPUT_DIR}/S3_wordnet_behavioral.png"
     fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()
