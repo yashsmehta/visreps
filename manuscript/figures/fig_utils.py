@@ -246,6 +246,84 @@ def draw_xaxis_break(ax):
                 clip_on=False, zorder=11)
 
 
+def draw_torn_ci_band(ax, bl_ci_low, bl_ci_high, color,
+                      lollipop_ax=None, tooth_dx=0.010,
+                      tooth_y_period_frac=0.15, linewidth=0.6, alpha=0.75):
+    """Draw a jagged tear through the 1000-way CI band just before the
+    broken-axis position, erasing the band and the dashed mean line to
+    the right of the tear.
+
+    Prerequisites (call order):
+      1. ax.fill_between([x0, BREAK_1K_POS], bl_ci_low, bl_ci_high, ...)  # zorder<2.6
+      2. ax.plot([x0, BREAK_1K_POS], [bl_mean, bl_mean], '--', ...)       # zorder<2.6
+      3. ax.set_xlim(...) and ax.set_ylim(...)  — called BEFORE this helper
+      4. draw_torn_ci_band(ax, ci_low, ci_high, color, ...)
+
+    Teeth are clipped strictly to [bl_ci_low, bl_ci_high] and preserve
+    their aspect ratio for narrow bands by scaling tooth_dx in sync with
+    the forced seg_period.
+
+    The white mask polygon uses clip_on=True so it only erases inside the
+    axes bounding box — tick labels, legends, and axis-break symbols
+    outside the axes are untouched.
+    """
+    from matplotlib.patches import Polygon
+    from matplotlib.transforms import blended_transform_factory
+    import math
+
+    x_lo, x_hi = ax.get_xlim()
+    mid_data = math.exp((math.log(64) + math.log(BREAK_1K_POS)) / 2)
+    mid_frac = ((math.log2(mid_data) - math.log2(x_lo))
+                / (math.log2(x_hi) - math.log2(x_lo)))
+
+    if lollipop_ax is not None:
+        height_ratio = lollipop_ax.get_position().height / ax.get_position().height
+    else:
+        height_ratio = 0.14 / 0.86  # fallback: matches fig3 scatter/lollipop ratio
+
+    y_lo_lim, y_hi_lim = ax.get_ylim()
+    tooth_y_period = tooth_y_period_frac * height_ratio * (y_hi_lim - y_lo_lim)
+
+    # Fit an integer number of segments exactly into the band
+    band_height = bl_ci_high - bl_ci_low
+    n_seg_band = max(4, int(round(band_height / tooth_y_period)))
+    seg_period = band_height / n_seg_band
+
+    # Preserve tooth aspect ratio for narrow bands
+    aspect_scale = min(1.0, seg_period / tooth_y_period)
+    vis_tooth_dx = tooth_dx * aspect_scale
+
+    trans_bt = blended_transform_factory(ax.transAxes, ax.transData)
+
+    # Visible zigzag — exactly spans [bl_ci_low, bl_ci_high]
+    y_vis = bl_ci_low + np.arange(n_seg_band + 1) * seg_period
+    zigzag_vis = np.array([(-1) ** k for k in range(len(y_vis))])
+    x_vis = mid_frac + vis_tooth_dx * zigzag_vis
+
+    # Mask extensions above/below the band, same phase and tooth_dx
+    n_ext = max(2, int(math.ceil((y_hi_lim - y_lo_lim) / seg_period)))
+    y_above = bl_ci_high + np.arange(1, n_ext + 1) * seg_period
+    zig_above = np.array([(-1) ** (n_seg_band + k) for k in range(1, n_ext + 1)])
+    x_above = mid_frac + vis_tooth_dx * zig_above
+    y_below = bl_ci_low - np.arange(1, n_ext + 1) * seg_period
+    zig_below = np.array([(-1) ** (-k) for k in range(1, n_ext + 1)])
+    x_below = mid_frac + vis_tooth_dx * zig_below
+
+    y_mask_pts = np.concatenate([y_below[::-1], y_vis, y_above])
+    x_mask_pts = np.concatenate([x_below[::-1], x_vis, x_above])
+
+    right_far = 1.15
+    verts = (list(zip(x_mask_pts, y_mask_pts))
+             + [(right_far, y_mask_pts[-1]), (right_far, y_mask_pts[0])])
+    ax.add_patch(Polygon(verts, facecolor="white", edgecolor="none",
+                         transform=trans_bt, clip_on=True, zorder=2.6))
+
+    ax.plot(x_vis, y_vis, transform=trans_bt,
+            color=color, linewidth=linewidth, alpha=alpha,
+            solid_joinstyle="miter", solid_capstyle="butt",
+            clip_on=False, zorder=2.7)
+
+
 def format_coarseness_axes(ax, region_label, show_ylabel=True, show_xlabel=True):
     """Shared axis formatting for coarseness log-scale panels with broken axis."""
     ax.set_xscale("log", base=2)
