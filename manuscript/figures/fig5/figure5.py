@@ -159,12 +159,12 @@ def _draw_rdm(ax, rdm, title, subtitle, block_boundaries, n, super_cats_used,
     if show_sidebar_labels:
         w = n * width_frac
         gap = n * gap_frac
-        label_x = -w - gap - n * 0.012  # just left of the sidebar
+        label_x = -w - gap - n * 0.018  # just left of the sidebar
         for start, cat, size in block_boundaries:
             mid_y = start - 0.5 + size / 2
             display_label = SIDEBAR_LABELS.get(cat, cat)
             ax.text(label_x, mid_y, display_label, ha="right", va="center",
-                    fontsize=7, color="#333333", fontfamily="sans-serif",
+                    fontsize=10, color="#333333", fontfamily="sans-serif",
                     clip_on=False)
 
     return im
@@ -210,14 +210,14 @@ def main():
     rsa_scores = precomputed["rsa_scores"]
 
     # ── Figure layout ─────────────────────────────────────────────────
-    fig = plt.figure(figsize=(14, 11.5))
+    fig = plt.figure(figsize=(14, 10.2))
     fig.patch.set_facecolor("white")
 
     gs_outer = gridspec.GridSpec(
         2, 1, figure=fig,
-        height_ratios=[1.0, 1.0],
-        hspace=0.22,
-        left=0.09, right=0.96, top=0.96, bottom=0.06,
+        height_ratios=[0.90, 1.0],
+        hspace=0.13,
+        left=0.12, right=0.96, top=0.96, bottom=0.07,
     )
 
     # ── Row 1: Three RDMs + colorbar ─────────────────────────────────
@@ -267,6 +267,15 @@ def main():
         ],
     }
     plot_scatter_panel(ax_scatter, ax_hist, precomputed, super_config=super_config)
+
+    # Enlarge the scatter legend (~1.25x) without affecting Figure 4.
+    leg = ax_scatter.get_legend()
+    if leg is not None:
+        for t in leg.get_texts():
+            t.set_fontsize(9.4)
+        for h in leg.legend_handles:
+            if hasattr(h, "set_markersize"):
+                h.set_markersize(8.75)
 
     # Override scatter title padding for this layout
     ax_scatter.set_title("Per-Category Alignment", fontsize=13,
