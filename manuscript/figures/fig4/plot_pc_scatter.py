@@ -271,7 +271,7 @@ def main():
         for name in SUPER_ORDER
     ]
     fig.legend(handles=handles, loc="lower center",
-               ncol=len(SUPER_ORDER), fontsize=8, frameon=False,
+               ncol=len(SUPER_ORDER), fontsize=10, frameon=False,
                handletextpad=0.4, columnspacing=1.4,
                bbox_to_anchor=(0.5, -0.01))
 

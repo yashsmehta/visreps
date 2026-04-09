@@ -83,12 +83,12 @@ def plot_data_efficiency(ax, ref_ax=None):
         y_off = (y_hi - y_lo) * 0.02
         ax.text(0.97, data_1m["score"] + y_off,
                 "Trained, 1000 classes",
-                fontsize=6.5, fontstyle="italic", color=BASELINE_1K_COLOR,
+                fontsize=7.8, fontstyle="italic", color=BASELINE_1K_COLOR,
                 ha="right", va="bottom",
                 transform=ax.get_yaxis_transform(), zorder=10)
         ax.text(0.97, data_1m["score"] - y_off,
                 "Full dataset",
-                fontsize=6.5, fontstyle="italic", color=BASELINE_1K_COLOR,
+                fontsize=7.8, fontstyle="italic", color=BASELINE_1K_COLOR,
                 ha="right", va="top",
                 transform=ax.get_yaxis_transform(), zorder=10)
 
@@ -140,10 +140,10 @@ def plot_data_efficiency(ax, ref_ax=None):
     ax.yaxis.grid(True, which="major", color="#F0F0F0", linewidth=0.3, zorder=0)
     ax.set_axisbelow(True)
 
-    ax.set_xlabel("Granularity", fontsize=9, labelpad=6)
+    ax.set_xlabel("Granularity", fontsize=10.8, labelpad=6)
     sns.despine(ax=ax, right=True, top=True, offset=4)
     draw_xaxis_break(ax)
 
     ax.set_title("Low Data Regime", fontsize=11, fontweight="semibold", pad=8)
     ax.text(0.5, 0.96, "10K images (1% of ImageNet)", transform=ax.transAxes,
-            fontsize=7.5, color="#888888", ha="center", va="top")
+            fontsize=9.0, color="#888888", ha="center", va="top")

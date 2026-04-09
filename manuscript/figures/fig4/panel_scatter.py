@@ -240,7 +240,7 @@ def draw_image_insets(axes, all_pcs, concept_names):
             ax.plot([pt[0], ox], [pt[1], oy],
                     color="#555555", linewidth=0.6, linestyle="-",
                     alpha=0.5, zorder=6)
-            im = OffsetImage(images[concept], zoom=0.11)
+            im = OffsetImage(images[concept], zoom=0.1331)
             ab = AnnotationBbox(im, (ox, oy), frameon=True, pad=0.08,
                                 bboxprops=dict(edgecolor="black",
                                                linewidth=0.8, facecolor="white"),

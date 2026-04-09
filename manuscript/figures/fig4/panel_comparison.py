@@ -194,7 +194,7 @@ def plot_comparison(ax, ref_ax=None):
     scatter_xticks = [group_positions[g] for g in group_positions]
     scatter_xlabels = ["Supervised", "Self-\nsupervised", "Vision-\nlanguage"]
     ax.set_xticks(scatter_xticks)
-    ax.set_xticklabels(scatter_xlabels, fontsize=9.5)
+    ax.set_xticklabels(scatter_xlabels, fontsize=11.4)
 
     ax.yaxis.grid(True, which="major", color="#EBEBEB", linewidth=0.4, zorder=0)
     ax.set_axisbelow(True)

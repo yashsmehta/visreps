@@ -111,7 +111,7 @@ def main():
     ]
     leg_cat = pc_axes[0].legend(
         handles=cat_handles, loc="upper left",
-        ncol=2, fontsize=7.5, frameon=True,
+        ncol=2, fontsize=9.375, frameon=True,
         handletextpad=0.2, columnspacing=0.5, labelspacing=0.2,
         borderpad=0.3, edgecolor="#dddddd", fancybox=False, framealpha=0.90)
     leg_cat.get_frame().set_linewidth(0.3)

@@ -17,7 +17,7 @@ from plotter_utils import get_condition_summary
 sys.path.insert(0, "manuscript/figures")
 from fig_utils import (
     COARSE_CFGS, MARKER_SIZE, EDGE_COLOR, EDGE_WIDTH, UNTRAINED_LINE_STYLE,
-    BREAK_1K_POS, compute_jitter, draw_xaxis_break,
+    BREAK_1K_POS, compute_jitter, draw_xaxis_break, draw_torn_ci_band,
 )
 
 COARSE_CFGS_SET = set(COARSE_CFGS)
@@ -80,9 +80,22 @@ def plot_coarseness(ax):
                         capsize=1.5, capthick=0.5,
                         ecolor=style["color"], elinewidth=0.7, zorder=4)
 
-    # 1000-way baseline: orange diamond at broken-axis position
+    # 1000-way baseline: CI band + bounded dashed mean + orange diamond
     bl_err_lo = max(bl_mean - bl["ci_low"], 0) if not np.isnan(bl["ci_low"]) else 0
     bl_err_hi = max(bl["ci_high"] - bl_mean, 0) if not np.isnan(bl["ci_high"]) else 0
+
+    # Pale orange CI band across the coarse region (torn later)
+    if not np.isnan(bl["ci_low"]) and not np.isnan(bl["ci_high"]):
+        ax.fill_between([1.5, BREAK_1K_POS], bl["ci_low"], bl["ci_high"],
+                        facecolor=BASELINE_1K_COLOR, alpha=0.12,
+                        edgecolor="none", zorder=1)
+        all_y_vals.extend([bl["ci_low"], bl["ci_high"]])
+
+    # Dashed mean line bounded to coarse region (torn later)
+    ax.plot([1.5, BREAK_1K_POS], [bl_mean, bl_mean],
+            color=BASELINE_1K_COLOR, linestyle="--",
+            linewidth=1.0, alpha=0.6, zorder=2, clip_on=False)
+
     ax.errorbar(BREAK_1K_POS, bl_mean,
                 yerr=[[bl_err_lo], [bl_err_hi]],
                 fmt="D", color=BASELINE_1K_COLOR, markersize=MARKER_SIZE,
@@ -90,15 +103,11 @@ def plot_coarseness(ax):
                 capsize=1.5, capthick=0.5,
                 ecolor=BASELINE_1K_COLOR, elinewidth=0.7, zorder=5)
 
-    # 1000-way dashed reference line
-    ax.axhline(bl_mean, color=BASELINE_1K_COLOR, linestyle="--",
-               linewidth=1.0, alpha=0.6, zorder=2)
-
-    # Untrained baseline (epoch=0)
+    # Untrained baseline (epoch=0) — zorder=3 so mask at 2.6 doesn't erase it
     un = get_condition_summary("things-behavior", "N/A", "imagenet1k", 1000,
                                "spearman", epoch=0, analysis="rsa")
     if not np.isnan(un["mean"]):
-        ax.axhline(un["mean"], **UNTRAINED_LINE_STYLE, zorder=2)
+        ax.axhline(un["mean"], **UNTRAINED_LINE_STYLE, zorder=3)
         all_y_vals.append(un["mean"])
 
     y_min, y_max = min(all_y_vals), max(all_y_vals)
@@ -125,8 +134,12 @@ def plot_coarseness(ax):
         lambda v, _: f"{v:.2f}".rstrip("0").rstrip(".")))
     ax.set_ylim(y_min - y_range * 0.12, y_max + y_range * 0.10)
 
-    ax.set_xlabel("Granularity", fontsize=9, labelpad=6)
-    ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=9, labelpad=3)
+    # Tear through the 1000-way CI band (after ylim is final)
+    if not np.isnan(bl["ci_low"]) and not np.isnan(bl["ci_high"]):
+        draw_torn_ci_band(ax, bl["ci_low"], bl["ci_high"], BASELINE_1K_COLOR)
+
+    ax.set_xlabel("Granularity", fontsize=10.8, labelpad=6)
+    ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=10.8, labelpad=3)
     sns.despine(ax=ax, right=True, top=True, offset=4)
     draw_xaxis_break(ax)
     ax.set_title("Alignment vs. Granularity",
