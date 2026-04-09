@@ -29,7 +29,7 @@ import seaborn as sns
 sys.path.insert(0, "manuscript/figures")
 from fig_utils import (
     COARSE_CFGS, MARKER_SIZE, EDGE_COLOR, EDGE_WIDTH, BREAK_1K_POS,
-    setup_style, draw_xaxis_break,
+    setup_style, draw_xaxis_break, draw_torn_ci_band,
 )
 
 # ── Config ────────────────────────────────────────────────────────────────
@@ -178,23 +178,35 @@ def plot_things_coarseness(ax, model_name, display_name,
     y_max = max(all_y_vals)
     y_range = y_max - y_min if y_max > y_min else 0.05
 
-    # ── 1000-way baseline: orange diamond at broken-axis position + dashed line ──
+    # ── 1000-way baseline: CI band + bounded dashed mean + orange diamond ──
     if baseline:
         bl_err_lo = max(baseline["score"] - baseline["ci_low"], 0) if pd.notna(baseline["ci_low"]) else 0
         bl_err_hi = max(baseline["ci_high"] - baseline["score"], 0) if pd.notna(baseline["ci_high"]) else 0
+
+        # CI band: pale orange horizontal span over coarse region (torn later)
+        if pd.notna(baseline["ci_low"]) and pd.notna(baseline["ci_high"]):
+            ax.fill_between([1.5, BREAK_1K_POS],
+                            baseline["ci_low"], baseline["ci_high"],
+                            facecolor=BASELINE_1K_COLOR, alpha=0.12,
+                            edgecolor="none", zorder=1)
+
+        # Dashed mean line: bounded to coarse region (torn later)
+        ax.plot([1.5, BREAK_1K_POS],
+                [baseline["score"], baseline["score"]],
+                color=BASELINE_1K_COLOR, linestyle="--",
+                linewidth=1.0, alpha=0.6, zorder=2, clip_on=False)
+
         ax.errorbar(BREAK_1K_POS, baseline["score"],
                     yerr=[[bl_err_lo], [bl_err_hi]],
                     fmt="D", color=BASELINE_1K_COLOR, markersize=MARKER_SIZE,
                     markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
                     capsize=1.5, capthick=0.5,
                     ecolor=BASELINE_1K_COLOR, elinewidth=0.7, zorder=5)
-        ax.axhline(baseline["score"], color=BASELINE_1K_COLOR, linestyle="--",
-                   linewidth=1.0, alpha=0.6, zorder=2)
 
-    # ── Untrained dashed line ──
+    # ── Untrained dashed line (zorder=3 so mask at 2.6 doesn't erase it) ──
     if untrained is not None:
         ax.axhline(untrained, color="#AAAAAA", linestyle="--",
-                   linewidth=0.9, alpha=0.7, zorder=1)
+                   linewidth=0.9, alpha=0.7, zorder=3)
         y_offset = y_range * 0.015
         ax.text(0.97, untrained + y_offset, "Untrained",
                 fontsize=6, fontstyle="italic", color="#AAAAAA",
@@ -230,6 +242,11 @@ def plot_things_coarseness(ax, model_name, display_name,
         ax.set_ylim(yl, yh)
     else:
         ax.set_ylim(y_min - y_range * 0.12, y_max + y_range * 0.10)
+
+    # ── Tear through the 1000-way CI band (after ylim is final) ──
+    if baseline and pd.notna(baseline["ci_low"]) and pd.notna(baseline["ci_high"]):
+        draw_torn_ci_band(ax, baseline["ci_low"], baseline["ci_high"],
+                          BASELINE_1K_COLOR)
 
     if show_xlabel:
         ax.set_xlabel("Granularity", fontsize=9, labelpad=6)
