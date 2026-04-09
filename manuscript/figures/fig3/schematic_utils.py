@@ -148,51 +148,73 @@ def _place_png_icon(ax, png_path, xy, zoom, flip_lr=False, zorder=6):
 def _draw_image_grid(ax, stimuli_loader, stim_items, grid_center,
                      grid_width=0.30, grid_height=0.48, img_zoom=0.11,
                      rows=2, cols=3):
-    """Draw a grid of stimulus images centered at grid_center."""
+    """Draw a grid of stimulus images centered at grid_center.
+
+    rows=1 or cols=1 degenerate correctly (linspace returns midpoint).
+    """
     cx, cy = grid_center
-    xs = np.linspace(cx - grid_width / 2, cx + grid_width / 2, cols)
-    ys = np.linspace(cy + grid_height / 2, cy - grid_height / 2, rows)
+    xs = [cx] if cols == 1 else np.linspace(cx - grid_width / 2, cx + grid_width / 2, cols)
+    ys = [cy] if rows == 1 else np.linspace(cy + grid_height / 2, cy - grid_height / 2, rows)
     idx = 0
     for r in range(rows):
         for c in range(cols):
             if idx < len(stim_items):
                 img = stimuli_loader(stim_items[idx], size=250)
                 add_image_to_ax(ax, img, (xs[c], ys[r]), zoom=img_zoom,
-                                border_color="#cccccc", border_width=0.5)
+                                border_color="#cccccc", border_width=0.5,
+                                zorder=4)
                 idx += 1
 
 
 def _draw_schematic_base(ax, stimuli_loader, stim_items, icons,
-                         arrow_xytext=(0.28, 0.50), arrow_xy=(0.62, 0.50),
-                         stats_lines=None):
-    """Shared layout: 3×2 image grid → right arrow → icon(s).
+                         arrow_xytext=None, arrow_xy=None,
+                         stats_lines=None, caption=None, caption_xy=None,
+                         headline=None, headline_xy=None,
+                         grid_center=(0.18, 0.50),
+                         grid_width=0.28, grid_height=0.46,
+                         img_zoom=0.12, rows=3, cols=2):
+    """Shared layout: tight image grid → right-pointing arrow → icon(s).
 
-    icons: list of (png_path, xy, zoom, flip_lr) tuples.
-    stats_lines: optional list of gray stats strings drawn below the scene.
+    The arrow terminates *before* the first icon so its head is fully
+    visible (no zorder games). Stats are drawn in the top-right of the axes.
     """
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.axis("off")
 
     _draw_image_grid(ax, stimuli_loader, stim_items,
-                     grid_center=(0.14, 0.52), grid_width=0.24,
-                     grid_height=0.62, img_zoom=0.12,
-                     rows=3, cols=2)
+                     grid_center=grid_center, grid_width=grid_width,
+                     grid_height=grid_height, img_zoom=img_zoom,
+                     rows=rows, cols=cols)
 
-    # Arrow drawn behind the icons (low zorder) so it tucks under the person.
-    ax.annotate("", xy=arrow_xy, xytext=arrow_xytext,
-                arrowprops=dict(arrowstyle="->,head_width=0.22,head_length=0.10",
-                                color="#888888", lw=1.4),
-                zorder=2)
+    if arrow_xytext is not None and arrow_xy is not None:
+        ax.annotate("", xy=arrow_xy, xytext=arrow_xytext,
+                    arrowprops=dict(arrowstyle="->", color="#a8a8a8",
+                                    lw=0.95, shrinkA=0, shrinkB=0,
+                                    mutation_scale=11),
+                    zorder=10)
 
     for png_path, xy, zoom, flip_lr in icons:
         _place_png_icon(ax, png_path, xy, zoom, flip_lr=flip_lr, zorder=6)
 
+    if headline and headline_xy is not None:
+        ax.text(headline_xy[0], headline_xy[1], headline,
+                fontsize=10, color="#888888", style="italic",
+                ha="center", va="top", transform=ax.transAxes)
+
+    if caption and caption_xy is not None:
+        ax.text(caption_xy[0], caption_xy[1], caption,
+                fontsize=9, color="#555555", style="italic",
+                ha="center", va="top", transform=ax.transAxes)
+
     if stats_lines:
-        for i, line in enumerate(stats_lines):
-            ax.text(0.50, 0.08 - i * 0.08, line,
-                    fontsize=8, color="#888888", style="italic",
-                    ha="center", va="center", transform=ax.transAxes)
+        # Align stats block top with headline baseline so the left "image count"
+        # line and the right "subjects/regions" first line sit in the same row.
+        stats_y = headline_xy[1] if headline_xy is not None else 0.97
+        ax.text(0.99, stats_y, "\n".join(stats_lines),
+                fontsize=10, color="#888888", style="italic",
+                ha="right", va="top", linespacing=1.35,
+                transform=ax.transAxes)
 
 
 def draw_tvsd_schematic(ax):
@@ -202,12 +224,18 @@ def draw_tvsd_schematic(ax):
 
     _draw_schematic_base(
         ax, _load, TVSD_STIMULI,
-        icons=[(ASSETS_DIR / "monkey.png", (0.55, 0.50), 0.08, False)],
-        arrow_xytext=(0.28, 0.50), arrow_xy=(0.56, 0.50),
+        icons=[(ASSETS_DIR / "monkey.png", (0.76, 0.48), 0.083, False)],
+        arrow_xytext=(0.45, 0.48), arrow_xy=(0.60, 0.48),
         stats_lines=[
-            "~22,248 object images",
-            "2 macaques · V1, V4, IT",
+            "2 macaques",
+            "V1, V4, IT recordings",
         ],
+        headline="22,248 object images",
+        headline_xy=(0.16, 0.97),
+        caption="Macaque electrophysiology",
+        caption_xy=(0.76, 0.26),
+        grid_center=(0.16, 0.48), grid_width=0.22, grid_height=0.52,
+        img_zoom=0.176, rows=3, cols=2,
     )
 
 
@@ -219,14 +247,20 @@ def draw_nsd_schematic(ax):
     _draw_schematic_base(
         ax, _load, NSD_STIMULI,
         icons=[
-            (ASSETS_DIR / "human.png", (0.55, 0.50), 0.08, False),
-            (ASSETS_DIR / "fmri.png", (0.78, 0.50), 0.10, False),
+            (ASSETS_DIR / "human.png", (0.64, 0.42), 0.077, False),
+            (ASSETS_DIR / "fmri.png", (0.85, 0.42), 0.083, False),
         ],
-        arrow_xytext=(0.28, 0.50), arrow_xy=(0.68, 0.50),
+        arrow_xytext=(0.40, 0.42), arrow_xy=(0.52, 0.42),
         stats_lines=[
-            "73,000 natural scenes",
-            "8 human subjects · 7T fMRI",
+            "8 human subjects",
+            "7T fMRI, ventral cortex",
         ],
+        headline="73,000 natural scenes",
+        headline_xy=(0.16, 0.95),
+        caption="Human fMRI",
+        caption_xy=(0.745, 0.20),
+        grid_center=(0.16, 0.42), grid_width=0.22, grid_height=0.52,
+        img_zoom=0.176, rows=3, cols=2,
     )
 
 

@@ -37,7 +37,7 @@ def _format_broken_xaxis(ax, show_xlabel):
 
 
 def plot_raw(ax, dataset, region, show_ylabel=True, show_xlabel=True,
-             show_untrained_label=False, tick_interval=None):
+             show_untrained_label=False, tick_interval=None, lollipop_ax=None):
     """Raw Spearman rho scatter (all architectures) + 1000-way marker + broken axis."""
     bl_mean, bl_ci_low, bl_ci_high = fetch_baseline_ci(dataset, region)
     if np.isnan(bl_mean) or bl_mean == 0:
@@ -75,6 +75,17 @@ def plot_raw(ax, dataset, region, show_ylabel=True, show_xlabel=True,
                         capsize=1.5, capthick=0.5,
                         ecolor=style["color"], elinewidth=0.7, zorder=4)
 
+    # 1000-way CI band: light orange horizontal span (full extent; torn later)
+    if not np.isnan(bl_ci_low) and not np.isnan(bl_ci_high):
+        ax.fill_between([1.5, BREAK_1K_POS], bl_ci_low, bl_ci_high,
+                        facecolor=BASELINE_1K_COLOR, alpha=0.12,
+                        edgecolor="none", zorder=1)
+
+    # Dashed reference line at 1000-way level (full extent; torn later)
+    ax.plot([1.5, BREAK_1K_POS], [bl_mean, bl_mean],
+            color=BASELINE_1K_COLOR, linestyle="--",
+            linewidth=1.0, alpha=0.6, zorder=2, clip_on=False)
+
     # 1000-way baseline: orange diamond at broken-axis position
     bl_err_lo = max(bl_mean - bl_ci_low, 0) if not np.isnan(bl_ci_low) else 0
     bl_err_hi = max(bl_ci_high - bl_mean, 0) if not np.isnan(bl_ci_high) else 0
@@ -85,15 +96,10 @@ def plot_raw(ax, dataset, region, show_ylabel=True, show_xlabel=True,
                 capsize=1.5, capthick=0.5,
                 ecolor=BASELINE_1K_COLOR, elinewidth=0.7, zorder=5)
 
-    # Dashed reference line at 1000-way level (stops at the diamond)
-    ax.plot([1.5, BREAK_1K_POS], [bl_mean, bl_mean],
-            color=BASELINE_1K_COLOR, linestyle="--",
-            linewidth=1.0, alpha=0.6, zorder=2, clip_on=False)
-
-    # Untrained baseline
+    # Untrained baseline (zorder=3 so it paints over the orange tear mask below)
     if not np.isnan(untrained_mean):
         ax.axhline(untrained_mean, color="#AAAAAA", linestyle="--",
-                    linewidth=1.25, alpha=0.6, zorder=2)
+                    linewidth=1.25, alpha=0.6, zorder=3)
         if show_untrained_label:
             ax.text(0.97, untrained_mean, "Untrained",
                     fontsize=8, fontstyle="italic", color="#999999",
@@ -107,6 +113,89 @@ def plot_raw(ax, dataset, region, show_ylabel=True, show_xlabel=True,
     draw_xaxis_break(ax)
     ax.set_ylim(y_min - y_range * 0.12, y_max + y_range * 0.10)
     format_yaxis(ax, tick_interval=tick_interval)
+
+    # ── Jagged tear through the orange band + dashed line at the break ──
+    # Reuses the exact tooth dimensions from _draw_lollipop_break in panel_bits:
+    # - x protrusion: 0.010 axes-fraction x (scatter shares x plot-area with
+    #   lollipop, so the tooth has the same pixel width as the gray break).
+    # - y period:  0.15 axes-fraction y of the lollipop panel, scaled by
+    #   (lollipop_height / scatter_height) so each tooth has the same pixel
+    #   height as the gray break.
+    # Number of teeth adapts to the orange band's height so each tooth stays
+    # a fixed visual size regardless of how wide the CI is.
+    from matplotlib.patches import Polygon
+    from matplotlib.transforms import blended_transform_factory
+    import math
+
+    GRAY_TOOTH_DX = 0.010          # axes-fraction x (reused as-is)
+    GRAY_SEGMENT_Y_PERIOD = 0.15   # axes-fraction y of the lollipop panel
+
+    # Center of the break, in scatter axes fraction, then shifted left to
+    # coincide with the LEFT jagged edge of the gray lollipop break
+    # (gap=0.045 in panel_bits._draw_lollipop_break, so left edge = center - gap/2).
+    LOLLIPOP_BREAK_GAP = 0.045  # must match panel_bits._draw_lollipop_break
+    x_lo, x_hi = 1.5, BREAK_1K_POS * 1.5
+    mid_data_center = math.exp((math.log(64) + math.log(BREAK_1K_POS)) / 2)
+    center_frac = (math.log2(mid_data_center) - math.log2(x_lo)) / (math.log2(x_hi) - math.log2(x_lo))
+    mid_frac = center_frac - LOLLIPOP_BREAK_GAP / 2
+
+    # Scale tooth y-period from lollipop axes-fraction to scatter data units
+    if lollipop_ax is not None:
+        height_ratio = lollipop_ax.get_position().height / ax.get_position().height
+    else:
+        height_ratio = 0.14 / 0.86   # fallback matching figure3.py height_ratios
+    y_lo_lim, y_hi_lim = ax.get_ylim()
+    tooth_y_period = GRAY_SEGMENT_Y_PERIOD * height_ratio * (y_hi_lim - y_lo_lim)
+
+    # ── Fit an integer number of segments exactly into the band ──
+    # Rounding band_height to an integer multiple of tooth_y_period means
+    # the visible zigzag terminates at clean tooth tips on both band edges.
+    # Minimum 4 segments (2 full teeth) so even tight bands show a jag.
+    band_height = bl_ci_high - bl_ci_low
+    n_seg_band = max(4, int(round(band_height / tooth_y_period)))
+    seg_period = band_height / n_seg_band  # adjusted so it divides evenly
+
+    # Preserve tooth aspect ratio: if band is too narrow for the standard
+    # tooth_y_period, scale x protrusion down by the same factor so each
+    # tooth is a miniaturised (similar) version of the reference tooth
+    # rather than a squished one. Never scale up (cap ratio at 1).
+    aspect_scale = min(1.0, seg_period / tooth_y_period)
+    vis_tooth_dx = GRAY_TOOTH_DX * aspect_scale
+
+    # Blended transform: x in axes fraction, y in data coordinates
+    trans_bt = blended_transform_factory(ax.transAxes, ax.transData)
+
+    # ── Visible orange zigzag: exactly spans [bl_ci_low, bl_ci_high] ──
+    y_vis = bl_ci_low + np.arange(n_seg_band + 1) * seg_period
+    zigzag_vis = np.array([(-1) ** k for k in range(len(y_vis))])
+    x_vis = mid_frac + vis_tooth_dx * zigzag_vis
+
+    # ── White mask: extend the same zigzag past plot edges (same phase) ──
+    # Keep the mask tearing the dashed line everywhere outside the band.
+    n_ext = max(2, int(math.ceil((y_hi_lim - y_lo_lim) / seg_period)))
+    # Segments above the band: alternate sign continuing from the top tip
+    y_above = bl_ci_high + np.arange(1, n_ext + 1) * seg_period
+    zig_above = np.array([(-1) ** (n_seg_band + k) for k in range(1, n_ext + 1)])
+    x_above = mid_frac + vis_tooth_dx * zig_above
+    # Segments below the band: alternate sign continuing from the bottom tip
+    y_below = bl_ci_low - np.arange(1, n_ext + 1) * seg_period
+    zig_below = np.array([(-1) ** (-k) for k in range(1, n_ext + 1)])
+    x_below = mid_frac + vis_tooth_dx * zig_below
+
+    y_mask_pts = np.concatenate([y_below[::-1], y_vis, y_above])
+    x_mask_pts = np.concatenate([x_below[::-1], x_vis, x_above])
+
+    right_far = 1.15
+    verts = (list(zip(x_mask_pts, y_mask_pts))
+             + [(right_far, y_mask_pts[-1]), (right_far, y_mask_pts[0])])
+    ax.add_patch(Polygon(verts, facecolor="white", edgecolor="none",
+                         transform=trans_bt, clip_on=True, zorder=2.6))
+
+    # Orange outline: only the in-band portion, clean tooth-tip endpoints
+    ax.plot(x_vis, y_vis, transform=trans_bt,
+            color=BASELINE_1K_COLOR, linewidth=0.6, alpha=0.75,
+            solid_joinstyle="miter", solid_capstyle="butt",
+            clip_on=False, zorder=2.7)
 
     if show_ylabel:
         ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=9, labelpad=4)

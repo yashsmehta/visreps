@@ -72,14 +72,15 @@ def main():
             height_ratios=[0.14, 0.86], hspace=0.10)
 
         ax_raw = fig.add_subplot(inner[1, 0])
+        ax_lol = fig.add_subplot(inner[0, 0], sharex=ax_raw)
+
         show_untrained = (orow == 1)  # bottom row shows untrained label
         plot_raw(ax_raw, ds, region,
                  show_ylabel=ylabel, show_xlabel=xlabel,
                  show_untrained_label=show_untrained,
-                 tick_interval=ytick)
+                 tick_interval=ytick, lollipop_ax=ax_lol)
         axes_scatter[(orow, ocol)] = ax_raw
 
-        ax_lol = fig.add_subplot(inner[0, 0], sharex=ax_raw)
         plot_lollipop(ax_lol, ds, region, show_ylabel=True)
         axes_lollipop[(orow, ocol)] = ax_lol
 
@@ -92,19 +93,13 @@ def main():
             axes_lollipop[key].set_position(
                 [scat_pos.x0, lol_pos.y0, scat_pos.width, lol_pos.height])
 
-    # ── Row headers (dataset name + stimulus type, above schematics) ──
-    for schem_ax, title, subtitle in [
-        (ax_tvsd_schem, "TVSD", "Object images"),
-        (ax_nsd_schem,  "NSD",  "Natural scenes"),
-    ]:
+    # ── Row headers (dataset abbreviation only) ──
+    for schem_ax, title in [(ax_tvsd_schem, "TVSD"), (ax_nsd_schem, "NSD")]:
         pos = schem_ax.get_position()
         x_center = (pos.x0 + pos.x1) / 2
-        fig.text(x_center, pos.y1 + 0.030, title,
-                 fontsize=13, fontweight="bold",
+        fig.text(x_center, pos.y1 + 0.020, title,
+                 fontsize=14, fontweight="bold",
                  color="#1a1a1a", ha="center", va="bottom")
-        fig.text(x_center, pos.y1 + 0.010, subtitle,
-                 fontsize=9, color="#777777", fontstyle="italic",
-                 ha="center", va="bottom")
 
     # ── Column headers (cortical level, above top-row data panels) ──
     for col, label in [(1, "Early Visual Cortex"), (2, "Higher Visual Cortex")]:
@@ -148,7 +143,7 @@ def main():
                         fancybox=False, framealpha=0.92, edgecolor="#dddddd",
                         borderpad=0.5, handletextpad=0.4, labelspacing=0.3,
                         title="Coarse label source", title_fontsize=7.5,
-                        loc="right", bbox_to_anchor=(1.0, 0.35))
+                        loc="right", bbox_to_anchor=(1.0, 0.22))
 
     # ── Save ──
     out = f"{OUTPUT_DIR}/figure3.png"
