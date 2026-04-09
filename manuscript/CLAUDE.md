@@ -16,7 +16,8 @@ manuscript/
 │   ├── fig4/                  # Figure 4: THINGS behavioral alignment
 │   ├── fig5/                  # Figure 5: Per-concept alignment (RDMs + scatter + histogram)
 │   ├── fig6/                  # Figure 6: Architecture generalization
-│   └── supplementary/         # Supplementary figures (S1–S18), see README.md inside
+│   └── extended_data/         # Extended Data Figs. 1–7 (figures + captions only; index: extended_data.md)
+├── supplementary_information.md  # Supplementary Notes (narrative text, no figures) — references Extended Data by number
 ├── talk/
 │   ├── talk_plan.md           # Slide-by-slide plan (content, visuals, sources)
 │   ├── shared.py              # Talk-specific style (larger fonts) + shared helpers

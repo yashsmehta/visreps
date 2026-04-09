@@ -1,0 +1,5 @@
+# Extended Data Fig. 7b: THINGS behavioural alignment is stable across random training seeds
+
+**Extended Data Fig. 7b | THINGS behavioural alignment scores are highly reproducible across independent random training seeds.**
+Individual seed scores for each of three independently trained networks per condition (distinct markers: circle = seed 1, square = seed 2, triangle = seed 3), overlaid on dashed mean lines for each CLIP-derived coarse-grained condition (2, 4, 8, 16, 32, 64 classes) and for the 1,000-class supervised baseline (orange). The untrained-network baseline is shown as a grey dashed line. Broken x-axis matches main Fig. 4.
+Across all granularity levels the three seed scores cluster tightly around their respective means, with inter-seed variability substantially smaller than the within-seed bootstrap confidence intervals and negligible relative to the coarse-vs-1,000-class contrast. The behavioural coarseness advantage reported in the main text is therefore not driven by fortuitous random initialisation and is reproducible across independent training runs.

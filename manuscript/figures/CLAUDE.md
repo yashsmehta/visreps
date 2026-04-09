@@ -98,21 +98,23 @@ Tests whether the coarseness advantage generalizes to standard architectures.
 
 **Data:** `results.db` (THINGS results for ResNet-50, ConvNeXt, ViT-B/16).
 
-## Supplementary Figures (`supplementary/`)
+## Extended Data Figures (`extended_data/`)
 
-Supplementary figures live in `manuscript/figures/supplementary/` (NOT `manuscript/supplementary/`). Each figure lives in its own `SN_*/` subfolder containing the script and its output PNG(s) — mirroring the `figN/` layout of the main figures. See `supplementary/supplementary.md` for the full index and captions.
+Extended Data figures live in `manuscript/figures/extended_data/`. Each figure lives in its own `SN_*/` subfolder containing the generating script, its output PNG(s), and a Nature-style `*_description.md` caption file — mirroring the `figN/` layout of the main figures. The index + captions file is `extended_data/extended_data.md`. Narrative Supplementary Notes (text only, no figures) live in `manuscript/supplementary_information.md`; these reference Extended Data figures by number.
 
-**Style:** Must match main Figure 3's scatter format exactly (same `panel_raw.py` approach). See `supplementary/figure_style.md` for the complete style reference.
+**Nature format:** Extended Data consists of peer-reviewed, standalone figures with self-contained captions and no accompanying narrative. All discussion text lives in `supplementary_information.md`.
 
-**Key scripts:**
-- `S1_coarsegrain_models/S1_coarsegrain_models.py` — S1A (neural: 2x2 TVSD+NSD) + S1B (THINGS behavioral), all 4 PCA sources
-- `S2_encoding_scores/S2_encoding_scores.py` — 2x2 neural panel using encoding-score (RidgeCV Pearson r) instead of RSA; AlexNet + CLIP (no Pixels — absent from DB)
-- `S3_wordnet/S3_wordnet.py` — WordNet-derived labels
-- `S4_per_layer/S4_per_layer.py` — Full per-layer profiles
-- `S5_finegrained_roi/S5_finegrained_roi.py` — Fine-grained ROI decomposition (NSD), raw RSA, AlexNet+CLIP
-- `S6_pc_poles/S6_pc_poles.py` — PCA pole images
-- `S7_reconstruction/S7_reconstruction.py` — Reconstruction control
-- `S8_training_accuracy/S8_training_accuracy.py` — Training accuracy (scatter + 1000-way bar), all 4 PCA sources
-- `S9_seed_variability/S9_seed_variability.py` — Seed variability
+**Style:** Must match main Figure 3's scatter format exactly (same `panel_raw.py` approach). See `extended_data/figure_style.md` for the complete style reference.
 
-**Consistent style across S1, S2, S5, S8:** All use the same Figure 3 scatter format (broken x-axis, jittered markers, no connecting lines). Legend shows only PCA label sources — no 1000-way or untrained entries. Colors: AlexNet `#6baed6`, CLIP `#08519c`, ViT `#c0392b`, DINO `#1a8a7a`.
+**Key scripts (7 Extended Data figures; deprecated figures parked in `extended_data/extra/`):**
+- `S1_coarsegrain_models/S1_coarsegrain_models.py` — ED Fig. 1a (neural: 2x2 TVSD+NSD) + 1b (THINGS behavioral), all 4 PCA sources
+- `S2_wordnet/S2_wordnet.py` — ED Fig. 2: WordNet-derived labels (neural + behavioral)
+- `S3_encoding_scores/S3_encoding_scores.py` — ED Fig. 3: 2x2 neural encoding-score (RidgeCV Pearson r); AlexNet + CLIP (no Pixels — absent from DB)
+- `S4_training_accuracy/S4_training_accuracy.py` — ED Fig. 4: Training accuracy (scatter + 1000-way bar), all 4 PCA sources
+- `S5_pc_poles/S5_pc_poles.py` — ED Fig. 5: PCA pole images
+- `S6_reconstruction/S6_reconstruction.py` — ED Fig. 6: PC_k reconstruction control (neural + behavioral)
+- `S7_seed_variability/S7_seed_variability.py` — ED Fig. 7: Variability across seeds (neural + behavioral)
+
+Note: the `SN_*` folder prefix is a legacy from when these were Supplementary Figures; the numbering (1–7) matches their new Extended Data labels.
+
+**Consistent style across ED Figs. 1, 3, 4:** All use the same Figure 3 scatter format (broken x-axis, jittered markers, no connecting lines). Legend shows only PCA label sources — no 1000-way or untrained entries. Colors: AlexNet `#6baed6`, CLIP `#08519c`, ViT `#c0392b`, DINO `#1a8a7a`.

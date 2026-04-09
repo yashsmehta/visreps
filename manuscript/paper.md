@@ -8,7 +8,7 @@ The AI field has progressively moved toward richer training objectives — from 
 
 ---
 
-**Status:** All updated figures from Fig. 1 to Fig. 6 are complete. Supplementary figures are maintained separately in `manuscript/figures/supplementary/`.
+**Status:** All updated figures from Fig. 1 to Fig. 6 are complete. Extended Data figures are maintained in `manuscript/figures/extended_data/` (index: `extended_data.md`); narrative supplementary notes live in `manuscript/supplementary_information.md`.
 
 **PCA source models in main figures:** AlexNet, CLIP, Pixels. ViT and DINOv3-derived labels in supplementary only.
 
