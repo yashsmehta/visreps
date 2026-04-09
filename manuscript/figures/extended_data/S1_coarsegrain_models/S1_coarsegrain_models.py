@@ -228,10 +228,12 @@ def generate_s1a():
     # ── Pre-compute fig3 y-limits using its ORIGINAL 3-arch set ──
     panels = [
         # (row, col, dataset, region, show_ylabel, show_xlabel, show_untrained, tick_interval)
-        (0, 0, "tvsd", "V1",                    True,  False, False, None),
+        # tick_interval=0.05 everywhere so the major-tick cadence matches
+        # fig3's rendered panels (which auto-locate to 0.05 at fig3's size).
+        (0, 0, "tvsd", "V1",                    True,  False, False, 0.05),
         (0, 1, "tvsd", "IT",                    False, False, False, 0.05),
-        (1, 0, "nsd",  "early visual stream",   True,  True,  True,  None),
-        (1, 1, "nsd",  "ventral visual stream", False, True,  False, None),
+        (1, 0, "nsd",  "early visual stream",   True,  True,  True,  0.05),
+        (1, 1, "nsd",  "ventral visual stream", False, True,  False, 0.05),
     ]
     fig3_ylims = {
         (ds, region): _precompute_fig3_ylim(ds, region, ytick)
@@ -259,12 +261,14 @@ def generate_s1a():
     # ── Figure geometry matching fig3's data-panel x-axis width (3.747") ──
     # fig3: figsize=(14,8.5), left=0.06, right=0.97, 3 cols, wspace=0.20
     #       per-col width = 14*(0.97-0.06)/(3+2*0.20) = 3.7471"
-    # S1:   2 data cols, wspace=0.20, left=0.08, right=0.97
-    #       figsize_w = 3.7471*(2+0.20)/(0.97-0.08) = 9.264"
-    fig = plt.figure(figsize=(9.26, 6.8))
+    # S1:   2 data cols, wspace=0.20, left=0.13, right=0.97
+    #       figsize_w = 3.7471*(2+0.20)/(0.97-0.13) = 9.812"
+    # Wider left margin so the rotated TVSD/NSD row labels don't collide
+    # with the "RSA (Spearman ρ)" y-axis label of the left column.
+    fig = plt.figure(figsize=(9.81, 6.8))
     gs = gridspec.GridSpec(2, 2, figure=fig,
                            hspace=0.30, wspace=0.20,
-                           left=0.08, right=0.97, top=0.87, bottom=0.10)
+                           left=0.13, right=0.97, top=0.87, bottom=0.10)
 
     axes = {}
     try:
@@ -298,13 +302,14 @@ def generate_s1a():
                             color="#333333", pad=7)
 
     # Row headers — dataset labels
+    # Place row headers to the LEFT of the y-axis label, clear of it.
     for row, (title, subtitle) in enumerate([
         ("TVSD", "Macaque electrophysiology"),
         ("NSD", "Human fMRI"),
     ]):
         pos = axes[(row, 0)].get_position()
-        fig.text(0.02, (pos.y0 + pos.y1) / 2 + 0.015, title,
-                 fontsize=11, fontweight="bold", color="#1a1a1a",
+        fig.text(0.015, (pos.y0 + pos.y1) / 2, title,
+                 fontsize=12, fontweight="bold", color="#1a1a1a",
                  ha="center", va="center", rotation=90)
 
     # Column headers — cortical level
@@ -338,69 +343,32 @@ def generate_s1a():
 # ── S1B: THINGS Behavioral (single panel) ───────────────────────────────
 
 def generate_s1b():
-    """S1B: THINGS behavioral — single panel, all 4 PCA sources."""
-    fig, ax = plt.subplots(1, 1, figsize=(5, 3.8))
+    """S1B: THINGS behavioral — structurally identical to main Figure 4B.
 
-    bl_mean, bl_ci_low, bl_ci_high = _fetch_things_baseline(epoch=20)
-    un_mean, _, _ = _fetch_things_baseline(epoch=0)
+    Reuses `fig4.panel_coarseness.plot_coarseness` directly (same torn CI
+    band, same axes, same title, same legend styling) and monkey-patches
+    its architecture list to S1's 4 PCA sources.
+    """
+    sys.path.insert(0, "manuscript/figures/fig4")
+    import panel_coarseness as _fig4b  # noqa: WPS433
 
-    all_y = [bl_mean]
-    if not np.isnan(un_mean):
-        all_y.append(un_mean)
+    # Save fig4B originals; restore in finally
+    _orig_arches = _fig4b.ARCHITECTURES
+    _orig_style  = _fig4b.ARCH_STYLE
 
-    for arch_idx, (arch_key, folder, _) in enumerate(ARCHITECTURES):
-        style = ARCH_STYLE[arch_key]
-        means, errs_lo, errs_hi = _fetch_things_data(folder)
-        all_y.extend(m for m in means if not np.isnan(m))
-        jitter = _compute_jitter_wide(arch_idx, len(ARCHITECTURES))
+    # Monkey-patch fig4B to use all 4 PCA sources. Reuse S1's ARCH_STYLE,
+    # which already shares AlexNet/CLIP colors with fig4B and adds ViT/DINO.
+    _fig4b.ARCHITECTURES = ARCHITECTURES
+    _fig4b.ARCH_STYLE    = ARCH_STYLE
 
-        for i, cfg in enumerate(COARSE_CFGS):
-            if np.isnan(means[i]):
-                continue
-            ax.errorbar(cfg * jitter, means[i],
-                        yerr=[[errs_lo[i]], [errs_hi[i]]],
-                        fmt=style["marker"], color=style["color"],
-                        markersize=MARKER_SIZE,
-                        markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
-                        capsize=1.5, capthick=0.5,
-                        ecolor=style["color"], elinewidth=0.7, zorder=4)
-
-    # 1000-way baseline
-    bl_err_lo = max(bl_mean - bl_ci_low, 0) if not np.isnan(bl_ci_low) else 0
-    bl_err_hi = max(bl_ci_high - bl_mean, 0) if not np.isnan(bl_ci_high) else 0
-    ax.errorbar(BREAK_1K_POS, bl_mean,
-                yerr=[[bl_err_lo], [bl_err_hi]],
-                fmt="D", color=BASELINE_1K_COLOR, markersize=MARKER_SIZE,
-                markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
-                capsize=1.5, capthick=0.5,
-                ecolor=BASELINE_1K_COLOR, elinewidth=0.7, zorder=5)
-    ax.axhline(bl_mean, color=BASELINE_1K_COLOR, linestyle="--",
-               linewidth=1.0, alpha=0.6, zorder=2)
-
-    # Untrained baseline
-    if not np.isnan(un_mean):
-        ax.axhline(un_mean, color="#AAAAAA", linestyle="--",
-                    linewidth=1.0, alpha=0.6, zorder=2)
-        ax.text(0.03, un_mean, "Untrained",
-                fontsize=6.5, fontstyle="italic", color="#999999",
-                ha="left", va="bottom",
-                transform=ax.get_yaxis_transform(), zorder=10)
-
-    y_min, y_max = min(all_y), max(all_y)
-    y_range = y_max - y_min
-    _format_broken_xaxis(ax, show_xlabel=True)
-    draw_xaxis_break(ax)
-    ax.set_ylim(y_min - y_range * 0.12, y_max + y_range * 0.10)
-    format_yaxis(ax)
-    ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=9, labelpad=4)
-    sns.despine(ax=ax, right=True, top=True, offset=3)
-
-    # Legend — right side, just above untrained line
-    ax.legend(handles=_build_legend(), fontsize=8, frameon=True,
-              fancybox=False, framealpha=0.92, edgecolor="#dddddd",
-              borderpad=0.5, handletextpad=0.4, labelspacing=0.3,
-              title="Coarse label source", title_fontsize=8,
-              loc="right", bbox_to_anchor=(1.0, 0.32))
+    # Match fig4B's physical panel size (figure4.py allocates ~one quarter
+    # of a 14-inch-wide figure to panel B).
+    fig, ax = plt.subplots(1, 1, figsize=(4.6, 3.6))
+    try:
+        _fig4b.plot_coarseness(ax)
+    finally:
+        _fig4b.ARCHITECTURES = _orig_arches
+        _fig4b.ARCH_STYLE    = _orig_style
 
     plt.tight_layout()
     out = f"{OUTPUT_DIR}/S1b_behavioral.png"

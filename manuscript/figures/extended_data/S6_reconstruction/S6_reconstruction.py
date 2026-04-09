@@ -137,7 +137,7 @@ def plot_reconstruction_panel(ax, neural_dataset, region,
 
 
 def _build_legend():
-    """Legend handles: 1000-way, coarse, untrained."""
+    """Legend handles: 1000-way and coarse only (untrained labelled inline)."""
     return [
         Line2D([], [], color=FINE_COLOR, marker="o", markersize=4,
                linewidth=1.5, markeredgecolor="white", markeredgewidth=0.5,
@@ -145,8 +145,6 @@ def _build_legend():
         Line2D([], [], color=COARSE_COLOR, marker="s", markersize=4,
                linewidth=1.5, markeredgecolor="white", markeredgewidth=0.5,
                label=r"Coarse (top-$k$)"),
-        Line2D([], [], color=UNTRAINED_COLOR, linestyle=":", linewidth=1.3,
-               label="Untrained"),
     ]
 
 

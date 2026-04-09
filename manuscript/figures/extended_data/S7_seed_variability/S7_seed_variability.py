@@ -262,9 +262,26 @@ def _build_legend():
     ]
 
 
+def _precompute_fig3_ylims():
+    """Dry-run fig3's plot_raw for each (dataset, region) to capture ylim."""
+    sys.path.insert(0, "manuscript/figures/fig3")
+    from panel_raw import plot_raw as _fig3_plot_raw  # noqa: WPS433
+    ylims = {}
+    for _, _, ds, region, *_ in NEURAL_PANELS:
+        f, a = plt.subplots(figsize=(3.75, 2.5))
+        _fig3_plot_raw(a, ds, region,
+                       show_ylabel=False, show_xlabel=False,
+                       show_untrained_label=False,
+                       tick_interval=0.05, lollipop_ax=None)
+        ylims[(ds, region)] = a.get_ylim()
+        plt.close(f)
+    return ylims
+
+
 def generate_neural():
-    """S8A: Neural — 2x2 grid (TVSD top | NSD bottom) x (Early | Higher)."""
+    """S7A: Neural — 2x2 grid (TVSD top | NSD bottom) x (Early | Higher)."""
     setup_style()
+    fig3_ylims = _precompute_fig3_ylims()
     plt.rcParams.update({
         "axes.labelsize": 9, "axes.titlesize": 10,
         "xtick.labelsize": 8, "ytick.labelsize": 8,
@@ -285,6 +302,8 @@ def generate_neural():
         plot_seed_panel(ax, conn, ds, region,
                         show_ylabel=ylabel, show_xlabel=xlabel,
                         show_untrained_label=untrained_label)
+        # Force y-limits to match main Figure 3 for the same (dataset, region)
+        ax.set_ylim(*fig3_ylims[(ds, region)])
         axes[(row, col)] = ax
 
     # Region sub-titles
@@ -332,6 +351,18 @@ def generate_neural():
     plt.close()
 
 
+def _precompute_fig4_behavioral_ylim():
+    """Dry-run fig4's panel B (plot_coarseness) to capture its y-limits."""
+    import sys as _sys
+    _sys.path.insert(0, "manuscript/figures/fig4")
+    from panel_coarseness import plot_coarseness as _fig4_plot_coarseness
+    fig_tmp, ax_tmp = plt.subplots(figsize=(4, 3))
+    _fig4_plot_coarseness(ax_tmp)
+    ylim = ax_tmp.get_ylim()
+    plt.close(fig_tmp)
+    return ylim
+
+
 def generate_behavioral():
     """S8B: THINGS behavioral — single seed variability panel."""
     setup_style()
@@ -341,6 +372,9 @@ def generate_behavioral():
         "axes.linewidth": 0.7, "xtick.major.width": 0.7, "ytick.major.width": 0.7,
     })
 
+    # Capture fig4 panel B's y-limits BEFORE drawing (so our panel matches).
+    fig4_ylim = _precompute_fig4_behavioral_ylim()
+
     conn = sqlite3.connect(DB_PATH)
 
     fig, ax = plt.subplots(figsize=(5, 3.5))
@@ -349,6 +383,8 @@ def generate_behavioral():
     plot_seed_panel(ax, conn, "things-behavior", "N/A",
                     show_ylabel=True, show_xlabel=True,
                     show_untrained_label=True)
+    # Force y-limits to match Figure 4 panel B exactly
+    ax.set_ylim(*fig4_ylim)
 
     ax.set_title("THINGS (Behavioral)", fontsize=11, fontweight="bold",
                  color="#333333", pad=8)

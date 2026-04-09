@@ -55,27 +55,15 @@ NEURAL_PANELS = [
 
 
 def get_wordnet_summary(neural_dataset, region, cfg_id):
-    """Get mean score (+ cross-subject SEM) for a WordNet condition."""
-    conn = sqlite3.connect(DB_PATH)
-    df = pd.read_sql("""
-        SELECT score FROM results
-        WHERE neural_dataset = ? AND region = ? AND cfg_id = ?
-          AND pca_labels_folder = ? AND compare_method = 'spearman'
-          AND reconstruct_from_pcs = 0 AND epoch = 20
-    """, conn, params=[neural_dataset, region, cfg_id, WORDNET_FOLDER])
-    conn.close()
-
-    if df.empty:
+    """Get mean + bootstrap 95% CI for a WordNet condition (matches Fig. 3)."""
+    s = get_condition_summary(
+        neural_dataset, region, WORDNET_FOLDER, cfg_id,
+        "spearman", epoch=20, analysis="rsa")
+    mean = s["mean"]
+    if np.isnan(mean):
         return np.nan, 0, 0
-
-    mean = df["score"].mean()
-    if len(df) > 1:
-        sem = df["score"].std() / np.sqrt(len(df))
-        err_lo = 1.96 * sem
-        err_hi = 1.96 * sem
-    else:
-        err_lo, err_hi = 0, 0
-
+    err_lo = max(mean - s["ci_low"], 0) if not np.isnan(s["ci_low"]) else 0
+    err_hi = max(s["ci_high"] - mean, 0) if not np.isnan(s["ci_high"]) else 0
     return mean, err_lo, err_hi
 
 
@@ -193,7 +181,13 @@ def plot_wordnet_scatter(ax, neural_dataset, region,
 
 
 def plot_neural_figure():
-    """Generate the 2x2 neural figure (TVSD top, NSD bottom)."""
+    """Generate the 2x2 neural figure (TVSD top, NSD bottom).
+
+    Reuses `fig3.panel_raw.plot_raw` directly — same torn CI band, same
+    broken-axis tooth, same y-label formatting — and monkey-patches its
+    architecture + x-tick list to the single WordNet source. Y-limits are
+    force-matched to the corresponding panels of main Figure 3.
+    """
     setup_style()
     plt.rcParams.update({
         "axes.labelsize": 9,
@@ -205,25 +199,80 @@ def plot_neural_figure():
         "ytick.major.width": 0.7,
     })
 
-    fig = plt.figure(figsize=(11, 7.5))
+    # ── Import fig3 renderers ──
+    sys.path.insert(0, "manuscript/figures/fig3")
+    import shared as _fig3_shared         # noqa: WPS433
+    import panel_raw as _fig3_panel_raw   # noqa: WPS433
+    from panel_raw import plot_raw as _fig3_plot_raw  # noqa: WPS433
+
+    # ── Pre-compute fig3 y-limits using its ORIGINAL 3-arch set ──
+    fig3_ylims = {}
+    for _, _, ds, region, _ in NEURAL_PANELS:
+        f_tmp, ax_tmp = plt.subplots(figsize=(3.75, 2.5))
+        _fig3_plot_raw(ax_tmp, ds, region,
+                       show_ylabel=False, show_xlabel=False,
+                       show_untrained_label=False,
+                       tick_interval=0.05, lollipop_ax=None)
+        fig3_ylims[(ds, region)] = ax_tmp.get_ylim()
+        plt.close(f_tmp)
+
+    # ── Monkey-patch fig3 to our WordNet arch + cfgs ──
+    wn_arches = [("wordnet", WORDNET_FOLDER, "WordNet")]
+    wn_style  = {"wordnet": {"color": WORDNET_COLOR, "marker": WORDNET_MARKER}}
+
+    _orig_shared_arches = _fig3_shared.ARCHITECTURES
+    _orig_shared_style  = _fig3_shared.ARCH_STYLE
+    _orig_shared_cfgs   = _fig3_shared.COARSE_CFGS
+    _orig_pr_arches     = _fig3_panel_raw.ARCHITECTURES
+    _orig_pr_style      = _fig3_panel_raw.ARCH_STYLE
+    _orig_pr_cfgs       = _fig3_panel_raw.COARSE_CFGS
+
+    _fig3_shared.ARCHITECTURES    = wn_arches
+    _fig3_shared.ARCH_STYLE       = wn_style
+    _fig3_shared.COARSE_CFGS      = WORDNET_CFGS
+    _fig3_panel_raw.ARCHITECTURES = wn_arches
+    _fig3_panel_raw.ARCH_STYLE    = wn_style
+    _fig3_panel_raw.COARSE_CFGS   = WORDNET_CFGS
+    try:
+        _fig3_shared.fetch_arch_data.cache_clear()
+    except AttributeError:
+        pass
+
+    # Figure geometry matching fig3 data-panel widths
+    fig = plt.figure(figsize=(9.81, 6.8))
     gs = gridspec.GridSpec(
         2, 2, figure=fig,
-        wspace=0.25, hspace=0.30,
-        top=0.88, bottom=0.08, left=0.12, right=0.96,
+        wspace=0.20, hspace=0.30,
+        top=0.87, bottom=0.10, left=0.13, right=0.97,
     )
 
     axes = {}
-    for row, col, nd, region, title in NEURAL_PANELS:
-        ax = fig.add_subplot(gs[row, col])
-        show_ylabel = (col == 0)
-        show_xlabel = (row == 1)
-        show_untrained = (row == 1)  # label untrained on bottom row only
-        print(f"Drawing: {nd} / {region}")
-        plot_wordnet_scatter(ax, nd, region,
-                             show_ylabel=show_ylabel,
-                             show_xlabel=show_xlabel,
-                             show_untrained_label=show_untrained)
-        axes[(row, col)] = ax
+    try:
+        for row, col, nd, region, title in NEURAL_PANELS:
+            ax = fig.add_subplot(gs[row, col])
+            show_ylabel = (col == 0)
+            show_xlabel = (row == 1)
+            show_untrained = (row == 1 and col == 0)
+            print(f"Drawing: {nd} / {region}")
+            _fig3_plot_raw(ax, nd, region,
+                           show_ylabel=show_ylabel,
+                           show_xlabel=show_xlabel,
+                           show_untrained_label=show_untrained,
+                           tick_interval=0.05, lollipop_ax=None)
+            # Force y-limits to match fig3 exactly
+            ax.set_ylim(*fig3_ylims[(nd, region)])
+            axes[(row, col)] = ax
+    finally:
+        _fig3_shared.ARCHITECTURES    = _orig_shared_arches
+        _fig3_shared.ARCH_STYLE       = _orig_shared_style
+        _fig3_shared.COARSE_CFGS      = _orig_shared_cfgs
+        _fig3_panel_raw.ARCHITECTURES = _orig_pr_arches
+        _fig3_panel_raw.ARCH_STYLE    = _orig_pr_style
+        _fig3_panel_raw.COARSE_CFGS   = _orig_pr_cfgs
+        try:
+            _fig3_shared.fetch_arch_data.cache_clear()
+        except AttributeError:
+            pass
 
     # Column headers (cortical level)
     fig.canvas.draw()
@@ -273,10 +322,12 @@ def plot_neural_figure():
                markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
                markersize=MARKER_SIZE, label="WordNet labels"),
     ]
+    # Legend in panel b — right side, below the data cluster but above
+    # the untrained baseline line, so it never occludes data points.
     axes[(0, 1)].legend(handles=legend_handles, fontsize=7.5, frameon=True,
                         fancybox=False, framealpha=0.92, edgecolor="#dddddd",
                         borderpad=0.5, handletextpad=0.4, labelspacing=0.3,
-                        loc="upper right")
+                        loc="right", bbox_to_anchor=(1.0, 0.30))
 
     out = f"{OUTPUT_DIR}/S2_wordnet_neural.png"
     fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
