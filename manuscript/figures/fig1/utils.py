@@ -115,7 +115,7 @@ def _repel_positions(points, min_dist=0.12, iterations=200, anchor_weight=0.01):
 
 
 def add_top_row_insets(ax, pcs, class_labels, label_array, colors, inset_classes,
-                       imagenet_dir, zoom=0.32, thumb_size=52):
+                       imagenet_dir, zoom=0.384, thumb_size=52):
     """Overlay image insets on a scatter panel."""
     import matplotlib.patheffects as pe
 
@@ -171,11 +171,8 @@ def add_top_row_insets(ax, pcs, class_labels, label_array, colors, inset_classes
         ab = AnnotationBbox(
             im_box, (disp_x, disp_y),
             frameon=True, pad=0.10,
-            bboxprops=dict(edgecolor=c, linewidth=2.8, facecolor="white",
-                           alpha=0.97,
-                           path_effects=[
-                               pe.withStroke(linewidth=4.0, foreground="white"),
-                           ]),
+            bboxprops=dict(edgecolor=c, linewidth=1.4, facecolor="white",
+                           alpha=0.97),
             zorder=6,
         )
         ax.add_artist(ab)

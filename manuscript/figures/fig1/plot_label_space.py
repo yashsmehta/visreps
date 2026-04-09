@@ -145,7 +145,7 @@ def plot_label_space(save=True):
         ]:
             add_top_row_insets(ax, top_pcs, top_class_labels,
                                labels, colors, INSET_CLASSES,
-                               imagenet_dir, zoom=0.44, thumb_size=75)
+                               imagenet_dir, zoom=0.18, thumb_size=220)
     else:
         print(f"WARNING: ImageNet dir not found ({imagenet_dir}), skipping insets")
 
