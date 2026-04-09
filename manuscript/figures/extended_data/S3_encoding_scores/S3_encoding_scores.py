@@ -35,6 +35,8 @@ from fig_utils import (
 sys.path.insert(0, "manuscript/figures/fig3")
 from shared import ARCH_STYLE, BASELINE_1K_COLOR, format_yaxis
 from panel_bits import LOLLIPOP_ARCHS, STEM_LW, MARKER_SZ, X_START, _draw_lollipop_break
+import panel_raw as _fig3_panel_raw
+from panel_raw import plot_raw as _fig3_plot_raw
 
 OUTPUT_DIR = "manuscript/figures/extended_data/S3_encoding_scores"
 ANALYSIS = "encoding_score"
@@ -86,95 +88,27 @@ def fetch_coarse_ci_enc(dataset, folder, region, cfg):
     return s["mean"], s["ci_low"], s["ci_high"]
 
 
-# ── Panel renderers (replicate panel_raw/panel_bits with encoding fetchers) ──
-
-def _format_broken_xaxis(ax, show_xlabel):
-    ax.set_xscale("log", base=2)
-    all_x = COARSE_CFGS + [BREAK_1K_POS]
-    label_map = {v: str(v) for v in COARSE_CFGS}
-    label_map[BREAK_1K_POS] = "1000"
-    ax.xaxis.set_major_locator(FixedLocator(all_x))
-    if show_xlabel:
-        ax.xaxis.set_major_formatter(FuncFormatter(
-            lambda val, pos: label_map.get(int(round(val)), "")))
-        ax.set_xlabel("Granularity", fontsize=9, labelpad=4)
-    else:
-        ax.xaxis.set_major_formatter(FuncFormatter(lambda val, pos: ""))
-    ax.xaxis.set_minor_locator(NullLocator())
-    ax.tick_params(axis="x", which="minor", bottom=False)
-    ax.tick_params(axis="x", which="major", length=3.5, width=0.7, labelsize=10)
-    ax.set_xlim(1.5, BREAK_1K_POS * 1.5)
+# ── Monkey-patch fig3.panel_raw so plot_raw uses encoding-score fetchers ──
+# plot_raw looks up ARCHITECTURES / ARCH_STYLE / fetch_* in its own module
+# namespace at call time. Rebinding those names here makes plot_raw render
+# encoding-score data with fig3's exact visual style (torn CI band included).
+_fig3_panel_raw.ARCHITECTURES   = ARCHITECTURES
+_fig3_panel_raw.ARCH_STYLE      = ARCH_STYLE
+_fig3_panel_raw.fetch_arch_data = fetch_arch_data_enc
+_fig3_panel_raw.fetch_baseline  = fetch_baseline_enc
+_fig3_panel_raw.fetch_baseline_ci = fetch_baseline_ci_enc
 
 
 def plot_raw_enc(ax, dataset, region, show_ylabel=True, show_xlabel=True,
-                 show_untrained_label=False, tick_interval=None):
-    bl_mean, bl_ci_low, bl_ci_high = fetch_baseline_ci_enc(dataset, region)
-    if np.isnan(bl_mean) or bl_mean == 0:
-        ax.text(0.5, 0.5, "No data", ha="center", va="center",
-                transform=ax.transAxes, fontsize=7, color="#888")
-        return
-
-    untrained_mean = fetch_baseline_enc(dataset, region, epoch=0)
-
-    all_y = [bl_mean]
-    if not np.isnan(bl_ci_low):  all_y.append(bl_ci_low)
-    if not np.isnan(bl_ci_high): all_y.append(bl_ci_high)
-    if not np.isnan(untrained_mean): all_y.append(untrained_mean)
-
-    for arch_idx, (arch_key, folder, _) in enumerate(ARCHITECTURES):
-        style = ARCH_STYLE[arch_key]
-        means, errs_lo, errs_hi = fetch_arch_data_enc(dataset, folder, region)
-        for i, m in enumerate(means):
-            if not np.isnan(m):
-                all_y.extend([m - errs_lo[i], m + errs_hi[i]])
-        jitter = compute_jitter(arch_idx, len(ARCHITECTURES))
-
-        for i, cfg in enumerate(COARSE_CFGS):
-            if np.isnan(means[i]):
-                continue
-            ax.errorbar(cfg * jitter, means[i],
-                        yerr=[[errs_lo[i]], [errs_hi[i]]],
-                        fmt=style["marker"], color=style["color"],
-                        markersize=MARKER_SIZE,
-                        markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
-                        capsize=1.5, capthick=0.5,
-                        ecolor=style["color"], elinewidth=0.7, zorder=4)
-
-    bl_err_lo = max(bl_mean - bl_ci_low, 0) if not np.isnan(bl_ci_low) else 0
-    bl_err_hi = max(bl_ci_high - bl_mean, 0) if not np.isnan(bl_ci_high) else 0
-    ax.errorbar(BREAK_1K_POS, bl_mean,
-                yerr=[[bl_err_lo], [bl_err_hi]],
-                fmt="D", color=BASELINE_1K_COLOR, markersize=MARKER_SIZE,
-                markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
-                capsize=1.5, capthick=0.5,
-                ecolor=BASELINE_1K_COLOR, elinewidth=0.7, zorder=5)
-
-    ax.plot([1.5, BREAK_1K_POS], [bl_mean, bl_mean],
-            color=BASELINE_1K_COLOR, linestyle="--",
-            linewidth=1.0, alpha=0.6, zorder=2, clip_on=False)
-
-    if not np.isnan(untrained_mean):
-        ax.axhline(untrained_mean, color="#AAAAAA", linestyle="--",
-                   linewidth=1.25, alpha=0.6, zorder=2)
-        if show_untrained_label:
-            ax.text(0.97, untrained_mean, "Untrained",
-                    fontsize=8, fontstyle="italic", color="#999999",
-                    ha="right", va="bottom",
-                    transform=ax.get_yaxis_transform(), zorder=10)
-
-    y_min, y_max = min(all_y), max(all_y)
-    y_range = y_max - y_min if y_max > y_min else max(abs(y_max), 1e-3)
-
-    _format_broken_xaxis(ax, show_xlabel)
-    draw_xaxis_break(ax)
-    ax.set_ylim(y_min - y_range * 0.12, y_max + y_range * 0.10)
-    format_yaxis(ax, tick_interval=tick_interval)
-
+                 show_untrained_label=False, tick_interval=None,
+                 lollipop_ax=None):
+    """Delegates to fig3.panel_raw.plot_raw (encoding-score fetchers patched above)."""
+    _fig3_plot_raw(ax, dataset, region,
+                   show_ylabel=show_ylabel, show_xlabel=show_xlabel,
+                   show_untrained_label=show_untrained_label,
+                   tick_interval=tick_interval, lollipop_ax=lollipop_ax)
     if show_ylabel:
         ax.set_ylabel("Encoding score (Pearson r)", fontsize=9, labelpad=4)
-    else:
-        ax.set_ylabel("")
-    sns.despine(ax=ax, right=True, top=True, offset=3)
 
 
 def _find_min_classes_enc(dataset, folder, region, bl_ci_low):
@@ -242,14 +176,17 @@ def main():
         "ytick.major.width": 0.7,
     })
 
-    fig = plt.figure(figsize=(10, 8.5))
+    # Match fig3's per-panel x-axis width (3.747"):
+    # per_col = (right-left)*W / (n_cols + (n_cols-1)*wspace)
+    # 3.747 = 0.87*W / 2.20  →  W ≈ 9.48
+    fig = plt.figure(figsize=(9.48, 8.5))
 
     # 2 rows (TVSD | NSD) x 2 cols (early | higher) — no schematic column
     outer = gridspec.GridSpec(2, 2, figure=fig,
                               height_ratios=[1, 1],
                               width_ratios=[1, 1],
-                              hspace=0.28, wspace=0.22,
-                              left=0.10, right=0.97, top=0.86, bottom=0.09)
+                              hspace=0.25, wspace=0.20,
+                              left=0.10, right=0.97, top=0.88, bottom=0.08)
 
     panel_defs = [
         # (row, col, dataset, region, show_ylabel, show_xlabel, tick_interval)
@@ -268,14 +205,14 @@ def main():
             height_ratios=[0.14, 0.86], hspace=0.10)
 
         ax_raw = fig.add_subplot(inner[1, 0])
+        ax_lol = fig.add_subplot(inner[0, 0], sharex=ax_raw)
         show_untrained = (orow == 1)
         plot_raw_enc(ax_raw, ds, region,
                      show_ylabel=ylabel, show_xlabel=xlabel,
                      show_untrained_label=show_untrained,
-                     tick_interval=ytick)
+                     tick_interval=ytick, lollipop_ax=ax_lol)
         axes_scatter[(orow, ocol)] = ax_raw
 
-        ax_lol = fig.add_subplot(inner[0, 0], sharex=ax_raw)
         plot_lollipop_enc(ax_lol, ds, region, show_ylabel=True)
         axes_lollipop[(orow, ocol)] = ax_lol
 
@@ -289,16 +226,10 @@ def main():
                 [scat_pos.x0, lol_pos.y0, scat_pos.width, lol_pos.height])
 
     # Row headers (dataset name on the left)
-    row_info = [(0, "TVSD", "Object images"), (1, "NSD", "Natural scenes")]
-    for row, title, subtitle in row_info:
+    for row, title in [(0, "TVSD"), (1, "NSD")]:
         pos_l = axes_lollipop[(row, 0)].get_position()
-        pos_r = axes_lollipop[(row, 1)].get_position()
-        y_top = max(pos_l.y1, pos_r.y1)
         fig.text(0.015, (pos_l.y0 + pos_l.y1) / 2, title,
                  fontsize=13, fontweight="bold", color="#1a1a1a",
-                 ha="left", va="center", rotation=90)
-        fig.text(0.040, (pos_l.y0 + pos_l.y1) / 2, subtitle,
-                 fontsize=8, color="#777777", fontstyle="italic",
                  ha="left", va="center", rotation=90)
 
     # Column headers
@@ -332,11 +263,13 @@ def main():
                       markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
                       markersize=6, label=d)
                for k, _, d in ARCHITECTURES]
-    axes_scatter[(0, 0)].legend(handles=handles, fontsize=7.5, frameon=True,
+    # Place legend in panel b (IT), right side, just above the untrained
+    # dashed grey line — mirrors fig3's bbox_to_anchor choice.
+    axes_scatter[(0, 1)].legend(handles=handles, fontsize=7.5, frameon=True,
                                 fancybox=False, framealpha=0.92, edgecolor="#dddddd",
                                 borderpad=0.5, handletextpad=0.4, labelspacing=0.3,
                                 title="Coarse label source", title_fontsize=7.5,
-                                loc="upper right")
+                                loc="lower right", bbox_to_anchor=(1.0, 0.22))
 
     out = f"{OUTPUT_DIR}/S3_encoding_scores.png"
     fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")

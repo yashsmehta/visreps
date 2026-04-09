@@ -144,10 +144,16 @@ def main():
                                 ecolor=style["color"], elinewidth=0.7,
                                 zorder=4)
 
-        # Light connecting line
-        if len(valid_x) > 1:
-            ax_scatter.plot(valid_x, valid_y, color=style["color"],
-                            linewidth=0.8, alpha=0.3, zorder=3)
+    # ── Chance accuracy line: 100/granularity (%) ──
+    chance_x = np.array(COARSE_CFGS, dtype=float)
+    chance_y = 100.0 / chance_x
+    all_y.extend(chance_y.tolist())
+    ax_scatter.scatter(chance_x, chance_y, marker="P", s=38,
+                       color="#888888", edgecolor=EDGE_COLOR,
+                       linewidth=EDGE_WIDTH, zorder=2)
+    ax_scatter.text(chance_x[0] * 1.08, chance_y[0], "Chance",
+                    fontsize=7, fontstyle="italic", color="#666666",
+                    ha="left", va="bottom", zorder=10)
 
     # Scatter axis formatting
     ax_scatter.set_xscale("log", base=2)
@@ -174,7 +180,7 @@ def main():
                       fancybox=False, framealpha=0.92, edgecolor="#dddddd",
                       borderpad=0.5, handletextpad=0.4, labelspacing=0.3,
                       title="Coarse label\nsource", title_fontsize=7.5,
-                      loc="upper right")
+                      loc="lower left", bbox_to_anchor=(0.0, 0.0))
 
     # ── Right panel: 1000-way bar ──
     bl_mean, bl_sem = _load_baseline()
@@ -185,6 +191,10 @@ def main():
         ax_bar.errorbar(0, bl_mean, yerr=bl_sem,
                         fmt="none", ecolor="#333333", elinewidth=0.8,
                         capsize=3, capthick=0.7, zorder=4)
+
+    # Chance for 1000-way ≈ 0.1% — short dashed tick across the bar panel
+    ax_bar.scatter([0], [0.1], marker="P", s=38, color="#888888",
+                   edgecolor=EDGE_COLOR, linewidth=EDGE_WIDTH, zorder=2)
 
     ax_bar.set_xticks([0])
     ax_bar.set_xticklabels(["1000"], fontsize=8)
@@ -200,7 +210,7 @@ def main():
     # Shared y-limits
     y_min, y_max = min(all_y), max(all_y)
     y_range = y_max - y_min
-    ax_scatter.set_ylim(y_min - y_range * 0.10, y_max + y_range * 0.08)
+    ax_scatter.set_ylim(0, y_max + y_range * 0.08)
 
     fig.savefig(OUTPUT, dpi=300, bbox_inches="tight",
                 facecolor="white", edgecolor="none")
