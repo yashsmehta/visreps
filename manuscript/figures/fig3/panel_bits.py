@@ -103,7 +103,7 @@ def plot_lollipop(ax, dataset, region, show_ylabel=True):
             # Faded stem to 64 indicating no match found
             ax.plot([X_START, 64], [y, y], color=style["color"], linewidth=STEM_LW,
                     alpha=0.25, solid_capstyle="round", zorder=3)
-            ax.text(64 * 1.15, y, "—", fontsize=7, color="#999",
+            ax.text(64 * 1.15, y, "—", fontsize=8.75, color="#999",
                     va="center", ha="left")
             continue
 
@@ -125,7 +125,7 @@ def plot_lollipop(ax, dataset, region, show_ylabel=True):
     # Y-axis: architecture labels with ticks
     ax.set_yticks(y_positions)
     if show_ylabel:
-        ax.set_yticklabels([d for _, _, d in LOLLIPOP_ARCHS], fontsize=7.5)
+        ax.set_yticklabels([d for _, _, d in LOLLIPOP_ARCHS], fontsize=9.375)
     else:
         ax.set_yticklabels([])
     ax.tick_params(axis="y", length=3, width=0.7, pad=3)

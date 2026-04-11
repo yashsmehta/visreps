@@ -27,12 +27,12 @@ def _format_broken_xaxis(ax, show_xlabel):
     if show_xlabel:
         ax.xaxis.set_major_formatter(FuncFormatter(
             lambda val, pos: label_map.get(int(round(val)), "")))
-        ax.set_xlabel("Granularity", fontsize=9, labelpad=4)
+        ax.set_xlabel("Granularity", fontsize=11.25, labelpad=4)
     else:
         ax.xaxis.set_major_formatter(FuncFormatter(lambda val, pos: ""))
     ax.xaxis.set_minor_locator(NullLocator())
     ax.tick_params(axis="x", which="minor", bottom=False)
-    ax.tick_params(axis="x", which="major", length=3.5, width=0.7, labelsize=10)
+    ax.tick_params(axis="x", which="major", length=3.5, width=0.7, labelsize=12.5)
     ax.set_xlim(1.5, BREAK_1K_POS * 1.5)
 
 
@@ -102,7 +102,7 @@ def plot_raw(ax, dataset, region, show_ylabel=True, show_xlabel=True,
                     linewidth=1.25, alpha=0.6, zorder=3)
         if show_untrained_label:
             ax.text(0.97, untrained_mean, "Untrained",
-                    fontsize=8, fontstyle="italic", color="#999999",
+                    fontsize=10, fontstyle="italic", color="#999999",
                     ha="right", va="bottom",
                     transform=ax.get_yaxis_transform(), zorder=10)
 
@@ -198,7 +198,7 @@ def plot_raw(ax, dataset, region, show_ylabel=True, show_xlabel=True,
             clip_on=False, zorder=2.7)
 
     if show_ylabel:
-        ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=9, labelpad=4)
+        ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=11.25, labelpad=4)
     else:
         ax.set_ylabel("")
     sns.despine(ax=ax, right=True, top=True, offset=3)

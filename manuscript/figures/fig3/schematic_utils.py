@@ -199,12 +199,12 @@ def _draw_schematic_base(ax, stimuli_loader, stim_items, icons,
 
     if headline and headline_xy is not None:
         ax.text(headline_xy[0], headline_xy[1], headline,
-                fontsize=10, color="#888888", style="italic",
+                fontsize=12.5, color="#888888", style="italic",
                 ha="center", va="top", transform=ax.transAxes)
 
     if caption and caption_xy is not None:
         ax.text(caption_xy[0], caption_xy[1], caption,
-                fontsize=9, color="#555555", style="italic",
+                fontsize=11.25, color="#555555", style="italic",
                 ha="center", va="top", transform=ax.transAxes)
 
     if stats_lines:
@@ -212,7 +212,7 @@ def _draw_schematic_base(ax, stimuli_loader, stim_items, icons,
         # line and the right "subjects/regions" first line sit in the same row.
         stats_y = headline_xy[1] if headline_xy is not None else 0.97
         ax.text(0.99, stats_y, "\n".join(stats_lines),
-                fontsize=10, color="#888888", style="italic",
+                fontsize=12.5, color="#888888", style="italic",
                 ha="right", va="top", linespacing=1.35,
                 transform=ax.transAxes)
 
@@ -230,12 +230,12 @@ def draw_tvsd_schematic(ax):
             "2 macaques",
             "V1, V4, IT recordings",
         ],
-        headline="22,248 object images",
-        headline_xy=(0.16, 0.97),
-        caption="Macaque electrophysiology",
+        headline="22,248\nobject images",
+        headline_xy=(0.16, 0.99),
+        caption="Macaque\nelectrophysiology",
         caption_xy=(0.76, 0.26),
-        grid_center=(0.16, 0.48), grid_width=0.22, grid_height=0.52,
-        img_zoom=0.176, rows=3, cols=2,
+        grid_center=(0.16, 0.48), grid_width=0.17, grid_height=0.42,
+        img_zoom=0.2112, rows=3, cols=2,
     )
 
 
@@ -253,14 +253,14 @@ def draw_nsd_schematic(ax):
         arrow_xytext=(0.40, 0.42), arrow_xy=(0.52, 0.42),
         stats_lines=[
             "8 human subjects",
-            "7T fMRI, ventral cortex",
+            "ventral cortex",
         ],
-        headline="73,000 natural scenes",
-        headline_xy=(0.16, 0.95),
-        caption="Human fMRI",
+        headline="73,000\nnatural scenes",
+        headline_xy=(0.16, 0.97),
+        caption="Human\n7T fMRI",
         caption_xy=(0.745, 0.20),
-        grid_center=(0.16, 0.42), grid_width=0.22, grid_height=0.52,
-        img_zoom=0.176, rows=3, cols=2,
+        grid_center=(0.16, 0.44), grid_width=0.17, grid_height=0.42,
+        img_zoom=0.2112, rows=3, cols=2,
     )
 
 

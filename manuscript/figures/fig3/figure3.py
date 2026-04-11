@@ -29,16 +29,16 @@ OUTPUT_DIR = "manuscript/figures/fig3"
 def main():
     setup_style()
     plt.rcParams.update({
-        "axes.labelsize": 9,
-        "axes.titlesize": 10,
-        "xtick.labelsize": 8,
-        "ytick.labelsize": 8,
+        "axes.labelsize": 11.25,
+        "axes.titlesize": 12.5,
+        "xtick.labelsize": 10,
+        "ytick.labelsize": 10,
         "axes.linewidth": 0.7,
         "xtick.major.width": 0.7,
         "ytick.major.width": 0.7,
     })
 
-    fig = plt.figure(figsize=(14, 8.5))
+    fig = plt.figure(figsize=(14, 10.2))
 
     # 2 rows (TVSD | NSD) x 3 cols (schematic | early | higher), equal widths
     outer = gridspec.GridSpec(2, 3, figure=fig,
@@ -117,7 +117,7 @@ def main():
     for key, label in region_labels.items():
         pos = axes_lollipop[key].get_position()
         fig.text((pos.x0 + pos.x1) / 2, pos.y1 + 0.012, label,
-                 fontsize=9, color="#666666", ha="center", va="bottom")
+                 fontsize=11.25, color="#666666", ha="center", va="bottom")
 
     # ── Panel labels (a–f) ──
     # Schematics (a, d) use schematic axes; data panels (b, c, e, f) use lollipop axes
@@ -139,15 +139,15 @@ def main():
                       markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
                       markersize=6, label=d)
                for k, _, d in ARCHITECTURES]
-    axes_scatter[(0, 1)].legend(handles=handles, fontsize=7.5, frameon=True,
+    axes_scatter[(0, 1)].legend(handles=handles, fontsize=9.375, frameon=True,
                         fancybox=False, framealpha=0.92, edgecolor="#dddddd",
                         borderpad=0.5, handletextpad=0.4, labelspacing=0.3,
-                        title="Coarse label source", title_fontsize=7.5,
+                        title="Coarse label source", title_fontsize=9.375,
                         loc="right", bbox_to_anchor=(1.0, 0.22))
 
     # ── Save ──
     out = f"{OUTPUT_DIR}/figure3.png"
-    fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
+    fig.savefig(out, dpi=600, bbox_inches="tight", facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()
 
