@@ -154,7 +154,7 @@ def draw_rdm(sim_matrix, cmap, cbar_label, filename, images):
     plt.subplots_adjust(left=0.12, right=0.78, top=0.94, bottom=0.08)
 
     out = os.path.join(SCRIPT_DIR, filename)
-    fig.savefig(out, dpi=300, bbox_inches="tight",
+    fig.savefig(out, dpi=600, bbox_inches="tight",
                 facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")
     plt.close(fig)

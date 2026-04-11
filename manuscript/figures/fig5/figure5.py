@@ -300,7 +300,7 @@ def main():
                  **label_kw)
 
     out = f"{OUTPUT_DIR}/figure5.png"
-    fig.savefig(out, dpi=200, bbox_inches="tight", facecolor="white",
+    fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white",
                 edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()
