@@ -58,13 +58,13 @@ def main():
         "ytick.minor.size": 2.5,
     })
 
-    fig = plt.figure(figsize=(17.0, 9.0))
+    fig = plt.figure(figsize=(17.0, 9.945))
     fig.patch.set_facecolor("white")
 
     gs = gridspec.GridSpec(2, 4, figure=fig,
                            height_ratios=[1.0, 0.88],
                            width_ratios=[1, 1, 1, 1],
-                           hspace=0.32, wspace=0.30,
+                           hspace=0.30, wspace=0.18,
                            left=0.045, right=0.965,
                            top=0.96, bottom=0.06)
 
@@ -135,7 +135,7 @@ def main():
 
     # ── Save ─────────────────────────────────────────────────────────────
     out = f"{OUTPUT_DIR}/figure4.png"
-    fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
+    fig.savefig(out, dpi=600, bbox_inches="tight", facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()
 

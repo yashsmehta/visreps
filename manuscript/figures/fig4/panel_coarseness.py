@@ -123,7 +123,7 @@ def plot_coarseness(ax):
         lambda val, pos: label_map.get(int(round(val)), "")))
     ax.xaxis.set_minor_locator(NullLocator())
     ax.tick_params(axis="x", which="minor", bottom=False)
-    ax.tick_params(axis="x", which="major", direction="out")
+    ax.tick_params(axis="x", which="major", direction="out", labelsize=12)
     ax.set_xlim(1.5, BREAK_1K_POS * 1.5)
 
     ax.tick_params(axis="y", which="major", direction="out")
