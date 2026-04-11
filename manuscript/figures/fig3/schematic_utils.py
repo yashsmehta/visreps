@@ -234,7 +234,7 @@ def draw_tvsd_schematic(ax):
         headline_xy=(0.16, 0.99),
         caption="Macaque\nelectrophysiology",
         caption_xy=(0.76, 0.26),
-        grid_center=(0.16, 0.48), grid_width=0.17, grid_height=0.42,
+        grid_center=(0.16, 0.48), grid_width=0.15, grid_height=0.40,
         img_zoom=0.2112, rows=3, cols=2,
     )
 
@@ -259,7 +259,7 @@ def draw_nsd_schematic(ax):
         headline_xy=(0.16, 0.97),
         caption="Human\n7T fMRI",
         caption_xy=(0.745, 0.20),
-        grid_center=(0.16, 0.44), grid_width=0.17, grid_height=0.42,
+        grid_center=(0.16, 0.44), grid_width=0.15, grid_height=0.40,
         img_zoom=0.2112, rows=3, cols=2,
     )
 
