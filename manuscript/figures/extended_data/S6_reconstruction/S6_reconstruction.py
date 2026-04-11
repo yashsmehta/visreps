@@ -209,7 +209,7 @@ def generate_neural():
         loc="right", bbox_to_anchor=(1.0, 0.45))
 
     out = f"{OUTPUT_DIR}/S6_reconstruction_neural.png"
-    fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
+    fig.savefig(out, dpi=600, bbox_inches="tight", facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()
 
@@ -239,7 +239,7 @@ def generate_behavioral():
               loc="lower right")
 
     out = f"{OUTPUT_DIR}/S6_reconstruction_behavioral.png"
-    fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
+    fig.savefig(out, dpi=600, bbox_inches="tight", facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()
 

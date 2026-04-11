@@ -29,7 +29,8 @@ sys.path.insert(0, "manuscript/figures")
 from plotter_utils import get_condition_summary
 from fig_utils import (
     setup_style, DB_PATH, BREAK_1K_POS, draw_xaxis_break,
-    EDGE_COLOR, EDGE_WIDTH, MARKER_SIZE,
+    EDGE_COLOR, EDGE_WIDTH, MARKER_SIZE, draw_torn_ci_band,
+    UNTRAINED_LINE_STYLE,
 )
 
 OUTPUT_DIR = "manuscript/figures/extended_data/S2_wordnet"
@@ -134,25 +135,31 @@ def plot_wordnet_scatter(ax, neural_dataset, region,
                     capsize=1.5, capthick=0.5,
                     ecolor=WORDNET_COLOR, elinewidth=0.7, zorder=4)
 
-    # 1000-way diamond at break position
+    # 1000-way baseline: CI band + bounded dashed mean + orange diamond (Fig. 4B style)
     if not np.isnan(bl_mean):
         bl_err_lo = max(bl_mean - bl_ci_low, 0) if not np.isnan(bl_ci_low) else 0
         bl_err_hi = max(bl_ci_high - bl_mean, 0) if not np.isnan(bl_ci_high) else 0
+
+        if not np.isnan(bl_ci_low) and not np.isnan(bl_ci_high):
+            ax.fill_between([1.5, BREAK_1K_POS], bl_ci_low, bl_ci_high,
+                            facecolor=BASELINE_1K_COLOR, alpha=0.12,
+                            edgecolor="none", zorder=1)
+            all_y.extend([bl_ci_low, bl_ci_high])
+
+        ax.plot([1.5, BREAK_1K_POS], [bl_mean, bl_mean],
+                color=BASELINE_1K_COLOR, linestyle="--",
+                linewidth=1.0, alpha=0.6, zorder=2, clip_on=False)
+
         ax.errorbar(BREAK_1K_POS, bl_mean,
                     yerr=[[bl_err_lo], [bl_err_hi]],
                     fmt="D", color=BASELINE_1K_COLOR, markersize=MARKER_SIZE,
                     markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
                     capsize=1.5, capthick=0.5,
                     ecolor=BASELINE_1K_COLOR, elinewidth=0.7, zorder=5)
-        # Dashed reference line at 1000-way level
-        ax.plot([1.5, BREAK_1K_POS], [bl_mean, bl_mean],
-                color=BASELINE_1K_COLOR, linestyle="--",
-                linewidth=1.0, alpha=0.6, zorder=2, clip_on=False)
 
     # Untrained baseline
     if not np.isnan(untrained_mean):
-        ax.axhline(untrained_mean, color="#AAAAAA", linestyle="--",
-                    linewidth=1.25, alpha=0.6, zorder=2)
+        ax.axhline(untrained_mean, **UNTRAINED_LINE_STYLE, zorder=3)
         if show_untrained_label:
             ax.text(0.97, untrained_mean, "Untrained",
                     fontsize=8, fontstyle="italic", color="#999999",
@@ -163,7 +170,7 @@ def plot_wordnet_scatter(ax, neural_dataset, region,
     if not all_y:
         ax.text(0.5, 0.5, "No data", ha="center", va="center",
                 transform=ax.transAxes, fontsize=7, color="#888")
-        return
+        return None, None
 
     y_min, y_max = min(all_y), max(all_y)
     y_range = y_max - y_min
@@ -173,11 +180,20 @@ def plot_wordnet_scatter(ax, neural_dataset, region,
     draw_xaxis_break(ax)
     _format_yaxis(ax)
 
+    # Tear through the 1000-way CI band (after ylim is final) — matches Fig. 4B
+    if (not np.isnan(bl_mean)
+            and not np.isnan(bl_ci_low) and not np.isnan(bl_ci_high)):
+        draw_torn_ci_band(ax, bl_ci_low, bl_ci_high, BASELINE_1K_COLOR)
+
     if show_ylabel:
         ax.set_ylabel(r"RSA (Spearman $\rho$)", fontsize=9, labelpad=4)
     else:
         ax.set_ylabel("")
     sns.despine(ax=ax, right=True, top=True, offset=3)
+
+    ut = untrained_mean if not np.isnan(untrained_mean) else None
+    bm = bl_mean if not np.isnan(bl_mean) else None
+    return ut, bm
 
 
 def plot_neural_figure():
@@ -330,7 +346,7 @@ def plot_neural_figure():
                         loc="right", bbox_to_anchor=(1.0, 0.30))
 
     out = f"{OUTPUT_DIR}/S2_wordnet_neural.png"
-    fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
+    fig.savefig(out, dpi=600, bbox_inches="tight", facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()
 
@@ -351,26 +367,42 @@ def plot_behavioral_figure():
     fig, ax = plt.subplots(figsize=(5, 3.5))
 
     print("Drawing: things-behavior / N/A")
-    plot_wordnet_scatter(ax, "things-behavior", "N/A",
-                         show_ylabel=True, show_xlabel=True)
+    untrained_y, baseline_y = plot_wordnet_scatter(
+        ax, "things-behavior", "N/A",
+        show_ylabel=True, show_xlabel=True, show_untrained_label=True)
 
     ax.set_title("THINGS (Behavioral)", fontsize=11, fontweight="bold",
                  color="#333333", pad=8)
 
-    # Legend — just WordNet marker
+    # Legend — just WordNet marker, anchored just above the untrained line
     legend_handles = [
         Line2D([], [], marker=WORDNET_MARKER, color="none",
                markerfacecolor=WORDNET_COLOR,
                markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
                markersize=MARKER_SIZE, label="WordNet labels"),
     ]
-    ax.legend(handles=legend_handles, fontsize=7.5, frameon=True,
-              fancybox=False, framealpha=0.92, edgecolor="#dddddd",
-              borderpad=0.5, handletextpad=0.4, labelspacing=0.3,
-              loc="upper right")
+    legend_kwargs = dict(
+        handles=legend_handles, fontsize=8, frameon=True,
+        fancybox=False, framealpha=0.92, edgecolor="#dddddd",
+        borderpad=0.35, handletextpad=0.3, labelspacing=0.2,
+        title="Coarse label source", title_fontsize=7.5,
+    )
+    if untrained_y is not None and baseline_y is not None:
+        # Right side, vertically between the 1000-way dashed line and the
+        # untrained line — anchored in data coords at the midpoint.
+        mid_y = (baseline_y + untrained_y) / 2
+        leg = ax.legend(
+            loc="center right",
+            bbox_to_anchor=(BREAK_1K_POS * 0.95, mid_y),
+            bbox_transform=ax.transData,
+            **legend_kwargs,
+        )
+    else:
+        leg = ax.legend(loc="upper right", **legend_kwargs)
+    leg._legend_box.align = "left"
 
     out = f"{OUTPUT_DIR}/S2_wordnet_behavioral.png"
-    fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
+    fig.savefig(out, dpi=600, bbox_inches="tight", facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()
 

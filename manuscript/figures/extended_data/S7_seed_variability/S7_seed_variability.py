@@ -346,7 +346,7 @@ def generate_neural():
     conn.close()
 
     out = f"{OUTPUT_DIR}/S7_seed_variability_neural.png"
-    fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
+    fig.savefig(out, dpi=600, bbox_inches="tight", facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()
 
@@ -397,7 +397,7 @@ def generate_behavioral():
     conn.close()
 
     out = f"{OUTPUT_DIR}/S7_seed_variability_behavioral.png"
-    fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
+    fig.savefig(out, dpi=600, bbox_inches="tight", facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()
 

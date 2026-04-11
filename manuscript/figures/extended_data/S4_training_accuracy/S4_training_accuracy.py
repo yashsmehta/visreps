@@ -212,7 +212,7 @@ def main():
     y_range = y_max - y_min
     ax_scatter.set_ylim(0, y_max + y_range * 0.08)
 
-    fig.savefig(OUTPUT, dpi=300, bbox_inches="tight",
+    fig.savefig(OUTPUT, dpi=600, bbox_inches="tight",
                 facecolor="white", edgecolor="none")
     print(f"Saved -> {OUTPUT}")
     plt.close()

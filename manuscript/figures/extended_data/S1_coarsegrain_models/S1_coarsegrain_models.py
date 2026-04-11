@@ -335,7 +335,7 @@ def generate_s1a():
         loc="right", bbox_to_anchor=(1.0, 0.30))
 
     out = f"{OUTPUT_DIR}/S1a_neural.png"
-    fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
+    fig.savefig(out, dpi=600, bbox_inches="tight", facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()
 
@@ -370,9 +370,42 @@ def generate_s1b():
         _fig4b.ARCHITECTURES = _orig_arches
         _fig4b.ARCH_STYLE    = _orig_style
 
+    # Override title
+    ax.set_title("THINGS Behavior", fontsize=11, fontweight="semibold", pad=8)
+
+    # Reposition legend to the right side, vertically between the orange
+    # 1000-way dashed line and the gray untrained dashed line (so it doesn't
+    # cover either). Compute the midpoint in data coords from the DB.
+    bl = get_condition_summary("things-behavior", "N/A", "imagenet1k", 1000,
+                               "spearman", epoch=20, analysis="rsa")
+    un = get_condition_summary("things-behavior", "N/A", "imagenet1k", 1000,
+                               "spearman", epoch=0, analysis="rsa")
+    y_mid = (bl["mean"] + un["mean"]) / 2.0
+
+    old_leg = ax.get_legend()
+    if old_leg is not None:
+        old_leg.remove()
+    legend_handles = [
+        Line2D([], [], marker=ARCH_STYLE[k]["marker"], color="none",
+               markerfacecolor=ARCH_STYLE[k]["color"],
+               markeredgecolor=EDGE_COLOR, markeredgewidth=EDGE_WIDTH,
+               markersize=5, label=d)
+        for k, _, d in ARCHITECTURES
+    ]
+    # x anchor at ~cfg=48 (right side of coarse region, before the axis break)
+    leg = ax.legend(
+        handles=legend_handles, fontsize=8,
+        frameon=True, fancybox=False, framealpha=0.92,
+        edgecolor="#dddddd", borderpad=0.35,
+        handletextpad=0.3, labelspacing=0.2,
+        title="Coarse label source", title_fontsize=7.5,
+        loc="center", bbox_to_anchor=(48, y_mid),
+        bbox_transform=ax.transData)
+    leg._legend_box.align = "left"
+
     plt.tight_layout()
     out = f"{OUTPUT_DIR}/S1b_behavioral.png"
-    fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
+    fig.savefig(out, dpi=600, bbox_inches="tight", facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()
 

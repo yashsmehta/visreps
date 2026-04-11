@@ -272,7 +272,7 @@ def main():
                                 loc="lower right", bbox_to_anchor=(1.0, 0.22))
 
     out = f"{OUTPUT_DIR}/S3_encoding_scores.png"
-    fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white", edgecolor="none")
+    fig.savefig(out, dpi=600, bbox_inches="tight", facecolor="white", edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()
 
