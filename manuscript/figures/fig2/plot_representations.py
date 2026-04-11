@@ -23,7 +23,7 @@ from manuscript.figures.fig2.utils import (
 )
 
 N_SAMPLE = 1000  # number of individual images to show as thumbnails
-THUMB_ZOOM = 0.154  # 10% larger than original 0.14
+THUMB_ZOOM = 0.1848  # 1.2x previous 0.154 (originally 0.14)
 
 # Inset: square, top-left corner, axes-fraction coords [x0, y0, w, h]
 INSET_RECT = [0.01, 0.72, 0.24, 0.24]
@@ -69,9 +69,9 @@ def plot_mosaic_panel(ax, pcs, labels_4way, colors, title,
         ax.add_artist(ab)
 
     # Main axis formatting
-    ax.set_xlabel("PC 1", fontsize=10, labelpad=5, style="italic")
+    ax.set_xlabel("PC 1", fontsize=20, labelpad=5, style="italic")
     if show_ylabel:
-        ax.set_ylabel("PC 2", fontsize=10, labelpad=5, style="italic")
+        ax.set_ylabel("PC 2", fontsize=20, labelpad=5, style="italic")
     ax.set_xticklabels([])
     ax.set_yticklabels([])
     ax.tick_params(axis="both", length=0)
@@ -118,7 +118,7 @@ def plot_representations(save=True):
     # Sample the same 1,000 images for both panels
     sample_idx = sample_images(pcs_4way_trained, N_SAMPLE)
 
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    fig, axes = plt.subplots(1, 2, figsize=(14, 7.2))
 
     plot_mosaic_panel(axes[0], pcs_pretrained_aligned, labels_4way,
                       REPR_COLORS_4, "",
@@ -144,7 +144,7 @@ def plot_representations(save=True):
 
     if save:
         out = os.path.join(SCRIPT_DIR, "figure2.png")
-        fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white",
+        fig.savefig(out, dpi=450, bbox_inches="tight", facecolor="white",
                     edgecolor="none")
         print(f"Saved -> {out}")
         plt.close(fig)

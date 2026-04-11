@@ -41,16 +41,18 @@ def plot_top_panel(ax, pcs, labels, n_classes, colors, title,
                edgecolors="white", linewidths=0.3,
                rasterized=True, zorder=2)
 
-    ax.set_xlabel("PC 1", fontsize=10, labelpad=1)
+    ax.set_xlabel("PC 1", fontsize=15, labelpad=4, style="italic")
     if show_ylabel:
-        ax.set_ylabel("PC 2", fontsize=10, labelpad=1)
+        ax.set_ylabel("PC 2", fontsize=15, labelpad=4, style="italic")
     if subtitle:
-        ax.set_title(title, fontsize=12, fontweight="bold", pad=18)
+        ax.set_title(title, fontsize=16, fontweight="600",
+                     color="#1a1a1a", pad=18)
         ax.text(0.5, 1.01, subtitle, transform=ax.transAxes,
                 fontsize=8.5, color="#666666", ha="center", va="bottom",
                 fontstyle="italic")
     else:
-        ax.set_title(title, fontsize=12, fontweight="bold", pad=8)
+        ax.set_title(title, fontsize=16, fontweight="600",
+                     color="#1a1a1a", pad=14)
     ax.set_xticklabels([])
     ax.set_yticklabels([])
     ax.tick_params(axis="both", length=0)
@@ -110,20 +112,20 @@ def plot_label_space(save=True):
     colors_1k = _make_1k_colors(top_class_labels)
 
     # Layout: [1000-class | divider | 2-class | 4-class]
-    fig = plt.figure(figsize=(14.8, 4.8))
+    fig = plt.figure(figsize=(14.8, 6.24))
     gs = gridspec.GridSpec(1, 4, figure=fig,
                            width_ratios=[1.15, 0.02, 1, 1], wspace=0.12,
-                           left=0.01, right=0.99, top=0.97, bottom=0.06)
+                           left=0.01, right=0.99, top=0.92, bottom=0.08)
     ax_1k = fig.add_subplot(gs[0, 0])
     ax_div = fig.add_subplot(gs[0, 1])
     ax_2 = fig.add_subplot(gs[0, 2])
     ax_4 = fig.add_subplot(gs[0, 3])
 
     plot_top_panel(ax_1k, top_pcs, top_class_labels, 1000, colors_1k,
-                   "", point_size=20, alpha=0.70, show_ylabel=True)
-    plot_top_panel(ax_2, top_pcs, labels_2, 2, PALETTE_2, "",
+                   "1,000 classes", point_size=20, alpha=0.70, show_ylabel=True)
+    plot_top_panel(ax_2, top_pcs, labels_2, 2, PALETTE_2, "2 classes",
                    show_ylabel=False)
-    plot_top_panel(ax_4, top_pcs, labels_4, 4, PALETTE_4, "",
+    plot_top_panel(ax_4, top_pcs, labels_4, 4, PALETTE_4, "4 classes",
                    show_ylabel=False)
 
     # Subtle vertical divider between fine-grained and coarse panels
@@ -155,7 +157,7 @@ def plot_label_space(save=True):
 
     if save:
         out_png = os.path.join(SCRIPT_DIR, "figure1a.png")
-        fig.savefig(out_png, dpi=300, bbox_inches="tight", facecolor="white",
+        fig.savefig(out_png, dpi=600, bbox_inches="tight", facecolor="white",
                     edgecolor="none")
         print(f"Saved -> {out_png}")
 

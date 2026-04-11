@@ -273,7 +273,7 @@ def main():
     })
 
     # ── Figure layout: single row, 3 panels ──
-    fig = plt.figure(figsize=(13, 4.0))
+    fig = plt.figure(figsize=(13, 4.8))
     fig.patch.set_facecolor("white")
 
     gs = gridspec.GridSpec(1, 3, figure=fig, wspace=0.28,
@@ -346,7 +346,7 @@ def main():
 
     # ── Save ──
     out = f"{OUTPUT_DIR}/figure6.png"
-    fig.savefig(out, dpi=300, bbox_inches="tight", facecolor="white",
+    fig.savefig(out, dpi=600, bbox_inches="tight", facecolor="white",
                 edgecolor="none")
     print(f"Saved -> {out}")
     plt.close()
