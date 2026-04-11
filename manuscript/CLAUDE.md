@@ -25,6 +25,7 @@ manuscript/
 │   └── figs/                  # Generated PNGs (300 DPI)
 ├── discussion/
 │   └── {date}.md              # Supervisor discussion transcripts, named by date (e.g., 17feb2026.md)
+├── zotero/                    # Bibliography management — reference list + Zotero Web API workflow (see zotero/CLAUDE.md)
 ├── methods.md                 # Methods section draft
 ├── NeurIPS2025_submission.md  # NeurIPS 2025 submission notes
 └── claude.md                  # This file — context for Claude Code
@@ -36,6 +37,7 @@ manuscript/
 - **discussion/**: Each file is a transcript of a meeting with the supervisor, named `{DD}{mon}{YYYY}.md` (e.g., `20feb2026.md`). Use these for context on project direction and feedback.
 - **figures/paper.md**: The single source of truth for figure layouts, panel descriptions, observed results, and design notes. Always read this before modifying any figure script.
 - **methods.md**: Working draft of the methods section.
+- **zotero/**: Bibliography for the manuscript. All references cited anywhere in the paper, methods, SI, or figure captions are tracked here and mirrored to the Zotero library (desktop app + Web API). See `zotero/CLAUDE.md` for the verify → dedup → confirm → import workflow and BibTeX conventions.
 
 ## Figure Status
 

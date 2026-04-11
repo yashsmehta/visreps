@@ -192,6 +192,10 @@ Always verify checkpoint paths exist with `ls` before referencing them in code. 
 
 Do **not** guess checkpoint paths.
 
+## Manuscript Bibliography
+
+References for the manuscript are tracked in `manuscript/zotero/` and mirrored in the Zotero reference manager (desktop app + Web API). Any citation added to `paper.md`, `methods.md`, `supplementary_information.md`, or figure captions should go through that folder. The pipeline is: `references_needed.md` → `unverified_references.json` (structured draft) → `verified_references.json` (every field confirmed online) → Zotero import. **Every reference must be verified online before import — no field (title, authors, venue, year, DOI) may be sourced from memory alone. Unverifiable references must not be added to Zotero.** See `manuscript/zotero/CLAUDE.md` for the full three-stage workflow, duplicate-prevention rules, and BibTeX conventions.
+
 ## Plotting & Visualization
 
 Coarseness plots are organized per-dataset: `plotters/{nsd,nsd_synthetic,tvsd,things}/` each contain a `plot_coarseness.py` script and a `figures/` output directory. Shared plotting logic lives in `plotters/plot_helpers.py`. Architecture comparison plots use `plotters/plot_architectures.py`. Stimulus robustness and sensitivity analyses are self-contained in `experiments/stimulus_robustness/` and `experiments/stimulus_sensitivity/`.
