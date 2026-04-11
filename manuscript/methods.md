@@ -195,15 +195,51 @@ Subsampling without replacement (rather than with replacement, as in the classic
 
 ---
 
-## 6. Statistical reporting
+## 6. Statistics
 
-### Confidence intervals
+All statistical inference in this study is based on 95% bootstrap confidence intervals (CIs) over Spearman's rank correlation coefficient ($\rho$); we do not perform parametric null-hypothesis tests (*t*-tests, ANOVAs, *F*-tests), permutation tests, or multiple-comparison corrections. Comparisons between conditions (e.g., coarse vs. 1000-way) are supported by non-overlapping 95% CIs on the seed-combined bootstrap distributions; the raw 1,000-iteration distributions are stored per run in the results database and are available for any additional post-hoc analysis.
 
-All reported confidence intervals are 95% bootstrap CIs derived from 1,000 stimulus-level iterations with 90% subsampling without replacement (Section 5.5).
+### Primary metric
 
-### Aggregation across seeds and subjects
+Model–brain and model–behaviour alignment is quantified as Spearman's $\rho$ between the upper triangles (excluding the diagonal) of a model RDM and a neural or behavioural RDM (Section 5.2). Rank correlations are inherently two-sided and scale-invariant; no directional test is applied.
 
-Each experimental condition is evaluated across multiple independently trained models (random seeds). For NSD (8 subjects) and TVSD (2 monkeys), alignment is computed independently per subject, with layer selection also performed per subject. Main figures report subject-averaged results; per-subject breakdowns are provided in supplementary materials.
+### Stimulus-level bootstrap
+
+For each evaluated run, we estimate uncertainty over test stimuli by subsampling 90% of the test items *without replacement* on each of 1,000 iterations (seed = 42), recomputing Spearman's $\rho$ on the resulting submatrix pair. The 95% CI is defined as the 2.5th and 97.5th percentiles of the 1,000 resampled scores. Subsampling without replacement (rather than the classical Efron bootstrap) is used because RDM entries are non-exchangeable: resampling with replacement would place duplicated stimuli on the diagonal, collapsing dissimilarity values to zero and biasing $\rho$ downward. This CI quantifies sampling variability over test stimuli with the trained model held fixed.
+
+### Aggregation across independently trained models
+
+Every condition in this study — for both the custom CNN experiments (across all source labels, granularities, and evaluation datasets) and the architecture-generalisation experiments (ResNet-50, ConvNeXt-Base, and ViT-B/16) — is trained with **n = 3 independent random seeds** (seeds 1, 2, 3). Deterministic training is enforced (`torch.manual_seed(seed)`, `cudnn.deterministic=True`, `cudnn.benchmark=False`), so seed variation reflects only stochastic initialisation and data-loader ordering, not numerical drift. The per-seed 1,000-iteration bootstrap distributions are combined by element-wise averaging (ordered by iteration index), yielding a single 1,000-value distribution that propagates both stimulus-sampling variability and across-seed training variability into the final CI. Reported point estimates are the mean of the three per-seed point estimates, and reported 95% CIs are the 2.5th/97.5th percentiles of the averaged distribution.
+
+### Exact *n* for each dataset
+
+- **NSD (Fig. 3, lower row):** *n* = 8 human subjects (NSD Subjects 1–8); per-subject layer selection and per-subject alignment are computed independently, then averaged across subjects for the main-figure bars. Stimulus-level bootstrap is performed over the ~1,000 shared test images per subject. Regions: early visual stream (V1, V2, V3) and ventral visual stream (hV4, LO, FFA, PPA, EBA), analysed independently.
+- **TVSD (Fig. 3, upper row):** *n* = 2 macaques (Monkey F, Monkey N). Stimulus-level bootstrap is performed over the 100 test images, each pre-averaged over 30 repetitions. Regions: V1, V4, IT, analysed independently per monkey.
+- **THINGS (Figs. 4–6):** no subject dimension. Stimulus-level bootstrap is performed over the ~1,484 concepts in the 80% evaluation split of the fixed 80/20 concept-level partition (seed = 42); the remaining ~370 concepts are reserved for layer selection and never enter the reported score or its CI.
+
+### Replicates, defined explicitly
+
+- A **training replicate** is one model trained from scratch with an independent random seed; *n* = 3 per condition for custom CNNs and for each of ResNet-50, ConvNeXt-Base, and ViT-B/16.
+- A **stimulus replicate** is one 90%-subsample draw of the test set during the bootstrap loop; *n* = 1,000 per run.
+- A **subject replicate** is one human or macaque subject with independent per-subject layer selection; *n* = 8 (NSD), *n* = 2 (TVSD); THINGS has no subject dimension and instead uses *n* = 1,484 evaluation concepts.
+
+### Layer selection
+
+Identification of the most aligned layer is a model-selection step performed strictly on training data (1,000 subsampled training stimuli per subject for NSD/TVSD, seed = 42; the 20% concept-level selection split for THINGS) and does not consume a statistical degree of freedom against the held-out test set. Layer selection is performed independently per (subject, region) pair for NSD/TVSD and once per model for THINGS.
+
+### Error bars
+
+Unless otherwise noted, error bars, shaded bands, and CI intervals in all main and Extended Data figures denote 95% bootstrap confidence intervals computed as described above; the plotted centre is the mean Spearman $\rho$ across the *n* = 3 training seeds, and sample sizes are as tabulated in "Exact *n* for each dataset" above.
+
+---
+
+## 7. Data availability
+
+The Natural Scenes Dataset (NSD; Allen et al., 2022) is publicly available at https://naturalscenesdataset.org. We use the GLMsingle `betas_fithrf_GLMdenoise_RR` single-trial beta estimates and the NSD streams atlas for ROI definitions, both provided with the dataset release. The Temporal Visual Stream Dataset (TVSD; Papale et al., 2025) is publicly available via the associated data repository linked from the original publication; we use the pre-normalised multi-unit activity (MUA) responses as distributed. The THINGS object concept database, image set, and 66-dimensional SPoSE behavioural embedding (Hebart et al., 2019, 2020, 2023) are publicly available at https://things-initiative.org. ImageNet-1K (Deng et al., 2009) is available via https://www.image-net.org under its standard academic-use licence. All coarse label files (PCA-derived class assignments for $K \in \{2, 4, 8, 16, 32, 64\}$ and each source model) and the trained model checkpoints generated in this study will be deposited in a public repository and linked from the code repository (see "Code availability") upon publication.
+
+## 8. Code availability
+
+All code for coarse label generation, model training, activation extraction, representational similarity analysis, and figure production is custom-written in Python (PyTorch, NumPy, SciPy, scikit-learn) and will be made publicly available under an open-source licence at https://github.com/ (repository link to be provided upon publication). The repository includes the exact configuration files used to reproduce every training run and evaluation reported in this study, the SQLite results database containing raw per-run bootstrap distributions, and the scripts that generate each main and Extended Data figure.
 
 ---
 
