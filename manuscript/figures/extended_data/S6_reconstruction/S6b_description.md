@@ -1,9 +1,0 @@
-# Extended Data Fig. 6b: THINGS behavioural alignment as a function of retained representational dimensionality
-
-**Extended Data Fig. 6b | The coarse-model advantage on human behavioural similarity persists across the sampled range of retained PCs.**
-Representational similarity (Spearman *ρ*) between the best layer of an AlexNet-style CustomCNN and the THINGS behavioural similarity RDM, as a function of the number of top principal components *k* retained from the best-layer activations before building the model RDM. Two curves are overlaid: (i) the standard 1,000-class supervised baseline (orange `-o` markers, pale-orange 95% CI band) and (ii) the "best coarse model", which for THINGS is set in `RECON_CONFIGS` to a 64-class CustomCNN trained with coarse labels derived from a supervised ViT-L/16 (`/data/ymehta3/vit_pca/cfg64*`) — the trained model is the same AlexNet-style CustomCNN used throughout the paper; only the labels come from the ViT-L/16 PCA (dark blue `-s` markers, pale-blue 95% CI band). The grey dotted line (with a pale grey CI band) marks the untrained-network baseline, labelled "Untrained" inline.
-
-The x-axis shows the sampled *k* values present in `results.db` for reconstruction runs: *k* ∈ {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20, 25, 30, 40, 50} — not a continuous 1–50 sweep. Ticks {1, 5, 10, 20, 30, 40, 50} and the extreme values are labelled; intermediate ticks are unlabelled to reduce overplotting.
-
-Both curves rise quickly with *k*, plateau by *k* ≈ 10–20, and the coarse-model curve sits at or above the 1,000-class curve across the full sampled range.
-Shaded bands are 95% bootstrap confidence intervals computed per-*k* by `experiments.reconstruction_analysis.plot_utils.aggregate_curve`, which groups runs by `pca_k` and calls `plotter_utils.get_bootstrap_ci` on their bootstrap distributions; RSA is computed on the 80 % concept-level THINGS evaluation split (fixed `random_state=42`).

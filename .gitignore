@@ -40,6 +40,9 @@ manuscript/figures/fig2/class_rdm_data.npz
 # Grid configs change per-experiment; keep local only
 configs/grids/
 
+# Manuscript kept local only
+manuscript/
+
 # Ignore all CSV files except those in pca_labels
 *.csv
 !pca_labels/**/*.csv

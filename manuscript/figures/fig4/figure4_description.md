@@ -1,9 +1,0 @@
-# Figure 4: Coarse supervision produces the most behaviourally aligned model
-
-**Fig. 4 | Coarse supervision produces the highest behavioural alignment of any model tested.**
-**a**, Schematic of the THINGS behavioural benchmark. Human participants (*n* = 12,340) performed 4.70 million odd-one-out triplet judgements over 1,854 object concepts, yielding a 66-dimensional similarity embedding.
-**b**, Alignment (Spearman *ρ*) with the THINGS embedding as a function of supervisory granularity (2–64 coarse classes, log₂ scale). Coarse labels are derived from three sources (AlexNet, CLIP and raw pixels); the 1,000-class baseline and untrained-network baseline are shown for reference. Models trained with CLIP- or AlexNet-derived coarse labels substantially exceed the 1,000-class baseline at every granularity level.
-**c**, Comparison with pretrained models spanning supervised, self-supervised and vision–language training paradigms. The dashed line marks the best coarse-trained model (8 CLIP-derived classes). Despite being trained from scratch with only 8 categories, the coarse model matches or exceeds all pretrained systems.
-**d**, Low-data regime. Coarse models trained on ~10,000 images (~1% of ImageNet) exceed the 1,000-class model trained on the full 1.2 million images.
-**e**, Principal component projections (PC1 versus PC2) of concept-level representations for the THINGS behavioural embedding (ground truth), a CNN trained with 8 coarse classes, pretrained AlexNet (1,000 classes) and pretrained ViT-B/16 (1,000 classes). Points are coloured by six super-categories derived from the THINGS taxonomy; image insets highlight three example concepts across panels. The coarse-trained model recapitulates the categorical clustering of the behavioural ground truth, whereas 1,000-class models show more diffuse geometry.
-Error bars in **b** and **d** denote 95% bootstrap confidence intervals (1,000 iterations) aggregated across three seeds.
