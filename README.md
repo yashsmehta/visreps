@@ -1,14 +1,12 @@
 <div align="center">
 
-# visreps
-
-### An extremely coarse feedback signal is sufficient for learning<br/>human-aligned visual representations
+# An extremely coarse feedback signal is sufficient for learning<br/>human-aligned visual representations
 
 <p>
 <a href="https://arxiv.org/abs/2605.05556"><img src="https://img.shields.io/badge/arXiv-2605.05556-b31b1b.svg?style=for-the-badge&logo=arxiv" alt="arXiv"></a>
-<img src="https://img.shields.io/badge/Status-Under%20Review-orange?style=for-the-badge" alt="Under Review">
-<img src="https://img.shields.io/badge/VSS%202026-Oral%20Talk-8A2BE2?style=for-the-badge" alt="VSS 2026 Oral">
 </p>
+
+<sub><i>Currently under review · Selected for an oral talk at Vision Sciences Society (VSS) 2026</i></sub>
 
 <p>
 <a href="https://docs.python.org/3/whatsnew/3.11.html"><img src="https://img.shields.io/badge/python-3.11+-blue.svg?style=for-the-badge&logo=python" alt="Python Version"></a>
@@ -22,17 +20,7 @@
 
 ## Overview
 
-It is widely assumed that **fine-grained category supervision** (e.g., 1000-way ImageNet) is what drives the human-like representations learned by deep vision models.
-
-**We show this is wrong.** Networks trained with as few as **2–8 broad categories** match — and on perceptual similarity, *exceed* — the brain-alignment of 1000-class models and large self-supervised systems.
-
-We construct progressively coarser label sets by PCA-partitioning pretrained embeddings, retrain CNNs and transformers from scratch at each granularity, and evaluate alignment against:
-
-| Modality | Dataset | Regions / Signal |
-|---|---|---|
-| Human fMRI | **NSD** | Early & ventral visual streams |
-| Macaque electrophysiology | **TVSD** | V1, V4, IT |
-| Human behavior | **THINGS** | Similarity judgments |
+Artificial neural networks trained on visual tasks develop internal representations resembling those of the primate visual system, a discovery that has guided a decade of computational neuroscience. Research on building brain-aligned models has progressively embraced finer-grained supervisory signals, from object classification to contrastive self-supervised objectives that maximize distinctions among individual images, yet the role of supervisory signal granularity on brain alignment remains largely unexamined. Here we systematically investigate how the coarseness of a learning signal shapes representational alignment with human vision. We parametrically vary the level of signal granularity using a data-driven approach that partitions a set of training images into varied numbers of categories (2, 4, 8, 16, ..., 64) via PCA-based splits of pretrained embeddings. We train hundreds of neural networks across convolutional and transformer architectures on these coarse classification tasks and compare their representations to macaque electrophysiology recordings and human fMRI responses. We find that networks trained to distinguish as few as 8 broad categories learn representations that match or exceed the neural alignment of models distinguishing 1,000-classes. Even more strikingly, these coarsely trained networks align more closely with human perceptual similarity judgments than all other models evaluated, including networks trained with fine-grained supervision or self-supervision as well as leading large-scale vision models. These results demonstrate that human-like visual representations emerge from remarkably coarse feedback, reframing what learning signals vision may require and opening a path toward building AI systems that are more aligned with human perception.
 
 ---
 

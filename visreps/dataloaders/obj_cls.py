@@ -1,19 +1,48 @@
-import os
-import json
-import torch
+"""ImageNet dataloader (parquet-backed) for visreps training.
+
+This module wraps ``imagenet_loader.ImageNetParquet`` (parquet shards on
+``/datadisk``) in a thin compatibility shim that preserves the historical
+public API (``get_transform``, ``get_obj_cls_loader`` returning
+``(datasets, loaders)`` keyed by split).
+
+Notes on this rewrite (new machine, 2026):
+    * The legacy folder-based ``ImageNetDataset`` (Bonner-lab layout with
+      ``folder_labels.json`` and a 80/20 random split) is kept at
+      ``obj_cls.py.legacy`` for reference.
+    * Train/test mapping is now the official HuggingFace
+      ``train`` / ``validation`` splits — there is a *one-time* discontinuity
+      in reported test accuracy versus historical runs.
+    * PCA-coarse-label training is currently unsupported; the existing
+      ``pca_labels/*.csv`` files key on filenames the parquet ``image.path``
+      field doesn't expose cleanly. ``pca_labels=True`` raises
+      ``NotImplementedError``.
+    * ``imagenet-mini-{50, 100, 200}`` are no longer available.
+"""
+
+from __future__ import annotations
+
+import math
+import random
 import warnings
-from pathlib import Path
-from torch.utils.data import Dataset, DataLoader
+from typing import Callable, Optional, Tuple
+
+import pyarrow.parquet as pq
+import torch
+from torch.utils.data import DataLoader, IterableDataset
 import torchvision.transforms as transforms
-from PIL import Image
-import pandas as pd
+from torchvision.transforms.v2 import functional as F_v2
 
-import visreps.utils as utils
+from imagenet_loader import (
+    Collate,
+    ImageNetParquet,
+    eval_transform as _eval_transform_uint8,
+    list_shards,
+    train_transform as _train_transform_uint8,
+)
 
-# Filter out PIL TiffImagePlugin truncated file warnings
-warnings.filterwarnings('ignore', category=UserWarning, module='PIL.TiffImagePlugin')
-
-# Global normalization statistics.
+# ---------------------------------------------------------------------------
+# PIL-pipeline transform helper (kept for evals.py / neural.py consumers)
+# ---------------------------------------------------------------------------
 DS_MEAN = {
     "imgnet": [0.485, 0.456, 0.406],
     "clip":   [0.48145466, 0.4578275, 0.40821073],
@@ -23,302 +52,382 @@ DS_STD = {
     "clip":   [0.26862954, 0.26130258, 0.27577711],
 }
 
-def get_transform(ds_stats="imgnet", data_augment=False, image_size=224, preprocess=True,
-                   val_resize_size=256, augment_type="standard"):
-    """Return a composed transform based on dataset stats and augmentation flag.
 
-    ``augment_type`` controls the training augmentation strategy:
-      - ``"standard"``: RandomResizedCrop + RandomHorizontalFlip (modern ImageNet recipe)
-      - ``"mild"``: Resize + CenterCrop + RandomHorizontalFlip + RandomRotation(10)
+def get_transform(
+    ds_stats: str = "imgnet",
+    data_augment: bool = False,
+    image_size: int = 224,
+    preprocess: bool = True,
+    val_resize_size: int = 256,
+    augment_type: str = "standard",
+):
+    """Return a torchvision PIL-pipeline transform.
 
-    ``val_resize_size`` controls the resize dimension for validation transforms
-    (default 256, but modern recipes like ResNet50-V2 / ConvNeXt use 232).
+    Used by ``evals.py`` and ``dataloaders/neural.py`` for non-training image
+    preprocessing (PIL → tensor). The training pipeline does **not** go
+    through this function — see ``_make_train_transform`` /
+    ``_make_eval_transform`` for the uint8 CHW transforms applied inside
+    the parquet loader.
     """
     if not preprocess:
         return transforms.Compose([transforms.ToTensor()])
 
     if data_augment:
         if augment_type == "mild":
-            # Mild: whole-object view with light perturbation
             tfms = [
-                transforms.Resize(val_resize_size, interpolation=transforms.InterpolationMode.BILINEAR),
+                transforms.Resize(
+                    val_resize_size,
+                    interpolation=transforms.InterpolationMode.BILINEAR,
+                ),
                 transforms.CenterCrop(image_size),
                 transforms.RandomHorizontalFlip(),
                 transforms.RandomRotation(10),
             ]
         else:
-            # Standard: RandomResizedCrop + RandomHorizontalFlip
             tfms = [
-                transforms.RandomResizedCrop(image_size, interpolation=transforms.InterpolationMode.BILINEAR),
+                transforms.RandomResizedCrop(
+                    image_size,
+                    interpolation=transforms.InterpolationMode.BILINEAR,
+                ),
                 transforms.RandomHorizontalFlip(),
             ]
     else:
-        # Validation / test: deterministic Resize + CenterCrop
         tfms = [
-            transforms.Resize(val_resize_size, interpolation=transforms.InterpolationMode.BILINEAR),
+            transforms.Resize(
+                val_resize_size,
+                interpolation=transforms.InterpolationMode.BILINEAR,
+            ),
             transforms.CenterCrop(image_size),
         ]
 
-    tfms += [transforms.ToTensor(), transforms.Normalize(DS_MEAN[ds_stats], DS_STD[ds_stats])]
+    tfms += [
+        transforms.ToTensor(),
+        transforms.Normalize(DS_MEAN[ds_stats], DS_STD[ds_stats]),
+    ]
     return transforms.Compose(tfms)
 
-# -----------------------------------------------------------------------------
-# PCA Dataset wrapper
-# -----------------------------------------------------------------------------
-class PCADataset(Dataset):
+
+# ---------------------------------------------------------------------------
+# uint8 CHW transforms (operate inside the parquet pipeline, before Collate)
+# ---------------------------------------------------------------------------
+def _eval_transform(image_size: int = 224):
+    """Resize + center-crop on uint8 CHW (matches ``imagenet_loader``)."""
+
+    def _fn(img: torch.Tensor) -> torch.Tensor:
+        return _eval_transform_uint8(img, image_size=image_size)
+
+    return _fn
+
+
+def _train_transform_standard(image_size: int = 224):
+    """RandomResizedCrop + HFlip on uint8 CHW (matches ``imagenet_loader``)."""
+
+    def _fn(img: torch.Tensor) -> torch.Tensor:
+        return _train_transform_uint8(img, image_size=image_size)
+
+    return _fn
+
+
+def _train_transform_mild(image_size: int = 224, val_resize_size: int = 256):
+    """Mild augmentation on uint8 CHW: Resize + CenterCrop + HFlip + Rotate(±10°).
+
+    Mirrors the legacy ``augment_type='mild'`` pipeline used for
+    ``custom_model``, but operates on uint8 CHW tensors so it composes with
+    ``Collate``'s fused normalize step.
     """
-    Wraps a base dataset to substitute its labels with PCA-derived ones.
-    Expects a CSV with 'image' and 'pca_label' columns.
+
+    def _fn(img: torch.Tensor) -> torch.Tensor:
+        img = F_v2.resize(img, val_resize_size, antialias=True)
+        img = F_v2.center_crop(img, image_size)
+        if random.random() < 0.5:
+            img = F_v2.hflip(img)
+        angle = random.uniform(-10.0, 10.0)
+        img = F_v2.rotate(img, angle)
+        return img
+
+    return _fn
+
+
+# ---------------------------------------------------------------------------
+# Sized parquet wrapper — adds __len__ and num_classes for trainer compat
+# ---------------------------------------------------------------------------
+class _SizedImageNetParquet(IterableDataset):
+    """``ImageNetParquet`` + ``__len__`` + per-iteration epoch bump.
+
+    The visreps trainer calls ``len(loader)`` to compute average loss
+    (``trainer.train_epoch``) and reads ``datasets['train'].num_classes``.
+    PyTorch's ``DataLoader.__len__`` is defined for ``IterableDataset`` only
+    if the dataset itself implements ``__len__``.
+
+    Per-iteration epoch bump: the trainer never calls ``set_epoch``, but
+    we still want each epoch to produce a fresh shard order. We bump the
+    underlying ``_epoch`` counter on every ``__iter__`` call so each pass
+    gets a different shuffle seed.
     """
-    def __init__(self, base_dataset, pca_labels_path, num_classes: int):
-        self.dataset = base_dataset
-        self.label_map = self._load_pca_labels(pca_labels_path)
-        # Store the number of PCA classes
-        self.num_classes = num_classes 
-        self._filter_samples()
 
-    def _load_pca_labels(self, csv_path):
-        try:
-            df = pd.read_csv(csv_path)
-        except Exception as e:
-            raise RuntimeError(f"Error reading PCA CSV at {csv_path}: {e}")
+    num_classes: int = 1000
 
-        for col in ["image", "pca_label"]:
-            if col not in df.columns:
-                raise ValueError(f"PCA CSV must include '{col}'")
-        if df["pca_label"].dtype.kind not in "iu" or df["pca_label"].min() < 0:
-            raise ValueError("PCA labels must be non-negative integers")
-        return {os.path.basename(row["image"]): int(row["pca_label"]) for _, row in df.iterrows()}
+    def __init__(
+        self,
+        shards,
+        *,
+        transform: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
+        shuffle_shards: bool = False,
+        seed: int = 0,
+        keep_predicate: Optional[Callable[[str, int, int], bool]] = None,
+    ):
+        super().__init__()
+        if not shards:
+            raise ValueError("shards must be non-empty")
+        self._inner = ImageNetParquet(
+            shards,
+            transform=transform,
+            shuffle_shards=shuffle_shards,
+            seed=seed,
+        )
+        self._keep_predicate = keep_predicate
+        self._iter_count = 0
+        self._length = self._compute_length(shards, keep_predicate)
 
-    def _filter_samples(self):
-        """Filter samples to only those with PCA labels."""
-        if not hasattr(self.dataset, "samples"):
+    @staticmethod
+    def _compute_length(shards, keep_predicate) -> int:
+        if keep_predicate is None:
+            return sum(pq.ParquetFile(s).metadata.num_rows for s in shards)
+        # keep_predicate filters at iteration time — count rows by scanning
+        # parquet metadata + path/label columns. Worth it because trainer
+        # uses len() for loss averaging only.
+        n = 0
+        for shard in shards:
+            pf = pq.ParquetFile(shard)
+            for batch in pf.iter_batches(batch_size=4096, columns=["image", "label"]):
+                paths = batch.column("image").field("path").to_pylist()
+                labels = batch.column("label").to_pylist()
+                for idx, (p, lbl) in enumerate(zip(paths, labels)):
+                    if keep_predicate(p, int(lbl), idx):
+                        n += 1
+        return n
+
+    def set_epoch(self, epoch: int) -> None:
+        self._inner.set_epoch(epoch)
+
+    def __len__(self) -> int:
+        return self._length
+
+    def __iter__(self):
+        self._iter_count += 1
+        self._inner.set_epoch(self._iter_count)
+        if self._keep_predicate is None:
+            yield from self._inner
             return
-        
-        filtered_samples = []
-        for sample in self.dataset.samples:
-            img_id = os.path.basename(sample[2])
-            if img_id in self.label_map:
-                filtered_samples.append(sample)
-        
-        total = len(self.dataset.samples)
-        kept = len(filtered_samples)
-        print(f"Filtered dataset from {total} to {kept} samples with PCA labels ({kept/total*100:.1f}%)")
-        self.dataset.samples = filtered_samples
+        # Filtered iteration: re-decode shards but apply predicate before
+        # the underlying transform/decode loop. We mirror the inner loop
+        # to avoid decoding rows we'll throw away.
+        from torch.utils.data import get_worker_info
+        from torchvision.io import ImageReadMode, decode_image
 
-    def __len__(self):
-        return len(self.dataset)
+        info = get_worker_info()
+        shards = list(self._inner.shards)
+        if self._inner.shuffle_shards:
+            wid = info.id if info else 0
+            random.Random(
+                self._inner.seed + self._inner._epoch * 1009 + wid
+            ).shuffle(shards)
+        if info is not None:
+            shards = shards[info.id :: info.num_workers]
 
-    def __getitem__(self, idx):
-        image, _ = self.dataset[idx]
-        img_id = os.path.basename(self.dataset.samples[idx][2])
-        label = self.label_map[img_id]
-        return image, label
+        tfm = self._inner.transform
+        for path in shards:
+            for batch in pq.ParquetFile(path).iter_batches(
+                batch_size=self._inner.row_group_batch,
+                columns=["image", "label"],
+            ):
+                imgs = batch.column("image")
+                paths = imgs.field("path").to_pylist()
+                bs = imgs.field("bytes").to_pylist()
+                ls = batch.column("label").to_pylist()
+                for idx, (p, b, lbl) in enumerate(zip(paths, bs, ls)):
+                    if not self._keep_predicate(p, int(lbl), idx):
+                        continue
+                    img = decode_image(
+                        torch.frombuffer(bytearray(b), dtype=torch.uint8),
+                        mode=ImageReadMode.RGB,
+                    )
+                    yield (tfm(img) if tfm else img), int(lbl)
 
-# -----------------------------------------------------------------------------
-# Dataset classes
-# -----------------------------------------------------------------------------
-class ImageNetDataset(Dataset):
-    """
-    Custom loader for ImageNet with a flat folder structure.
-    Folder-to-label mapping is read from a JSON file.
-    Can load 'train', 'test', or 'all' splits.
-    """
-    def __init__(self, base_path, split = "train", transform=None, train_ratio= 0.8, train_fraction=1.0):
-        assert split in ["train", "test", "all"], f"Invalid split: {split}"
-        self.transform = transform
-        label_file = os.path.join(utils.get_env_var("IMAGENET_LOCAL_DIR"), "folder_labels.json")
-        self.num_classes = 1000
-        
-        # Load folder -> label mapping
-        try:
-            with open(label_file, "r") as f:
-                self.folder_labels = json.load(f)
-        except FileNotFoundError:
-             raise FileNotFoundError(f"Label file not found: {label_file}")
-        except json.JSONDecodeError:
-            raise ValueError(f"Error decoding JSON from {label_file}")
 
-        self.samples = []
-        skipped = set()
-
-        # Scan for all valid images first
-        valid_folders = set(self.folder_labels.keys())
-        if not os.path.isdir(base_path):
-             raise FileNotFoundError(f"ImageNet base path not found or not a directory: {base_path}")
-             
-        for folder in os.listdir(base_path):
-            if not folder.startswith("n"): # Standard ImageNet folder prefix
-                continue
-            folder_path = os.path.join(base_path, folder)
-            # Check if folder is valid and exists in label file
-            if not os.path.isdir(folder_path) or folder not in valid_folders:
-                skipped.add(folder)
-                continue
-                
-            label = int(self.folder_labels[folder])
-            for fname in os.listdir(folder_path):
-                # Check for standard image extensions
-                if fname.lower().endswith((".jpeg", ".jpg")):
-                    img_path = os.path.join(folder_path, fname)
-                    img_id = fname  # Use filename for potential PCA matching later
-                    self.samples.append((img_path, label, img_id))
-                    
-        # Sort for filesystem-independent ordering
-        self.samples.sort(key=lambda s: s[2])
-        total_found = len(self.samples)
-
-        # Apply train/test split only if split is 'train' or 'test'
-        if split in ["train", "test"]:
-            if total_found == 0:
-                 self.samples = []
-            elif total_found <= self.num_classes:
-                 # Too few images per class to split meaningfully — use all for both
-                 print(f"⚠️ Only {total_found} images for {self.num_classes} classes — using all for both train and test")
-            else:
-                 g = torch.Generator().manual_seed(42)
-                 indices = torch.randperm(total_found, generator=g).tolist()
-                 split_idx = int(total_found * train_ratio)
-                 if split == "train":
-                     self.samples = [self.samples[i] for i in indices[:split_idx]]
-                 else: # split == "test"
-                     self.samples = [self.samples[i] for i in indices[split_idx:]]
-        # If split is 'all', self.samples remains the full list
-
-        # Subsample training split if train_fraction < 1.0
-        if split == "train" and train_fraction < 1.0 and len(self.samples) > 0:
-            g = torch.Generator().manual_seed(42)
-            n_keep = max(1, int(len(self.samples) * train_fraction))
-            indices = torch.randperm(len(self.samples), generator=g).tolist()[:n_keep]
-            self.samples = [self.samples[i] for i in sorted(indices)]
-            print(f"train_fraction={train_fraction}: kept {n_keep} of {split_idx} train samples")
-
-    def __len__(self):
-        return len(self.samples)
-
-    def __getitem__(self, idx: int):
-        img_path, label, _ = self.samples[idx]
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore', UserWarning)
-            image = Image.open(img_path).convert("RGB")
-        if self.transform:
-            image = self.transform(image)
-        return image, label
-
-    def get_wnid_from_label(self, label_idx: int) -> str:
-        """Convert a class index (0-999) to its WordNet ID."""
-        for wnid, idx in self.folder_labels.items():
-            if int(idx) == label_idx:
-                return wnid
-        raise ValueError(f"Label index {label_idx} not found.")
-
-    def get_wordnet_synset(self, label_idx: int):
-        """Returns the NLTK Synset object for the class index."""
-        import nltk
-        from nltk.corpus import wordnet as wn
-        
-        try: wn.ensure_loaded()
-        except LookupError: nltk.download('wordnet'); nltk.download('omw-1.4')
-
-        wnid = self.get_wnid_from_label(label_idx)
-        try:
-            return wn.synset_from_pos_and_offset('n', int(wnid[1:]))
-        except Exception as e:
-            print(f"Error retrieving synset for {wnid}: {e}")
-            return None
-
-# -----------------------------------------------------------------------------
-# DataLoader helpers
-# -----------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# DataLoader helpers (kept for back-compat with neural.py)
+# ---------------------------------------------------------------------------
 def create_collate_fn():
-    """Collate function for (image, label) pairs."""
+    """Plain stack collate used by neural-data loaders.
+
+    Note: the parquet training pipeline uses ``Collate()`` from
+    ``imagenet_loader`` (uint8 → fused normalize). This helper is unrelated
+    and only feeds neural-stimuli loaders that already produce normalized
+    float tensors via ``get_transform``.
+    """
+
     def collate_fn(batch):
         images, labels = zip(*batch)
         return torch.stack(images), torch.tensor(labels)
+
     return collate_fn
 
-def create_dataloader(dataset: Dataset, batch_size: int = 32, num_workers: int = 4,
-                      shuffle: bool = True, collate_fn=None) -> DataLoader:
-    # Conditionally set prefetch_factor only if using multiple workers
+
+def create_dataloader(
+    dataset,
+    batch_size: int = 32,
+    num_workers: int = 4,
+    shuffle: bool = True,
+    collate_fn=None,
+) -> DataLoader:
     prefetch_factor = 8 if num_workers > 0 else None
-    
     return DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers,
-        prefetch_factor=prefetch_factor, # Use the conditional value
+        prefetch_factor=prefetch_factor,
         pin_memory=True,
-        collate_fn=collate_fn or create_collate_fn()
+        collate_fn=collate_fn or create_collate_fn(),
     )
 
-def wrap_with_pca(dataset, base_path, cfg, split):
-    """Wrap the dataset with PCA labels"""
-    n_classes = cfg.get("pca_n_classes")
-    if n_classes is None:
-        raise ValueError("pca_n_classes must be specified in config when pca_labels=True")
-    pca_file = f"n_classes_{n_classes}.csv"
-    pca_labels_path = os.path.join(base_path, pca_file)
-    print(f"Applying PCA labels for {split} from {pca_labels_path}")
-    return PCADataset(dataset, pca_labels_path, num_classes=n_classes)
 
-# -----------------------------------------------------------------------------
-# Dataset preparation functions
-# -----------------------------------------------------------------------------
-def _resolve_dataset_path(cfg):
-    """Resolve the dataset base path from config or environment."""
-    dataset_name = cfg.get("dataset", "imagenet")
-    if dataset_name.startswith("imagenet-mini-"):
-        try:
-            num_images = int(dataset_name.split("-")[-1])
-        except ValueError:
-            raise ValueError(f"Invalid imagenet-mini format: {dataset_name}. Expected imagenet-mini-<number>")
-        mini_path = Path(utils.get_env_var("IMAGENET_DATA_DIR")).parent / f"imagenet-mini-{num_images}"
-        if not mini_path.exists():
-            raise ValueError(f"ImageNet mini dataset not found at {mini_path}")
-        return str(mini_path)
-    return cfg.get("dataset_path", utils.get_env_var("IMAGENET_DATA_DIR"))
+# ---------------------------------------------------------------------------
+# mini-10 deterministic 80/20 row split
+# ---------------------------------------------------------------------------
+def _mini10_split_predicate(split: str) -> Callable[[str, int, int], bool]:
+    """Deterministic ~80/20 row split keyed on parquet ``image.path``."""
+    assert split in {"train", "test"}
+    keep_train = split == "train"
+
+    def _pred(path: str, label: int, idx: int) -> bool:
+        # Stable hash on path: 32-bit FNV-1a (avoids ``hash()`` randomness).
+        h = 0x811C9DC5
+        for byte in path.encode("utf-8"):
+            h = ((h ^ byte) * 0x01000193) & 0xFFFFFFFF
+        is_train = (h % 5) != 0  # ~80% train, ~20% test
+        return is_train if keep_train else not is_train
+
+    return _pred
+
+
+# ---------------------------------------------------------------------------
+# Main entry point
+# ---------------------------------------------------------------------------
+_HF_SPLIT = {"train": "train", "test": "validation", "all": "train"}
+_DATASET_MAP = {"imagenet": "full", "imagenet-mini-10": "mini-10"}
+
+
+def _build_transform(cfg, split: str, *, shuffle: bool, preprocess: bool):
+    """Return the uint8 CHW transform applied inside the parquet loader.
+
+    ``preprocess=False`` returns ``None`` so the loader yields raw decoded
+    uint8 CHW tensors and ``Collate(normalize=False)`` keeps them uint8.
+    """
+    if not preprocess:
+        return None
+
+    image_size = int(cfg.get("image_size", 224))
+    augment = cfg.get("data_augment", False) and split == "train" and shuffle
+    if not augment:
+        return _eval_transform(image_size=image_size)
+
+    augment_type = "mild" if cfg.get("model_class") == "custom_model" else "standard"
+    if augment_type == "mild":
+        return _train_transform_mild(image_size=image_size)
+    return _train_transform_standard(image_size=image_size)
+
 
 def prepare_imgnet_data(cfg, pca_labels, shuffle, preprocess, train_test_split):
-    """Prepares ImageNet or ImageNet-mini datasets."""
-    base_path = _resolve_dataset_path(cfg)
-    datasets, loaders = {}, {}
+    """Build parquet-backed ImageNet datasets + dataloaders."""
+    if pca_labels:
+        raise NotImplementedError(
+            "PCA-label training is not yet wired up for the parquet loader on "
+            "this machine. Set cfg.pca_labels=False or regenerate PCA labels "
+            "keyed on the parquet `image.path` field."
+        )
 
-    # Determine splits based on train_test_split flag
+    dataset_name = cfg.get("dataset", "imagenet")
+    if dataset_name not in _DATASET_MAP:
+        raise ValueError(
+            f"Unsupported dataset: {dataset_name!r}. Expected one of "
+            f"{sorted(_DATASET_MAP)}."
+        )
+    loader_dataset = _DATASET_MAP[dataset_name]
+    is_mini10 = loader_dataset == "mini-10"
+
+    if cfg.get("train_fraction", 1.0) != 1.0:
+        warnings.warn(
+            "train_fraction != 1.0 is not supported by the parquet pipeline "
+            "yet; ignoring.",
+            stacklevel=2,
+        )
+
     splits_to_load = ["train", "test"] if train_test_split else ["all"]
-    split_info = []
+
+    datasets, loaders = {}, {}
+    info_parts = []
 
     for split in splits_to_load:
-        augment = cfg.get("data_augment", False) and split == "train" and shuffle and preprocess
-        augment_type = "mild" if cfg.get("model_class") == "custom_model" else "standard"
-        tfms = get_transform(ds_stats="imgnet", data_augment=augment, image_size=224,
-                             preprocess=preprocess, augment_type=augment_type)
-        
-        # Instantiate the dataset for the current split ('train', 'test', or 'all')
-        train_fraction = cfg.get("train_fraction", 1.0)
-        dataset = ImageNetDataset(base_path, split=split, transform=tfms, train_fraction=train_fraction)
+        hf_split = _HF_SPLIT[split]
 
-        # Wrap with PCA labels if specified
-        if pca_labels:
-            pca_base_path = os.path.join("pca_labels", cfg.get("pca_labels_folder"))
-            dataset = wrap_with_pca(dataset, pca_base_path, cfg, split)
-        
-        datasets[split] = dataset
-        loaders[split] = create_dataloader(
-            dataset,
-            batch_size=cfg.get("batchsize", 512),
-            num_workers=cfg.get("num_workers", 8),
-            shuffle=shuffle,
+        if is_mini10 and split == "test":
+            # mini-10 only ships HF train shards. Fall back to a deterministic
+            # 80/20 row split keyed on `image.path` so train ≠ test.
+            shards = list_shards("train", dataset=loader_dataset)
+            keep_predicate = _mini10_split_predicate("test")
+            warnings.warn(
+                "imagenet-mini-10 has no validation shards — using a "
+                "deterministic 80/20 hash split of the train shards for "
+                "the 'test' split. Use the full ImageNet for real "
+                "evaluation.",
+                stacklevel=2,
+            )
+        elif is_mini10 and split == "train":
+            shards = list_shards("train", dataset=loader_dataset)
+            keep_predicate = _mini10_split_predicate("train")
+        else:
+            shards = list_shards(hf_split, dataset=loader_dataset)
+            keep_predicate = None
+
+        tfm = _build_transform(cfg, split, shuffle=shuffle, preprocess=preprocess)
+
+        ds = _SizedImageNetParquet(
+            shards,
+            transform=tfm,
+            shuffle_shards=(shuffle and split == "train"),
+            seed=int(cfg.get("seed", 0)),
+            keep_predicate=keep_predicate,
         )
-        split_info.append(f"{split}={len(dataset)}")
 
-    print(f"📊 ImageNet: {', '.join(split_info)}")
+        batch_size = int(cfg.get("batchsize", 256))
+        num_workers = int(cfg.get("num_workers", 8))
+        # Cap workers at the shard count (mini-10 has 1 shard).
+        num_workers = max(0, min(num_workers, len(shards)))
+        # Disable persistent_workers so per-iter set_epoch() updates reach
+        # workers (workers are recreated each epoch).
+        loaders[split] = DataLoader(
+            ds,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            pin_memory=torch.cuda.is_available(),
+            persistent_workers=False,
+            prefetch_factor=2 if num_workers > 0 else None,
+            collate_fn=Collate(normalize=preprocess),
+        )
+        datasets[split] = ds
+        info_parts.append(f"{split}={len(ds)}")
+
+    print(f"📊 ImageNet ({dataset_name}): {', '.join(info_parts)}")
     return datasets, loaders
 
-def get_obj_cls_loader(cfg, shuffle=True, preprocess=True, train_test_split=True):
-    """Return datasets and dataloaders for object classification."""
-    dataset_name = cfg.get("dataset", "imagenet")
-    if not (dataset_name == "imagenet" or dataset_name.startswith("imagenet-mini-")):
-        raise ValueError(f"Unsupported dataset: {dataset_name}")
+
+def get_obj_cls_loader(cfg, shuffle: bool = True, preprocess: bool = True,
+                       train_test_split: bool = True):
+    """Return ``(datasets, loaders)`` for object classification training.
+
+    See module docstring for the supported dataset names and split semantics.
+    """
     pca_labels = cfg.get("pca_labels", False)
     return prepare_imgnet_data(cfg, pca_labels, shuffle, preprocess, train_test_split)

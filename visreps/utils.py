@@ -527,7 +527,7 @@ class ConfigVerifier:
     """Validates configuration for both training and evaluation modes."""
 
     VALID_MODES = {"train", "eval"}
-    VALID_DATASETS = {"imagenet", "imagenet-mini-1", "imagenet-mini-5", "imagenet-mini-10", "imagenet-mini-50", "imagenet-mini-100", "imagenet-mini-200"}
+    VALID_DATASETS = {"imagenet", "imagenet-mini-10"}
     VALID_MODEL_CLASSES = {"custom_model", "standard_model"}
     VALID_MODEL_SOURCES = {"checkpoint", "torchvision"}
     VALID_ANALYSES = {"rsa", "encoding_score"}

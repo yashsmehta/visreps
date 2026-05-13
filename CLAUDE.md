@@ -10,11 +10,13 @@ Instructions are mostly voice-dictated and may contain transcription errors. Inf
 
 **Hardware:** 1× NVIDIA RTX 4090 (24 GB VRAM), 32 CPU cores, 125 GB RAM. Encoding score (himalaya ridge SVD) needs ~8 GB free VRAM for NSD-sized data.
 
-**CRITICAL: Always activate the venv before running any Python command.** Prefix every Python invocation with `source /home/ymehta3/research/VisionAI/visreps/.venv/bin/activate &&`. The system Python does not have the required packages (torch, etc.).
+**CRITICAL: Always activate the venv before running any Python command.** Prefix every Python invocation with `source /home/t-ymehta/Research/visreps/.venv/bin/activate &&`. The system Python does not have the required packages (torch, etc.).
 
-**Always load `.env` before importing packages** that depend on environment variables (e.g., `BONNER_DATASETS_HOME`). Use `source .env` or `python-dotenv`. Without this, datasets re-download to `~/.cache` instead of the configured data directory.
+**Always load `.env` before importing packages** that depend on environment variables (e.g., `IMAGENET_DATA_ROOT`, `BONNER_DATASETS_HOME`). Use `source .env` or `python-dotenv`. Without this, datasets re-download to `~/.cache` instead of the configured data directory.
 
-**All scripts must be run from the project root** (`/home/ymehta3/research/VisionAI/visreps/`), not from subdirectories. The dataloaders use relative paths (e.g. `datasets/obj_cls/imagenet/folder_labels.json`) that resolve from root.
+**All scripts must be run from the project root** (`/home/t-ymehta/Research/visreps/`), not from subdirectories. The dataloaders use relative paths (e.g. `pca_labels/...`) that resolve from root.
+
+**ImageNet dataloader (current machine):** ImageNet is loaded from local parquet shards via the `imagenet_loader` package (`/home/t-ymehta/Research/dataloaders/imagenet_loader/`, installed editable). Data lives at `/datadisk/imagenet/ilsvrc2012/data/` (full) and `/datadisk/imagenet/mini-10/` (10k smoke-test subset). The legacy folder-based loader is preserved at `visreps/dataloaders/obj_cls.py.legacy` for reference.
 
 ## Project Overview
 
@@ -78,8 +80,10 @@ python runners/train_runner.py --grid configs/grids/train_default.json  # Grid s
 ```
 
 **Key config options:**
-- `dataset`: "imagenet", "imagenet-mini-{10,50,100,200}" — the number is **images per class** (not % of classes). All 1000 classes are kept. E.g., `imagenet-mini-10` = 10 imgs/class = 10K total.
-- `pca_labels`: true/false (use coarse labels)
+- `dataset`: "imagenet" (HF train, 1.28M) or "imagenet-mini-10" (HF train shard, 10K, 10 imgs/class). On this machine, mini-{50,100,200} are no longer supported — only mini-10 ships on disk.
+- For "imagenet": `train` split → HF `train`, `test` split → HF `validation` (50K).
+- For "imagenet-mini-10": deterministic ~80/20 hash split of the train shard (mini has no validation).
+- `pca_labels`: true/false. **Currently raises `NotImplementedError` on this machine** — existing PCA CSVs key on filenames the parquet `image.path` field doesn't expose cleanly. Regenerate PCA labels to re-enable coarse-label training here.
 - `pca_n_classes`: 2, 4, 8, 16, 32, 64 (must be power of 2)
 - `pca_labels_folder`: "pca_labels_alexnet", "pca_labels_dino", etc.
 - `model_class`: "custom_model" or "standard_model"
@@ -169,10 +173,11 @@ Creates labels by projecting features onto PCs and applying median splits → 2^
 ## Environment Variables (`.env`)
 
 ```
-IMAGENET_DATA_DIR=/path/to/imagenet/train
-IMAGENET_LOCAL_DIR=/path/to/imagenet          # Contains folder_labels.json
+IMAGENET_DATA_ROOT=/datadisk/imagenet/ilsvrc2012/data   # Parquet shards (consumed by imagenet_loader)
+IMAGENET_DATA_DIR=/datadisk/imagenet/ilsvrc2012/data    # Legacy alias retained for back-compat
+IMAGENET_LOCAL_DIR=/datadisk/imagenet/ilsvrc2012        # Legacy alias retained for back-compat
 NSD_DATA_DIR=/path/to/nsd/processed
-BONNER_DATASETS_HOME=~/.cache/bonner-datasets  # TVSD uses THINGS images from here
+BONNER_DATASETS_HOME=~/.cache/bonner-datasets           # TVSD uses THINGS images from here
 ```
 
 ## Models
