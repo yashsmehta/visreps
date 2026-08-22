@@ -1,163 +1,139 @@
 """
-Visualization functions for dimensionality analysis.
-
-All functions take pre-computed results and create figures.
+Visualization for dimensionality analysis: coarse-grain vs fine-grain.
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
 
 
-# Style constants
-COLORS = {'pretrained': '#1f77b4', 'trained': '#ff7f0e'}
-FIGSIZE_WIDE = (14, 5)
-FIGSIZE_TALL = (10, 8)
-
-
 def _setup_ax(ax, xlabel, ylabel, title):
-    """Common axis setup."""
     ax.set_xlabel(xlabel, fontsize=11)
     ax.set_ylabel(ylabel, fontsize=11)
     ax.set_title(title, fontsize=12, fontweight='bold')
     ax.set_facecolor('#FAFAFA')
 
 
-def plot_metric_comparison(results, metric_key, layers, model_names, ylabel, title, output_path):
-    """Generic comparison plot for any metric across layers.
+def plot_metric_across_models(metric_dict, layers, model_names, colors,
+                              ylabel, title, output_path, log_y=False):
+    """Line plot of a single scalar metric across layers, one line per model.
 
-    Args:
-        results: Dict with model_name -> {layer -> value}
-        metric_key: Not used (results already extracted)
-        layers: List of layer names
-        model_names: List of model names
-        ylabel: Y-axis label
-        title: Plot title
-        output_path: Where to save
+    metric_dict: {model_name -> {layer -> value}}
     """
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    fig, ax = plt.subplots(figsize=(7, 5))
     x = np.arange(len(layers))
 
-    vals = {name: np.array([results[name][layer] for layer in layers])
-            for name in model_names}
+    for name, color in zip(model_names, colors):
+        vals = np.array([metric_dict[name][l] for l in layers], dtype=float)
+        ax.plot(x, vals, 'o-', linewidth=2.2, markersize=7,
+                color=color, label=name)
 
-    # Plot 1: Line plot
-    ax = axes[0]
-    for i, name in enumerate(model_names):
-        color = list(COLORS.values())[i]
-        ax.plot(x, vals[name], 'o-', linewidth=2, markersize=8, color=color, label=name)
     ax.set_xticks(x)
     ax.set_xticklabels(layers)
-    ax.legend()
+    if log_y:
+        ax.set_yscale('log')
+    ax.legend(fontsize=10, frameon=True)
     ax.grid(True, alpha=0.3)
     _setup_ax(ax, 'Layer', ylabel, title)
 
-    # Plot 2: Ratio
-    ax = axes[1]
-    ratio = vals[model_names[0]] / np.maximum(vals[model_names[1]], 1e-10)
-    colors = ['#2ecc71' if r > 1 else '#e74c3c' for r in ratio]
-    bars = ax.bar(x, ratio, color=colors, alpha=0.8, edgecolor='black', linewidth=0.5)
-    for bar, r in zip(bars, ratio):
-        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.02,
-                f'{r:.2f}x', ha='center', va='bottom', fontsize=9)
-    ax.axhline(y=1, color='black', linestyle='--', linewidth=1)
-    ax.set_xticks(x)
-    ax.set_xticklabels(layers)
-    _setup_ax(ax, 'Layer', f'Ratio ({model_names[0][:3]} / {model_names[1][:3]})', 'Compression Ratio')
-
-    # Plot 3: Bar comparison
-    ax = axes[2]
-    width = 0.35
-    for i, name in enumerate(model_names):
-        color = list(COLORS.values())[i]
-        ax.bar(x + (i - 0.5) * width, vals[name], width, label=name, color=color, alpha=0.8)
-    ax.set_xticks(x)
-    ax.set_xticklabels(layers)
-    ax.legend()
-    _setup_ax(ax, 'Layer', ylabel, 'Side-by-Side Comparison')
-
     plt.tight_layout()
     plt.savefig(output_path, dpi=150, bbox_inches='tight', facecolor='white')
     plt.close()
 
 
-def plot_eigenspectrum(eigs_dict, layers_to_plot, model_names, output_path, n_components=100):
-    """Plot eigenspectrum for selected layers.
+def plot_eigenspectrum_loglog(eigs_dict, alpha_dict, layers_to_plot,
+                              model_names, colors, output_path,
+                              n_components=None, y_floor=1e-8):
+    """Log-log eigenspectrum per layer with fitted power-law slopes annotated.
 
-    Args:
-        eigs_dict: Dict with model_name -> {layer -> eigenvalues}
-        layers_to_plot: Which layers to show
-        model_names: List of model names
-        output_path: Where to save
-        n_components: How many components to plot
+    eigs_dict:  {model_name -> {layer -> eigenvalues (descending)}}
+    alpha_dict: {model_name -> {layer -> {'alpha':..,'rank_min':..,'rank_max':..}}}
+    y_floor:    Lower clip on lambda_n / lambda_1 (mask values below).
     """
     n_plots = len(layers_to_plot)
-    fig, axes = plt.subplots(1, n_plots, figsize=(5 * n_plots, 4))
-    if n_plots == 1:
-        axes = [axes]
+    ncols = min(n_plots, 4)
+    nrows = int(np.ceil(n_plots / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(4.8 * ncols, 4.2 * nrows),
+                             squeeze=False)
+    axes = axes.flatten()
 
     for ax, layer in zip(axes, layers_to_plot):
-        for i, name in enumerate(model_names):
-            eigs = eigs_dict[name][layer]
-            n_plot = min(n_components, len(eigs))
-            color = list(COLORS.values())[i]
-            ax.plot(range(1, n_plot + 1), eigs[:n_plot] / eigs[0],
-                    linewidth=2, color=color, label=name)
+        for name, color in zip(model_names, colors):
+            eigs = np.asarray(eigs_dict[name][layer])
+            n_total = len(eigs)
+            n_plot = n_components if n_components else n_total
+            n_plot = min(n_plot, n_total)
+            eigs_norm = eigs[:n_plot] / max(eigs[0], 1e-30)
+            ranks = np.arange(1, n_plot + 1)
+            keep = eigs_norm > y_floor
 
+            info = alpha_dict[name][layer]
+            label = f"{name}  α={info['alpha']:.2f}" if not np.isnan(info['alpha']) \
+                    else f"{name}  α=–"
+            ax.plot(ranks[keep], eigs_norm[keep],
+                    linewidth=2.0, color=color, label=label)
+
+            # Overlay the fitted line over its actual fit range
+            if not np.isnan(info['alpha']) and info['n_fit'] >= 5:
+                rmin, rmax = info['rank_min'], info['rank_max']
+                xs = np.array([rmin, rmax], dtype=float)
+                # Use intercept in absolute eigenvalue scale; renormalize by lambda_1
+                ys = np.exp(info['intercept']) * xs ** (-info['alpha']) / max(eigs[0], 1e-30)
+                ax.plot(xs, ys, linestyle='--', linewidth=1.2,
+                        color=color, alpha=0.7)
+
+        ax.set_xscale('log')
         ax.set_yscale('log')
-        ax.legend(fontsize=9)
-        ax.grid(True, alpha=0.3)
-        _setup_ax(ax, 'Component', 'Normalized Eigenvalue', f'{layer} Eigenspectrum')
+        ax.set_ylim(bottom=y_floor)
+        ax.legend(fontsize=8.5, loc='lower left', frameon=True)
+        ax.grid(True, which='both', alpha=0.25)
+        _setup_ax(ax, 'Rank n (log)', r'$\lambda_n / \lambda_1$ (log)',
+                  f'{layer} eigenspectrum')
+
+    for ax in axes[n_plots:]:
+        ax.set_visible(False)
 
     plt.tight_layout()
     plt.savefig(output_path, dpi=150, bbox_inches='tight', facecolor='white')
     plt.close()
 
 
-def plot_sparsity_comparison(sparsity_results, layers, model_names, output_path):
-    """Plot Hoyer sparsity comparison.
+def plot_power_law_exponent(alpha_dict, layers, model_names, colors, output_path):
+    """Convenience wrapper kept for callers; same shape as metric plot.
 
-    Args:
-        sparsity_results: Dict with model_name -> {layer -> {'mean': x, 'std': y}}
-        layers: List of layer names
-        model_names: List of model names
-        output_path: Where to save
+    alpha_dict: {model_name -> {layer -> {'alpha':..}}}
     """
-    fig, axes = plt.subplots(1, 2, figsize=FIGSIZE_WIDE)
+    flat = {n: {l: alpha_dict[n][l]['alpha'] for l in layers}
+            for n in model_names}
+    plot_metric_across_models(
+        flat, layers, model_names, colors,
+        ylabel=r'Power-law exponent $\alpha$',
+        title=r'Eigenspectrum decay $\lambda_n \propto n^{-\alpha}$',
+        output_path=output_path, log_y=False,
+    )
+
+
+def plot_sparsity_across_models(sparsity_results, layers, model_names, colors,
+                                output_path):
+    """Hoyer sparsity mean ± std across layers, one line per model.
+
+    sparsity_results: {model_name -> {layer -> {'mean': x, 'std': y}}}
+    """
+    fig, ax = plt.subplots(figsize=(7, 5))
     x = np.arange(len(layers))
 
-    means = {name: np.array([sparsity_results[name][layer]['mean'] for layer in layers])
-             for name in model_names}
-    stds = {name: np.array([sparsity_results[name][layer]['std'] for layer in layers])
-            for name in model_names}
+    for name, color in zip(model_names, colors):
+        means = np.array([sparsity_results[name][l]['mean'] for l in layers])
+        stds  = np.array([sparsity_results[name][l]['std']  for l in layers])
+        ax.errorbar(x, means, yerr=stds, fmt='o-', linewidth=2.0, markersize=6,
+                    color=color, label=name, capsize=3, alpha=0.95)
 
-    # Plot 1: Sparsity trajectory with error bars
-    ax = axes[0]
-    for i, name in enumerate(model_names):
-        color = list(COLORS.values())[i]
-        ax.errorbar(x, means[name], yerr=stds[name], fmt='o-', linewidth=2,
-                    markersize=8, color=color, label=name, capsize=3)
     ax.set_xticks(x)
     ax.set_xticklabels(layers)
     ax.set_ylim(0, 1)
-    ax.legend()
+    ax.legend(fontsize=10, frameon=True)
     ax.grid(True, alpha=0.3)
-    _setup_ax(ax, 'Layer', 'Hoyer Sparsity', 'Activation Sparsity (0=dense, 1=sparse)')
-
-    # Plot 2: Difference
-    ax = axes[1]
-    diff = means[model_names[1]] - means[model_names[0]]
-    colors = ['#2ecc71' if d > 0 else '#e74c3c' for d in diff]
-    bars = ax.bar(x, diff, color=colors, alpha=0.8, edgecolor='black', linewidth=0.5)
-    for bar, d in zip(bars, diff):
-        va = 'bottom' if d >= 0 else 'top'
-        offset = 0.005 if d >= 0 else -0.005
-        ax.text(bar.get_x() + bar.get_width()/2, d + offset,
-                f'{d:+.3f}', ha='center', va=va, fontsize=9)
-    ax.axhline(y=0, color='black', linestyle='-', linewidth=1)
-    ax.set_xticks(x)
-    ax.set_xticklabels(layers)
-    _setup_ax(ax, 'Layer', f'Sparsity Diff ({model_names[1][:3]} - {model_names[0][:3]})',
-              'Sparsity Change')
+    _setup_ax(ax, 'Layer', 'Hoyer Sparsity (0=dense, 1=sparse)',
+              'Activation Sparsity across Layers')
 
     plt.tight_layout()
     plt.savefig(output_path, dpi=150, bbox_inches='tight', facecolor='white')
@@ -165,39 +141,26 @@ def plot_sparsity_comparison(sparsity_results, layers, model_names, output_path)
 
 
 def plot_summary_table(results, layers, model_names):
-    """Print a summary table of all metrics.
-
-    Args:
-        results: Dict with metric_name -> {model_name -> {layer -> value}}
-        layers: List of layer names
-        model_names: List of model names
-    """
-    print("\n" + "=" * 80)
+    """Print a tabular summary for each metric."""
+    print("\n" + "=" * 90)
     print("DIMENSIONALITY ANALYSIS SUMMARY")
-    print("=" * 80)
+    print("=" * 90)
 
     for metric_name, metric_results in results.items():
         print(f"\n{metric_name}:")
-        print("-" * 60)
+        print("-" * 90)
 
         header = f"{'Layer':<8}"
         for name in model_names:
-            header += f" | {name[:15]:<15}"
-        header += " | Ratio"
+            header += f" | {name[:16]:<16}"
         print(header)
-        print("-" * 60)
+        print("-" * 90)
 
         for layer in layers:
             row = f"{layer:<8}"
-            vals = []
             for name in model_names:
                 val = metric_results[name][layer]
                 if isinstance(val, dict):
-                    val = val.get('mean', val.get('dimension', 0))
-                vals.append(val)
-                row += f" | {val:<15.2f}"
-
-            if len(vals) == 2 and vals[1] != 0:
-                ratio = vals[0] / vals[1]
-                row += f" | {ratio:.2f}x"
+                    val = val.get('mean', val.get('dimension', val.get('alpha', 0)))
+                row += f" | {val:<16.3f}"
             print(row)

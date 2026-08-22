@@ -66,7 +66,10 @@ def extract_layer(model, loader, device, layer=None):
     """Extract features from specified layer (default: fc2)."""
     if layer is None:
         layer = LAYER
-    extractor = FeatureExtractor(model, return_nodes={layer: layer})
+    extractor = FeatureExtractor(
+        model, return_nodes={layer: layer},
+        post_relu=True, extract_pre_and_post=False,
+    )
     extractor.to(device).eval()
 
     features = []
@@ -100,7 +103,10 @@ def extract_all_layers(model, loader, device, layers=None, conv_pool_size=3):
         layers = ALL_LAYERS
 
     return_nodes = {layer: layer for layer in layers}
-    extractor = FeatureExtractor(model, return_nodes=return_nodes)
+    extractor = FeatureExtractor(
+        model, return_nodes=return_nodes,
+        post_relu=True, extract_pre_and_post=False,
+    )
     extractor.to(device).eval()
 
     # Adaptive pooling for conv layers
