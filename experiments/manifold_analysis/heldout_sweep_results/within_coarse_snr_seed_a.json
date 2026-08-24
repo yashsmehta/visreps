@@ -1,0 +1,74 @@
+{
+  "2": {
+    "coarse_model": {
+      "mean": 0.49550652503967285,
+      "n_directed_pairs": 7224,
+      "n_submanifolds": 121
+    },
+    "fine_supervised_model": {
+      "mean": 1.435229778289795,
+      "n_directed_pairs": 7224,
+      "n_submanifolds": 121
+    }
+  },
+  "4": {
+    "coarse_model": {
+      "mean": 0.7338353395462036,
+      "n_directed_pairs": 7828,
+      "n_submanifolds": 176
+    },
+    "fine_supervised_model": {
+      "mean": 1.4881314039230347,
+      "n_directed_pairs": 7828,
+      "n_submanifolds": 176
+    }
+  },
+  "8": {
+    "coarse_model": {
+      "mean": 0.8632557988166809,
+      "n_directed_pairs": 7756,
+      "n_submanifolds": 240
+    },
+    "fine_supervised_model": {
+      "mean": 1.5016778707504272,
+      "n_directed_pairs": 7756,
+      "n_submanifolds": 240
+    }
+  },
+  "16": {
+    "coarse_model": {
+      "mean": 0.9596056342124939,
+      "n_directed_pairs": 6884,
+      "n_submanifolds": 306
+    },
+    "fine_supervised_model": {
+      "mean": 1.5280845165252686,
+      "n_directed_pairs": 6884,
+      "n_submanifolds": 306
+    }
+  },
+  "32": {
+    "coarse_model": {
+      "mean": 1.2489897012710571,
+      "n_directed_pairs": 4158,
+      "n_submanifolds": 326
+    },
+    "fine_supervised_model": {
+      "mean": 1.5685248374938965,
+      "n_directed_pairs": 4158,
+      "n_submanifolds": 326
+    }
+  },
+  "64": {
+    "coarse_model": {
+      "mean": 1.2328170537948608,
+      "n_directed_pairs": 2732,
+      "n_submanifolds": 324
+    },
+    "fine_supervised_model": {
+      "mean": 1.6469240188598633,
+      "n_directed_pairs": 2732,
+      "n_submanifolds": 324
+    }
+  }
+}

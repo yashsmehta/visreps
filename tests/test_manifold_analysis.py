@@ -8,7 +8,10 @@ import types
 import numpy as np
 
 from experiments.manifold_analysis.manifold_capacity import manifold_capacity
-from experiments.manifold_analysis.manifold_snr import manifold_snr
+from experiments.manifold_analysis.manifold_snr import (
+    empirical_nearest_prototype_error,
+    manifold_snr,
+)
 
 
 def _reference_snr(manifolds: np.ndarray, n_shots: int) -> np.ndarray:
@@ -82,6 +85,40 @@ def test_snr_matches_authors_reference_code() -> None:
         actual["pairwise"], expected, rtol=2e-13, atol=2e-13, equal_nan=True
     )
     assert actual["mean"] == np.nanmean(expected)
+
+
+def test_snr_exposes_complete_decomposition_and_predicted_error() -> None:
+    manifolds = np.random.default_rng(12).normal(size=(4, 11, 9))
+    result = manifold_snr(manifolds, n_shots=5)
+
+    reconstructed = result["numerator"] / result["denominator"]
+    np.testing.assert_allclose(result["pairwise"], reconstructed, equal_nan=True)
+    np.testing.assert_allclose(
+        result["denominator"] ** 2,
+        result["dimension_noise"]
+        + result["signal_noise_self"]
+        + result["signal_noise_other"]
+        + result["noise_noise"],
+        equal_nan=True,
+    )
+    assert np.isnan(result["pairwise"].diagonal()).all()
+    assert np.nanmin(result["predicted_error"]) >= 0
+    assert np.nanmax(result["predicted_error"]) <= 1
+
+
+def test_empirical_nearest_prototype_error_tracks_easy_pairs() -> None:
+    rng = np.random.default_rng(3)
+    manifolds = rng.normal(scale=0.1, size=(3, 5, 20))
+    manifolds[1] += 5
+    manifolds[2] -= 5
+    errors = empirical_nearest_prototype_error(
+        manifolds,
+        [[0, 1], [1, 2]],
+        n_shots=5,
+        n_trials=10,
+        seed=8,
+    )
+    np.testing.assert_array_equal(errors, 0)
 
 
 def test_capacity_uses_reference_harmonic_mean(monkeypatch) -> None:

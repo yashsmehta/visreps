@@ -1,0 +1,56 @@
+{
+  "cfg8a": {
+    "snr": 1.2812226572325536,
+    "decoding": {
+      "accuracy": 0.24451578384162653,
+      "balanced_accuracy_bucket_mean": 0.2471558156265842,
+      "chance_accuracy": 0.033594633505838724,
+      "n_test_images": 1869
+    }
+  },
+  "cfg8b": {
+    "snr": 1.3060939374409952,
+    "decoding": {
+      "accuracy": 0.24933119315141786,
+      "balanced_accuracy_bucket_mean": 0.26308076254549456,
+      "chance_accuracy": 0.033594633505838724,
+      "n_test_images": 1869
+    }
+  },
+  "cfg8c": {
+    "snr": 1.3301730525163056,
+    "decoding": {
+      "accuracy": 0.26431246655965757,
+      "balanced_accuracy_bucket_mean": 0.2685467532793947,
+      "chance_accuracy": 0.033594633505838724,
+      "n_test_images": 1869
+    }
+  },
+  "cfg1000a": {
+    "snr": 1.2773288302990997,
+    "decoding": {
+      "accuracy": 0.588550026752274,
+      "balanced_accuracy_bucket_mean": 0.5199073235434786,
+      "chance_accuracy": 0.033594633505838724,
+      "n_test_images": 1869
+    }
+  },
+  "cfg1000b": {
+    "snr": 1.2802618213361414,
+    "decoding": {
+      "accuracy": 0.5933654360620653,
+      "balanced_accuracy_bucket_mean": 0.5267688317295111,
+      "chance_accuracy": 0.033594633505838724,
+      "n_test_images": 1869
+    }
+  },
+  "cfg1000c": {
+    "snr": 1.3826131100293395,
+    "decoding": {
+      "accuracy": 0.6153023006955591,
+      "balanced_accuracy_bucket_mean": 0.5277853161997235,
+      "chance_accuracy": 0.033594633505838724,
+      "n_test_images": 1869
+    }
+  }
+}
