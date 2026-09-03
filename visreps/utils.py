@@ -559,7 +559,8 @@ class ConfigVerifier:
         """Verify training configuration."""
 
         # Dataset validation
-        if self.cfg.dataset not in self.VALID_DATASETS:
+        is_mini = self.cfg.dataset.startswith("imagenet-mini-")
+        if self.cfg.dataset not in self.VALID_DATASETS and not is_mini:
             self.rprint(
                 f"[red]Invalid dataset: {self.cfg.dataset}. Must be in {self.VALID_DATASETS}[/red]",
                 style="error",

@@ -12,10 +12,10 @@ Notes on this rewrite (new machine, 2026):
     * Train/test mapping is now the official HuggingFace
       ``train`` / ``validation`` splits — there is a *one-time* discontinuity
       in reported test accuracy versus historical runs.
-    * PCA-coarse-label training is currently unsupported; the existing
-      ``pca_labels/*.csv`` files key on filenames the parquet ``image.path``
-      field doesn't expose cleanly. ``pca_labels=True`` raises
-      ``NotImplementedError``.
+    * If ``imagenet_loader`` is not installed (lab cluster), everything is
+      delegated to the folder backend in ``obj_cls_folder.py``, which also
+      supports coarse labels (``pca_labels=True``). The parquet path itself
+      does not support coarse labels yet.
     * ``imagenet-mini-{50, 100, 200}`` are no longer available.
 """
 
@@ -347,11 +347,16 @@ def _build_transform(cfg, split: str, *, shuffle: bool, preprocess: bool):
 
 def prepare_imgnet_data(cfg, pca_labels, shuffle, preprocess, train_test_split):
     """Build parquet-backed ImageNet datasets + dataloaders."""
+    if ImageNetParquet is None:
+        # Lab cluster: no parquet package, ImageNet is a folder per class.
+        from visreps.dataloaders.obj_cls_folder import prepare_imgnet_data as _folder
+        return _folder(cfg, pca_labels, shuffle, preprocess, train_test_split)
+
     if pca_labels:
         raise NotImplementedError(
-            "PCA-label training is not yet wired up for the parquet loader on "
-            "this machine. Set cfg.pca_labels=False or regenerate PCA labels "
-            "keyed on the parquet `image.path` field."
+            "Coarse-label training is not yet wired up for the parquet loader; "
+            "the label CSVs key on filenames the parquet `image.path` field "
+            "doesn't expose. Use the folder backend (obj_cls_folder.py)."
         )
 
     dataset_name = cfg.get("dataset", "imagenet")

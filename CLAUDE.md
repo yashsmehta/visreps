@@ -16,7 +16,7 @@ Instructions are mostly voice-dictated and may contain transcription errors. Inf
 
 **All scripts must be run from the project root** (`/home/t-ymehta/Research/visreps/`), not from subdirectories. The dataloaders use relative paths (e.g. `pca_labels/...`) that resolve from root.
 
-**ImageNet dataloader (current machine):** ImageNet is loaded from local parquet shards via the `imagenet_loader` package (`/home/t-ymehta/Research/dataloaders/imagenet_loader/`, installed editable). Data lives at `/datadisk/imagenet/ilsvrc2012/data/` (full) and `/datadisk/imagenet/mini-10/` (10k smoke-test subset). The legacy folder-based loader is preserved at `visreps/dataloaders/obj_cls.py.legacy` for reference.
+**ImageNet dataloader:** `visreps/dataloaders/obj_cls.py` picks a backend automatically. If the `imagenet_loader` package is installed (parquet shards, other machine) it uses that; otherwise (this lab cluster) it falls back to the folder-per-class backend in `visreps/dataloaders/obj_cls_folder.py`, reading `IMAGENET_DATA_DIR` (`/data/shared/datasets/imagenet`) and the sibling `imagenet-mini-<n>` folders.
 
 ## Project Overview
 
@@ -83,7 +83,7 @@ python runners/train_runner.py --grid configs/grids/train_default.json  # Grid s
 - `dataset`: "imagenet" (HF train, 1.28M) or "imagenet-mini-10" (HF train shard, 10K, 10 imgs/class). On this machine, mini-{50,100,200} are no longer supported — only mini-10 ships on disk.
 - For "imagenet": `train` split → HF `train`, `test` split → HF `validation` (50K).
 - For "imagenet-mini-10": deterministic ~80/20 hash split of the train shard (mini has no validation).
-- `pca_labels`: true/false. **Currently raises `NotImplementedError` on this machine** — existing PCA CSVs key on filenames the parquet `image.path` field doesn't expose cleanly. Regenerate PCA labels to re-enable coarse-label training here.
+- `pca_labels`: true/false. Supported by the folder backend (this machine) for any label folder: PCA, WordNet, or the hand-made 8-way semantic labels in `pca_labels/pca_labels_semantic/` (grid: `configs/grids/train_semantic.json`, mapping in `class_to_group.csv`, regenerate with `scripts/coarsegrain/make_semantic_labels.py`). Not yet supported by the parquet backend.
 - `pca_n_classes`: 2, 4, 8, 16, 32, 64 (must be power of 2)
 - `pca_labels_folder`: "pca_labels_alexnet", "pca_labels_dino", etc.
 - `model_class`: "custom_model" or "standard_model"
