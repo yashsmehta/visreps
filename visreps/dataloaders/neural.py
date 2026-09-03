@@ -29,9 +29,10 @@ def load_nsd_data(cfg: Dict) -> Tuple[Dict[str, Dict[str, np.ndarray]], Dict[str
     """
     Load NSD fMRI responses with shared/unique train-test split.
 
-    Loads consolidated nsd_data.pkl (all 8 subjects, streams ROIs) and splits
-    stimuli into train (unique ~9,000) and test (shared 1,000) based on the
-    shared1000 annotation.
+    Loads consolidated nsd_data.pkl (all 8 subjects, NCSNR-filtered at
+    preprocessing time) and splits stimuli into train (unique ~9,000) and test
+    (shared 1,000) based on the shared1000 annotation. The corresponding
+    all-voxel archive is nsd_data_unfiltered.pkl.
 
     Args:
         cfg (Dict): Contains "region" and "subject_idx".
@@ -120,7 +121,11 @@ _NSD_SUBJECTS = list(range(8))
 
 def load_all_nsd_data(cfg: Dict, subjects=None, regions=None) -> Dict:
     """
-    Load NSD fMRI responses for requested subjects and regions.
+    Load NCSNR-filtered NSD fMRI responses for requested subjects and regions.
+
+    ``nsd_data.pkl`` is the reliable-voxel default for all evaluations. The
+    preprocessing pipeline preserves all ROI voxels separately in
+    ``nsd_data_unfiltered.pkl``.
 
     Args:
         cfg: Config dict.

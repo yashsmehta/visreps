@@ -32,13 +32,19 @@ from torch.utils.data import DataLoader, IterableDataset
 import torchvision.transforms as transforms
 from torchvision.transforms.v2 import functional as F_v2
 
-from imagenet_loader import (
-    Collate,
-    ImageNetParquet,
-    eval_transform as _eval_transform_uint8,
-    list_shards,
-    train_transform as _train_transform_uint8,
-)
+try:
+    from imagenet_loader import (
+        Collate,
+        ImageNetParquet,
+        eval_transform as _eval_transform_uint8,
+        list_shards,
+        train_transform as _train_transform_uint8,
+    )
+except ModuleNotFoundError:
+    # Neural evaluation only needs ``get_transform`` below. Keep that path
+    # usable on machines where the optional parquet training loader is absent.
+    Collate = ImageNetParquet = list_shards = None
+    _eval_transform_uint8 = _train_transform_uint8 = None
 
 # ---------------------------------------------------------------------------
 # PIL-pipeline transform helper (kept for evals.py / neural.py consumers)

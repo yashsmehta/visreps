@@ -295,7 +295,7 @@ def load_pickle(file_path):
         raise RuntimeError(f"Error loading pickle file at {file_path}: {str(e)}")
 
 
-_RESULTS_DB_PATH = Path("results.db")
+_RESULTS_DB_PATH = Path(os.environ.get("VISREPS_RESULTS_DB", "results.db"))
 
 _IDENTITY_FIELDS = (
     "seed", "epoch", "region", "subject_idx", "neural_dataset", "cfg_id",
