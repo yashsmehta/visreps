@@ -127,7 +127,7 @@ class_idx,wnid,class_name,natural,handheld,indoor,self_moving,soft,elongated
 125,n02115641,dingo,1,0,0,1,1,0
 126,n02116738,african hunting dog,1,0,0,1,1,0
 127,n02117135,hyena,1,0,0,1,1,0
-128,n02119022,red fox,1,0,0,1,1,0
+128,n02119022,red fox,1,1,0,1,1,0
 129,n02119789,kit fox,1,1,0,1,1,0
 130,n02120079,arctic fox,1,1,0,1,1,0
 131,n02120505,grey fox,1,1,0,1,1,0
@@ -242,7 +242,7 @@ class_idx,wnid,class_name,natural,handheld,indoor,self_moving,soft,elongated
 240,n02773838,bag,0,1,1,0,1,0
 241,n02776631,bakery,0,0,0,0,0,0
 242,n02777292,balance beam,0,0,1,0,0,1
-243,n02782093,balloon,0,1,1,0,1,0
+243,n02782093,balloon,0,0,0,1,1,0
 244,n02783161,ballpoint,0,1,1,0,0,1
 245,n02786058,band aid,0,1,1,0,1,1
 246,n02787622,banjo,0,1,1,0,0,1
@@ -268,7 +268,7 @@ class_idx,wnid,class_name,natural,handheld,indoor,self_moving,soft,elongated
 266,n02817516,bearskin,0,1,0,0,1,0
 267,n02823428,beer bottle,0,1,1,0,0,1
 268,n02823750,beer glass,0,1,1,0,0,0
-269,n02824448,bell,0,1,0,0,0,0
+269,n02824448,bell,0,0,0,0,0,0
 270,n02825657,bell cote,0,0,0,0,0,0
 271,n02834397,bib,0,1,1,0,1,0
 272,n02835271,bicycle-built-for-two,0,0,0,1,0,1
@@ -358,12 +358,12 @@ class_idx,wnid,class_name,natural,handheld,indoor,self_moving,soft,elongated
 356,n03122295,covered wagon,0,0,0,1,0,0
 357,n03124170,cowboy hat,0,1,1,0,1,0
 358,n03126707,crane,0,0,0,1,0,1
-359,n03127747,crash helmet,0,1,1,0,0,0
+359,n03127747,crash helmet,0,1,0,0,0,0
 360,n03127925,crate,0,1,1,0,0,0
 361,n03131574,crib,0,0,1,0,0,0
 362,n03134739,croquet ball,0,1,0,0,0,0
 363,n03141823,crutch,0,1,1,0,0,1
-364,n03146219,cuirass,0,1,1,0,0,0
+364,n03146219,cuirass,0,1,0,0,0,0
 365,n03150511,curling iron,0,1,1,0,0,1
 366,n03160309,dam,0,0,0,0,0,1
 367,n03179701,desk,0,0,1,0,0,0
@@ -500,7 +500,7 @@ class_idx,wnid,class_name,natural,handheld,indoor,self_moving,soft,elongated
 498,n03710193,mailbox,0,0,0,0,0,0
 499,n03710637,maillot,0,1,1,0,1,0
 500,n03710721,maillot,0,1,1,0,1,0
-501,n03717622,manhole cover,0,1,0,0,0,0
+501,n03717622,manhole cover,0,0,0,0,0,0
 502,n03720891,maraca,0,1,1,0,0,1
 503,n03721384,marimba,0,0,1,0,0,1
 504,n03724870,mask,0,1,1,0,0,0

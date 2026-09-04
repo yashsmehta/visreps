@@ -57,14 +57,17 @@ Label = 4·natural + 2·handheld + indoor. Generated 2026-09-04 over all 1,261,4
 
 | label | bits | meaning | classes | images |
 |---|---|---|---|---|
-| 0 | 000 | manmade · large · outdoor (vehicles, buildings) | 130 | 173,495 |
+| 0 | 000 | manmade · large · outdoor (vehicles, buildings) | 133 | 177,585 |
 | 1 | 001 | manmade · large · indoor (furniture, appliances) | 76 | 100,336 |
-| 2 | 010 | manmade · handheld · outdoor (sports gear, garden tools) | 41 | 50,047 |
-| 3 | 011 | manmade · handheld · indoor (household objects, tools) | 257 | 329,621 |
-| 4 | 100 | natural · large · outdoor (large wild animals, trees, landscapes) | 129 | 159,131 |
+| 2 | 010 | manmade · handheld · outdoor (sports gear, garden tools) | 41 | 49,558 |
+| 3 | 011 | manmade · handheld · indoor (household objects, tools) | 254 | 326,020 |
+| 4 | 100 | natural · large · outdoor (large wild animals, trees, landscapes) | 128 | 157,280 |
 | 5 | 101 | natural · large · indoor (large dog breeds) | 23 | 38,650 |
-| 6 | 110 | natural · handheld · outdoor (insects, small wild animals, wildflowers) | 247 | 292,203 |
+| 6 | 110 | natural · handheld · outdoor (insects, small wild animals, wildflowers) | 248 | 294,054 |
 | 7 | 111 | natural · handheld · indoor (produce, small pets) | 97 | 117,923 |
+
+Audited 2026-09-04 against sample images for ambiguous names (balloon = hot-air balloon,
+bell = church bell, crane = construction crane, brass = memorial plaque).
 
 Imbalance is left as is (plain cross-entropy), matching the PCA-label runs. The alternative
 handheld × indoor × soft is better balanced (27–223 classes) but its corners mix trees, trucks

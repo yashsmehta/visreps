@@ -23,7 +23,7 @@ smaller than a large suitcase)?
 Dog breeds: judge by typical adult breed weight. Toy and small breeds (terriers, spaniels, pugs,
 Pomeranian, Maltese, Pekingese, Shih-Tzu, Papillon, Chihuahua, dachshund, beagle, corgi...) = 1.
 Medium and large breeds (retrievers, shepherds, hounds over 12 kg, mastiffs, huskies, collies,
-setters, pointers, boxers, Dobermans, Great Danes, wolves, foxes, hyenas...) = 0.
+setters, pointers, boxers, Dobermans, Great Danes, wolves, hyenas...) = 0. Foxes (2–8 kg) = 1.
 
 ## indoor (1 = indoor, 0 = outdoor)
 Where would you normally encounter it: inside a building or home (1), or outside (0)?
