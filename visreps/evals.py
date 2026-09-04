@@ -23,8 +23,8 @@ from visreps.analysis.alignment import (
     prepare_concept_alignment,
     _align_stimulus_level,
 )
-from visreps.analysis.rsa import _concept_average_exact
 from visreps.analysis.rsa import compute_rdm, compute_rdm_correlation, score_rdm_pair
+from visreps.analysis.encoding_score import select_layer_scores, evaluate_layer
 from visreps.analysis.reconstruct_from_pcs import reconstruct_from_pcs
 import numpy as np
 
@@ -67,19 +67,16 @@ def _print_header(cfg, n_subjects=None, n_regions=None):
     rprint("")
 
 
-def _print_region_results(region, scores, layers, subjects, bootstrap=False,
-                          ci_lows=None, ci_highs=None):
-    """Print per-subject scores for a region with mean summary."""
-    rprint(f"\n  ── {region} {'─' * max(1, 42 - len(region))}", style="info")
+def _print_region_results(region, layer, scores, subjects, ci_lows=None, ci_highs=None):
+    """Print per-subject scores for a region (one shared layer) with mean summary."""
+    rprint(f"\n  ── {region} · {layer} {'─' * max(1, 40 - len(region) - len(layer))}", style="info")
     for i, subj in enumerate(subjects):
-        msg = f"    S{subj:<3} {layers[i]:<7} {scores[i]:.4f}"
-        if bootstrap and ci_lows is not None and ci_highs is not None:
+        msg = f"    S{subj:<3} {scores[i]:.4f}"
+        if ci_lows is not None:
             msg += f"  [not bold grey50]\\[{ci_lows[i]:.4f}, {ci_highs[i]:.4f}][/not bold grey50]"
         rprint(msg, style="highlight")
-    mean = np.mean(scores)
-    std = np.std(scores)
     rprint(f"    {'─' * 34}", style="info")
-    rprint(f"    Mean{' ' * 5}{mean:.4f} ± {std:.4f}", style="highlight")
+    rprint(f"    Mean{' ' * 5}{np.mean(scores):.4f} ± {np.std(scores):.4f}", style="highlight")
 
 
 def _print_cross_region_summary(region_means):
@@ -128,19 +125,33 @@ def _make_rsa_result(layer, method, score, ci_low, ci_high,
     return result
 
 
+def _best_layer_across_subjects(subject_scores):
+    """Pick the single layer with the highest mean selection score across subjects.
+
+    Args:
+        subject_scores: {subj: [{layer, score}]} — same layers for every subject.
+    """
+    mean_scores = pd.DataFrame(
+        {subj: {s["layer"]: s["score"] for s in scores} for subj, scores in subject_scores.items()}
+    ).mean(axis=1)
+    return mean_scores.idxmax(), float(mean_scores.max())
+
+
 def _select_rsa_layers(acts, ids, neural, subjects, regions,
                        method, n_select=1000, verbose=False):
-    """Per-(subject, region) layer selection using SRP activations.
+    """Per-region layer selection using SRP activations.
+
+    Each subject scores every layer on its own train stimuli; the region's
+    layer is the one with the highest mean score across subjects.
 
     Returns:
-        per_region_layers: {region: {subj: best_layer_name}}
+        per_region_layer: {region: best_layer_name}
         per_region_scores: {region: {subj: [{layer, score}]}}
     """
-    per_region_layers = {}
+    per_region_layer = {}
     per_region_scores = {}
 
     for region in regions:
-        per_region_layers[region] = {}
         per_region_scores[region] = {}
         for subj in subjects:
             train_acts, train_neural, _ = _align_stimulus_level(
@@ -157,7 +168,6 @@ def _select_rsa_layers(acts, ids, neural, subjects, regions,
 
             neural_rdm = compute_rdm(train_neural[sel_idx])
 
-            best_layer, best_score = None, -float("inf")
             scores = []
             for layer, layer_acts in train_acts.items():
                 flat = (layer_acts[sel_idx].flatten(start_dim=1)
@@ -167,22 +177,18 @@ def _select_rsa_layers(acts, ids, neural, subjects, regions,
                     correlation=method.capitalize(),
                 )
                 scores.append({"layer": layer, "score": score})
-                if score > best_score:
-                    best_score, best_layer = score, layer
-
-            per_region_layers[region][subj] = best_layer
             per_region_scores[region][subj] = scores
-
-            if verbose:
-                rprint(
-                    f"    {region} subj {subj}: {best_layer} ({best_score:.4f}), "
-                    f"{len(sel_idx)} stimuli for selection",
-                    style="info",
-                )
-
             del train_acts, train_neural
 
-    return per_region_layers, per_region_scores
+        best_layer, best_score = _best_layer_across_subjects(per_region_scores[region])
+        per_region_layer[region] = best_layer
+        rprint(
+            f"    {region}: {best_layer} (mean selection score {best_score:.4f} "
+            f"across {len(subjects)} subjects)",
+            style="info",
+        )
+
+    return per_region_layer, per_region_scores
 
 
 def _reextract_and_score(model, cfg, dev, test_stimuli, test_ids,
@@ -194,7 +200,7 @@ def _reextract_and_score(model, cfg, dev, test_stimuli, test_ids,
         test_stimuli: {sid: image} for building test dataloader.
         test_ids: ordered list of test stimulus IDs.
         test_neural: {region: {subj: {sid: response}}} — test-only responses.
-        best_layers: {region: {subj: layer_name}}.
+        best_layers: {region: layer_name} — one layer per region, shared by all subjects.
         selection_scores: {region: {subj: [{layer, score}]}} or None.
 
     Returns:
@@ -211,9 +217,8 @@ def _reextract_and_score(model, cfg, dev, test_stimuli, test_ids,
     rprint(f"  Test dataloader: {len(test_stimuli)} stimuli", style="success")
 
     # Re-extract unique best layers without SRP
-    unique_layers = {l for rl in best_layers.values() for l in rl.values()}
     model_rdms = {}
-    for layer in sorted(unique_layers):
+    for layer in sorted(set(best_layers.values())):
         exact_acts, _ = mutils.extract_single_layer(
             model, dl_test, dev, layer, test_ids
         )
@@ -231,21 +236,16 @@ def _reextract_and_score(model, cfg, dev, test_stimuli, test_ids,
     all_results = []
     region_means = {}
     for region in regions:
-        region_scores, region_layers = [], []
-        region_ci_lows, region_ci_highs = [], []
+        best_layer = best_layers[region]
+        region_scores, region_ci_lows, region_ci_highs = [], [], []
         for subj in subjects:
-            best_layer = best_layers[region][subj]
-
             # Build neural RDM
             responses = [
                 test_neural[region][subj][sid]
                 for sid in test_ids
                 if sid in test_neural[region][subj]
             ]
-            neural_tensor = torch.as_tensor(
-                np.stack(responses).squeeze(), dtype=torch.float32
-            )
-            neural_rdm = compute_rdm(neural_tensor)
+            neural_rdm = compute_rdm(torch.as_tensor(np.stack(responses), dtype=torch.float32))
 
             # Score + bootstrap
             score, ci_low, ci_high, boot_scores = score_rdm_pair(
@@ -271,14 +271,11 @@ def _reextract_and_score(model, cfg, dev, test_stimuli, test_ids,
 
             all_results.append(result)
             region_scores.append(score)
-            region_layers.append(best_layer)
-            if bootstrap:
-                region_ci_lows.append(ci_low)
-                region_ci_highs.append(ci_high)
+            region_ci_lows.append(ci_low)
+            region_ci_highs.append(ci_high)
 
         _print_region_results(
-            region, region_scores, region_layers, subjects,
-            bootstrap=bootstrap,
+            region, best_layer, region_scores, subjects,
             ci_lows=region_ci_lows if bootstrap else None,
             ci_highs=region_ci_highs if bootstrap else None,
         )
@@ -490,17 +487,20 @@ def _eval_rsa(cfg, model, acts, ids, all_data, subjects, regions, dev, verbose):
 
 # ───────────── NSD Synthetic RSA helper ──────────────────
 def _lookup_nsd_best_layers(cfg, subjects, regions):
-    """Look up best RSA layers from regular NSD evaluation results.
+    """Look up the per-region RSA layer from regular NSD evaluation results.
 
-    Computes the run_id that the corresponding NSD eval would have produced,
-    then queries the results DB for the layer that was selected.
+    Computes the run_id that the corresponding NSD eval would have produced for
+    each subject and queries the results DB. All subjects of a region must have
+    the same layer (one layer per ROI); otherwise the NSD eval is stale.
+
+    Returns: {region: layer_name}
     """
     method = cfg.get("compare_method", "spearman").lower()
     conn = sqlite3.connect("results.db")
 
     layers = {}
     for region in regions:
-        layers[region] = {}
+        subject_layers = {}
         for subj in subjects:
             nsd_cfg = OmegaConf.merge(cfg, {
                 "neural_dataset": "nsd",
@@ -521,7 +521,14 @@ def _lookup_nsd_best_layers(cfg, subjects, regions):
                     f"seed={cfg.seed}, region={region}, subj={subj}, "
                     f"cfg_id={cfg.cfg_id}. Run NSD eval first."
                 )
-            layers[region][subj] = row.iloc[0]["layer"]
+            subject_layers[subj] = row.iloc[0]["layer"]
+
+        if len(set(subject_layers.values())) != 1:
+            raise ValueError(
+                f"NSD RSA results for region={region} have different layers per subject "
+                f"({subject_layers}). Re-run the NSD eval so one layer is selected per ROI."
+            )
+        layers[region] = next(iter(subject_layers.values()))
 
     conn.close()
     return layers
@@ -530,14 +537,8 @@ def _lookup_nsd_best_layers(cfg, subjects, regions):
 def _eval_rsa_nsd_synthetic(cfg, subjects, regions, dev, verbose):
     """RSA on NSD Synthetic: reuse best layers from NSD, score on synthetic stimuli."""
     best_layers = _lookup_nsd_best_layers(cfg, subjects, regions)
-    if verbose:
-        for region in regions:
-            for subj in subjects:
-                rprint(
-                    f"    {region} subj {subj}: reusing layer "
-                    f"{best_layers[region][subj]} from NSD",
-                    style="info",
-                )
+    for region, layer in best_layers.items():
+        rprint(f"    {region}: reusing layer {layer} from NSD", style="info")
 
     test_data = load_nsd_synthetic_test_data(cfg, subjects=subjects, regions=regions)
     rprint(f"  Loaded {len(test_data['test_ids'])} synthetic test stimuli", style="success")
@@ -622,44 +623,59 @@ def _eval_rsa_cusack(cfg, age_groups, regions, dev, verbose):
 
 # ──────────────── encoding score helper ─────────────────
 def _eval_encoding(cfg, model, acts, ids, all_data, subjects, regions, verbose):
-    """Per-(region, subject) encoding score using SRP activations.
+    """Per-region encoding score using SRP activations (no re-extraction).
 
-    Unlike RSA, encoding score uses SRP throughout (no re-extraction needed).
+    Phase 1: every subject scores every layer on an 80/20 split of its train
+    data; the region's layer is the best on average across subjects.
+    Phase 2: that layer is refit on each subject's full train data and scored
+    on its test data.
     """
     neural = all_data["neural"]
+    bootstrap = cfg.get("bootstrap", True)
+    n_bootstrap = cfg.get("n_bootstrap", 1000)
+    pca_k = cfg.get("pca_k", 1) if cfg.get("reconstruct_from_pcs") else None
+
+    def _subject_data(region, subj):
+        return prepare_traintest_alignment(cfg, acts, neural[region][subj], ids)
 
     all_results = []
     region_means = {}
     for region in regions:
-        region_scores, region_layers = [], []
-
+        rprint(f"\n  Phase 1: layer selection for {region}", style="info")
+        selection_scores = {}
         for subj in subjects:
-            subj_neural = neural[region][subj]
+            train_data, _ = _subject_data(region, subj)
+            selection_scores[subj] = select_layer_scores(train_data, verbose=verbose)
+            del train_data
+        best_layer, best_score = _best_layer_across_subjects(selection_scores)
+        rprint(
+            f"    {region}: {best_layer} (mean val r {best_score:.4f} "
+            f"across {len(subjects)} subjects)",
+            style="info",
+        )
 
-            train_data, test_data = prepare_traintest_alignment(
-                cfg, acts, subj_neural, ids
+        rprint(f"  Phase 2: test evaluation for {region}", style="info")
+        region_scores = []
+        for subj in subjects:
+            train_data, test_data = _subject_data(region, subj)
+            result = evaluate_layer(
+                best_layer, train_data, test_data,
+                bootstrap=bootstrap, n_bootstrap=n_bootstrap,
+                verbose=verbose, reconstruct_pca_k=pca_k,
             )
-
-            alignment_scores = compute_traintest_alignment(
-                cfg, train_data, test_data, verbose=verbose, re_extract_fn=None,
-                quiet=True,
-            )
-
-            # Free per-subject alignment data
             del train_data, test_data
+            result["layer_selection_scores"] = selection_scores[subj]
+            result["region"] = region
+            result["subject_idx"] = subj
 
             if cfg.get("log_expdata"):
                 save_cfg = OmegaConf.merge(cfg, {"subject_idx": subj, "region": region})
-                save_results(pd.DataFrame(alignment_scores), save_cfg, quiet=True)
+                save_results(pd.DataFrame([result]), save_cfg, quiet=True)
 
-            for r in alignment_scores:
-                r["region"] = region
-                r["subject_idx"] = subj
-                region_scores.append(r["score"])
-                region_layers.append(r["layer"])
-            all_results.extend(alignment_scores)
+            all_results.append(result)
+            region_scores.append(result["score"])
 
-        _print_region_results(region, region_scores, region_layers, subjects)
+        _print_region_results(region, best_layer, region_scores, subjects)
         if cfg.get("log_expdata"):
             rprint(f"    Saved {len(subjects)} results to results.db", style="success")
         region_means[region] = np.mean(region_scores)

@@ -17,7 +17,6 @@ visreps/
 │   ├── alignment.py        # Main alignment computation (RSA/encoding)
 │   ├── rsa.py              # Representational Similarity Analysis
 │   ├── encoding_score.py   # Ridge regression encoding models (GPU)
-│   ├── encoding_score_ray.py  # Ray-based parallel encoding (legacy)
 │   ├── extract_representations.py  # Extract CNN activations
 │   ├── sparse_random_projection.py  # SRP dimensionality reduction
 │   ├── cross_decomposition.py  # CCA/PLS methods
@@ -101,8 +100,8 @@ Accepts list-valued `cfg.subject_idx` and `cfg.region`. Routes to dataset-specif
 4. Save results to `results.db`
 
 **Internal helpers**:
-- `_eval_rsa(cfg, model, acts, ids, all_data, subjects, regions, dev, verbose)`: Two-phase RSA. Phase 1: per-(subject, region) layer selection using SRP activations. Phase 2: re-extract unique best layers without SRP, compute per-subject test RDMs and optional bootstrap CIs.
-- `_eval_encoding(cfg, model, acts, ids, all_data, subjects, regions, verbose)`: Per-(subject, region) encoding score using SRP activations throughout (no re-extraction).
+- `_eval_rsa(...)`: Two-phase RSA. Phase 1: every subject scores every layer on its train stimuli (SRP activations); **one layer per region** = highest mean score across subjects (`_best_layer_across_subjects`). Phase 2: re-extract that layer without SRP, per-subject test RDMs and optional bootstrap CIs.
+- `_eval_encoding(...)`: Same two-phase structure with `select_layer_scores` / `evaluate_layer`; SRP activations throughout (no re-extraction).
 - `_load_cfg(cfg)`: Merges runtime config with training config from checkpoint.
 - `_listify(val)`: Normalizes int/str/ListConfig to plain Python list.
 
@@ -177,11 +176,9 @@ Compute neural alignment scores between CNN representations and brain/behavioral
 **Purpose**: GPU-accelerated ridge regression encoding models.
 
 **Key Functions**:
-- `ridge_regression_gpu(X_train, y_train, X_test, y_test, alphas)`: Ridge with LOO-CV for alpha selection
-- `compute_encoding_alignment(cfg, acts, neural_data, ids)`: Fits ridge models per layer, returns Pearson R and R²
-- `pearson_correlation(x, y)`: Vectorized Pearson correlation on GPU
-
-**Output**: DataFrame with columns `[layer, region, r, r2, alpha, split]`
+- `select_layer_scores(selection, seed)`: Per-layer mean Pearson r on a seeded 80/20 fit/val split of train (himalaya `RidgeCV`, fit-only z-norm stats).
+- `evaluate_layer(layer, selection, evaluation, bootstrap, ...)`: Refit the given layer on full train, score on test, optional 90%-subsample bootstrap CIs. Returns a result dict.
+- `compute_encoding_score(selection, evaluation, ...)`: Single-subject convenience wrapper (select → evaluate); used by tests.
 
 ### `extract_representations.py`
 **Purpose**: Extract intermediate layer activations from CNNs.
@@ -247,7 +244,7 @@ Data loading for training (ImageNet) and evaluation (neural datasets).
 - `get_transform(ds_stats, data_augment, image_size)`: Returns torchvision transforms
 
 **PCA Label Support**:
-- If `cfg.pca_labels=True`: Loads coarse-grained labels from `datasets/obj_cls/imagenet/pca_labels_{global/hierarchical}/pca{n_classes}_seed{seed}.pkl`
+- If `cfg.pca_labels=True`: Loads coarse-grained labels from `pca_labels/{pca_labels_folder}/n_classes_{n}.csv`
 - Supports 2–1000 classes via PCA-based label coarsening
 
 **Datasets**:
@@ -258,10 +255,9 @@ Data loading for training (ImageNet) and evaluation (neural datasets).
 **Purpose**: Neural datasets (fMRI, electrophysiology, and behavioral).
 
 **Key Functions**:
-- `get_neural_loader(cfg)`: Returns `(targets, dataloader)` for a single subject/region. Used by the THINGS path.
+- `get_neural_loader(cfg)`: Returns `(targets, dataloader)` for THINGS-behavior only.
 - `load_nsd_data(cfg)`: Loads NSD fMRI responses for a single subject and brain region. Returns `(targets, stimuli)`.
 - `load_all_nsd_data(cfg, subjects=None, regions=None)`: Loads NSD fMRI for all requested subjects and regions at once. Returns dict with keys: `"regions"`, `"subjects"`, `"neural"` (nested `{region: {subj: {"train": ..., "test": ...}}}`), `"stimuli"` (lazy HDF5 dict), `"shared_test_ids"`. Used by unified eval for NSD.
-- `load_tvsd_data(cfg)`: Loads TVSD macaque MUA responses for a single subject/region.
 - `load_all_tvsd_data(cfg, subjects=None, regions=None)`: Loads TVSD for all requested subjects and regions. Same return structure as `load_all_nsd_data` but with image paths instead of lazy HDF5. Used by unified eval for TVSD.
 - `load_things_data()`: Loads THINGS behavioral dataset with within-concept train/test image split from cached pickle.
 - `_make_loader(stimuli, transform, batch, workers)`: Creates a DataLoader from a stimuli dict.
@@ -341,16 +337,17 @@ Required for data loading:
 
 ## Testing
 
-Run tests from repo root:
+Run from repo root. Fast tests (CPU, synthetic data, ~10 s) run by default; end-to-end
+evals on real data are marked `slow` and need the GPU plus `/data/ymehta3/default/cfg1000a`:
+
 ```bash
-pytest tests/
-pytest tests/test_training_pipeline.py -v
+pytest                              # fast: tests/test_alignment.py, tests/test_models.py, tests/test_manifold_analysis.py
+pytest tests/test_end_to_end.py -m slow   # 3 real evals (NSD RSA, TVSD encoding, THINGS RSA)
 ```
 
-Test files mirror package structure:
-- `tests/test_training_pipeline.py`: Tests `Trainer` class
-- `tests/test_model_setup.py`: Tests model loading
-- `tests/test_utils.py`: Tests utility functions
+- `tests/conftest.py` redirects `results.db` and the SRP cache to a temp dir for every test — tests never touch real outputs.
+- `test_alignment.py`: RDM/RDM-comparison vs rsatoolbox, Kendall tau-a, bootstrap; RSA and encoding on a synthetic two-layer model (must select the generating layer, must not use test data for selection); one-layer-per-ROI rule; stimulus/concept alignment; `save_results` round trip.
+- `test_models.py`: pre-activations survive in-place ReLU, every declared `return_node` yields output for each architecture, `ConfigVerifier` accept/reject/normalize.
 
 ---
 

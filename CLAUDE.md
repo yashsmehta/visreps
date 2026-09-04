@@ -83,7 +83,7 @@ python runners/train_runner.py --grid configs/grids/train_default.json  # Grid s
 - `dataset`: "imagenet" (HF train, 1.28M) or "imagenet-mini-10" (HF train shard, 10K, 10 imgs/class). On this machine, mini-{50,100,200} are no longer supported — only mini-10 ships on disk.
 - For "imagenet": `train` split → HF `train`, `test` split → HF `validation` (50K).
 - For "imagenet-mini-10": deterministic ~80/20 hash split of the train shard (mini has no validation).
-- `pca_labels`: true/false. Supported by the folder backend (this machine) for any label folder: PCA, WordNet, or the hand-made 8-way semantic labels in `pca_labels/pca_labels_semantic/` (grid: `configs/grids/train_semantic.json`, mapping in `class_to_group.csv`, regenerate with `scripts/coarsegrain/make_semantic_labels.py`). Not yet supported by the parquet backend.
+- `pca_labels`: true/false. Supported by the folder backend (this machine) for any label folder: PCA, WordNet, or the hand-assigned binary semantic dimensions in `pca_labels/pca_labels_semantic/` (grid: `configs/grids/train_semantic.json`; class scores in `class_dimensions.csv`, pick 3 dims → 8 classes with `scripts/coarsegrain/make_semantic_labels.py --dims natural handheld indoor`; see that folder's README). Not yet supported by the parquet backend.
 - `pca_n_classes`: 2, 4, 8, 16, 32, 64 (must be power of 2)
 - `pca_labels_folder`: "pca_labels_alexnet", "pca_labels_dino", etc.
 - `model_class`: "custom_model" or "standard_model"
@@ -127,13 +127,13 @@ python runners/eval_runner.py --grid configs/grids/eval_default.json  # Grid swe
 
 **Datasets:** NSD (~9k train / ~1k test, 8 subjects, early/ventral visual stream), TVSD (~22k train / 100 test, 2 monkeys, V1/V4/IT), THINGS (~1,854 concepts, 80/20 concept-level train/test split).
 
-**RSA — NSD/TVSD:** Per subject: select best layer on train (subsample 1,000 stimuli, build Pearson RDMs, compare via Spearman/Kendall) → re-extract best layer without SRP → score on test RDMs → 1,000-iteration bootstrap (90% subsample) for 95% CIs.
+**RSA — NSD/TVSD:** Per subject, score every layer on train (subsample 1,000 stimuli, Pearson RDMs, compare via Spearman/Kendall). **One layer per ROI**: the layer with the highest mean selection score across subjects. Re-extract that layer without SRP → per-subject test RDM score → 1,000-iteration bootstrap (90% subsample) for 95% CIs. Per-subject selection scores are still saved in `layer_selection_scores`.
 
 **RSA — THINGS:** Fixed 80/20 concept-level split (seed=42). 20% (~370 concepts) for layer selection, 80% (~1,480 concepts) for evaluation. Re-extract best layer without SRP, concept-average for eval set. Bootstrap 1,000 iterations (90% subsample) on eval set for 95% CIs.
 
 **Bootstrap CI aggregation for plots:** `get_condition_summary()` (in `plotter_utils.py`) aggregates bootstrap CIs across seeds by element-wise averaging of the 1,000-iteration bootstrap distributions, then taking the 2.5th/97.5th percentiles. Point estimate = mean score across seeds. Falls back to ±1.96 × SEM across seed means only if bootstrap data is missing.
 
-**Encoding — NSD/TVSD only** (Pearson r, not applicable to THINGS): Per subject: select best layer via 80/20 fit/val split with `RidgeCV(cv=5)` → refit on full train → predict test → mean Pearson r across voxels → 1,000-iteration bootstrap on cached predictions for 95% CIs. Uses SRP throughout, z-normalization with fit-only stats during selection.
+**Encoding — NSD/TVSD only** (Pearson r, not applicable to THINGS): Per subject, score every layer via 80/20 fit/val split with `RidgeCV(cv=5)`. **One layer per ROI** (highest mean val r across subjects) → refit on each subject's full train → predict test → mean Pearson r across voxels → 1,000-iteration bootstrap on cached predictions for 95% CIs. Uses SRP throughout (fixed seed 42), z-normalization with fit-only stats during selection.
 
 ## Results Database
 

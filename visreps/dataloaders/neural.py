@@ -246,74 +246,6 @@ def load_nsd_synthetic_test_data(cfg: Dict, subjects=None, regions=None) -> Dict
     }
 
 
-# ─────────────────── NSD Synthetic ────────────────────
-def load_nsd_synthetic_data(
-    cfg: Dict,
-) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
-    """
-    Load synthetic‑NSD fMRI responses and matching stimuli.
-
-    Args:
-        cfg (Dict): {"region": str, "subject_idx": int}
-
-    Returns:
-        (targets, stimuli):
-            - targets: {stim_id: np.ndarray}
-            - stimuli: {stim_id: PIL.Image.Image}
-    """
-    region, subj = cfg["region"], cfg["subject_idx"]
-    root = utils.get_env_var("NSD_SYNTHETIC_DATA_DIR")
-
-    fmri = utils.load_pickle(os.path.join(root, "fmri_responses.pkl"))[region][subj]
-    images = {
-        str(k): v
-        for k, v in utils.load_pickle(os.path.join(root, f"stimuli_subject_{subj}.pkl")).items()
-    }
-
-    ids = {str(k) for k in fmri} & images.keys()
-
-    return (
-        {i: fmri[i] for i in ids},
-        {i: images[i] for i in ids},
-    )
-
-
-# ────────────────────── CUSACK 2025 ─────────────────────
-def load_cusack_data(cfg: Dict) -> Tuple[Dict[str, np.ndarray], Dict[str, str]]:
-    """
-    Load Cusack 2025 fMRI responses and stimulus images.
-
-    Args:
-        cfg (Dict): Contains "region" and optionally "age_group" ('2month' or '9month')
-
-    Returns:
-        (targets, stimuli):
-            - targets: {stim_id: np.ndarray} - fMRI responses
-            - stimuli: {stim_id: str} - paths to stimulus images
-    """
-    region = cfg["region"]
-    age_group = cfg.get("age_group", "2month")  # Default to 2-month data
-
-    # Load processed fMRI data
-    fmri_path = os.path.join("datasets", "neural", "cusack2025", "fmri_responses.pkl")
-    fmri_data = utils.load_pickle(fmri_path)
-
-    targets = fmri_data[region][age_group]
-
-    # Load stimulus images
-    stimuli_dir = os.path.join("datasets", "neural", "cusack2025", "display_images")
-    stimuli = {}
-
-    for stim_id in targets.keys():
-        img_path = os.path.join(stimuli_dir, f"{stim_id}.png")
-        if os.path.exists(img_path):
-            stimuli[stim_id] = img_path  # Store path for _StimuliDataset to handle
-        else:
-            raise FileNotFoundError(f"Stimulus image not found: {img_path}")
-
-    return targets, stimuli
-
-
 # ──────────────────────── THINGS ────────────────────────
 def load_things_data() -> tuple[dict, dict[str, str]]:
     """
@@ -349,45 +281,6 @@ def _tvsd_things_image_path(sid: str, things_root: str) -> str | None:
         return path
     logger.warning(f"TVSD image not found: {path}")
     return None
-
-
-def load_tvsd_data(cfg: Dict) -> tuple[dict, dict[str, str]]:
-    """
-    Load TVSD macaque MUA responses and corresponding THINGS image paths.
-
-    Expects pickle with structure:
-        data[region][subject_idx] = {"train": xr.DataArray, "test": xr.DataArray}
-    Generate with: python scripts/preprocess_data/preprocess_tvsd.py
-
-    Returns:
-        targets: {"train": {sid: response}, "test": {sid: response}}
-        img_paths: {sid: path} covering all stimuli (train + test).
-
-    Config keys: region (V1/V4/IT), subject_idx (0=monkey F, 1=monkey N).
-    """
-    region, subj = cfg["region"], cfg["subject_idx"]
-    fmri_path = os.path.join("datasets", "neural", "tvsd", "fmri_responses.pkl")
-    splits = utils.load_pickle(fmri_path)[region][subj]
-
-    things_root = os.path.join(
-        os.environ.get("BONNER_DATASETS_HOME", os.path.expanduser("~/.cache/bonner-datasets")),
-        "hebart2019.things",
-    )
-
-    targets = {}
-    img_paths = {}
-    for split_name, data_xr in splits.items():
-        stim_ids = [str(s) for s in data_xr.coords["stimulus"].values]
-        targets[split_name] = {
-            sid: data_xr.sel(stimulus=sid).values for sid in stim_ids
-        }
-        for sid in stim_ids:
-            if sid not in img_paths:
-                p = _tvsd_things_image_path(sid, things_root)
-                if p:
-                    img_paths[sid] = p
-
-    return targets, img_paths
 
 
 # ─────────────────── TVSD All Subjects ────────────────────
@@ -530,29 +423,10 @@ def _make_loader(stimuli, transform, batch, workers):
 
 
 def get_neural_loader(cfg: Dict) -> Tuple[Dict[str, Any], DataLoader]:
-    """
-    Returns (targets, dataloader) for the specified neural dataset.
-    Supported datasets: 'nsd', 'things-behavior', 'nsd_synthetic', 'cusack', 'tvsd'.
-    """
-    dataset_type = cfg.get("neural_dataset")
-    if dataset_type == "nsd":
-        targets, stimuli = load_nsd_data(cfg)
-    elif dataset_type == "things-behavior":
-        targets, stimuli = load_things_data()
-    elif dataset_type == "nsd_synthetic":
-        targets, stimuli = load_nsd_synthetic_data(cfg)
-    elif dataset_type == "cusack":
-        targets, stimuli = load_cusack_data(cfg)
-    elif dataset_type == "tvsd":
-        targets, stimuli = load_tvsd_data(cfg)
-    else:
-        raise ValueError("neural_dataset must be 'nsd', 'things-behavior', 'nsd_synthetic', 'cusack', or 'tvsd'")
-
-    transform = get_transform(ds_stats="imgnet")
-    dataloader = _make_loader(
-        stimuli,
-        transform,
-        cfg["batchsize"],
-        cfg["num_workers"],
-    )
+    """Returns (targets, dataloader) for THINGS-behavior (the only dataset evaluated
+    through a single loader; NSD/TVSD go through load_all_*_data)."""
+    if cfg.get("neural_dataset") != "things-behavior":
+        raise ValueError("get_neural_loader only supports 'things-behavior'")
+    targets, stimuli = load_things_data()
+    dataloader = _make_loader(stimuli, get_transform(ds_stats="imgnet"), cfg["batchsize"], cfg["num_workers"])
     return targets, dataloader

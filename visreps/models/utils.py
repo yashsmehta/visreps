@@ -275,7 +275,9 @@ class FeatureExtractor(nn.Module):
             if name in actual_nodes:
                 def get_hook(name):
                     def hook(module, input, output):
-                        self.features[actual_nodes[name]] = output
+                        # Clone: a downstream in-place ReLU would otherwise overwrite
+                        # the captured pre-activation tensor (torchvision AlexNet/VGG).
+                        self.features[actual_nodes[name]] = output.clone()
                     return hook
                 
                 handle = module.register_forward_hook(get_hook(name))
@@ -339,7 +341,9 @@ def get_activations(
     with torch.no_grad():
         probe_out = model(probe_imgs.to(device))
 
-    k_fixed, density, seed, cache_dir = 4096, None, None, "model_checkpoints/srp_cache"
+    # Fixed seed so the projection is reproducible from code, not just from the on-disk cache.
+    k_fixed, density, seed = 4096, None, 42
+    cache_dir = os.environ.get("VISREPS_SRP_CACHE", "model_checkpoints/srp_cache")
     num_layers = len(probe_out)
     for name, out in probe_out.items():
         D = out.reshape(out.size(0), -1).size(1)
