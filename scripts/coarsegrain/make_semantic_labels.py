@@ -30,7 +30,7 @@ def main():
     missing = [d for d in args.dims if d not in dims.columns]
     assert not missing, f"unknown dimensions: {missing}"
 
-    label = sum(dims[d] << (len(args.dims) - 1 - i) for i, d in enumerate(args.dims))
+    label = sum(dims[d] * 2 ** (len(args.dims) - 1 - i) for i, d in enumerate(args.dims))
     wnid_to_label = dict(zip(dims["wnid"], label))
     n_classes = 2 ** len(args.dims)
 

@@ -50,21 +50,45 @@ No triple is balanced. The thin corners are real, not labeling noise:
 natural+large+indoor = the 23 large dog breeds; manmade+handheld+outdoor = 41 classes of
 sports gear, garden tools and weapons. Semantic dimensions are correlated in the world.
 
-## Recommendation
+## Chosen labels: natural × handheld × indoor (`n_classes_8.csv`)
 
-Use **natural × handheld × indoor** (interpretable; first bit matches CLIP PC1) and handle
-imbalance in one of two ways:
+Label = 4·natural + 2·handheld + indoor. Generated 2026-09-04 over all 1,261,406 images
+(same image list as the PCA label files; the 1,000 wnids match the on-disk ILSVRC-2010 folders).
 
-1. Keep binary labels; use class-weighted loss or balanced sampling during training.
-2. Score size and indoorness on a 4-point ordinal scale and split hierarchically at the
-   within-branch median (as the PCA pipeline does). Balanced by construction, but bit meaning
-   then depends on the branch.
+| label | bits | meaning | classes | images |
+|---|---|---|---|---|
+| 0 | 000 | manmade · large · outdoor (vehicles, buildings) | 130 | 173,495 |
+| 1 | 001 | manmade · large · indoor (furniture, appliances) | 76 | 100,336 |
+| 2 | 010 | manmade · handheld · outdoor (sports gear, garden tools) | 41 | 50,047 |
+| 3 | 011 | manmade · handheld · indoor (household objects, tools) | 257 | 329,621 |
+| 4 | 100 | natural · large · outdoor (large wild animals, trees, landscapes) | 129 | 159,131 |
+| 5 | 101 | natural · large · indoor (large dog breeds) | 23 | 38,650 |
+| 6 | 110 | natural · handheld · outdoor (insects, small wild animals, wildflowers) | 247 | 292,203 |
+| 7 | 111 | natural · handheld · indoor (produce, small pets) | 97 | 117,923 |
+
+Imbalance is left as is (plain cross-entropy), matching the PCA-label runs. The alternative
+handheld × indoor × soft is better balanced (27–223 classes) but its corners mix trees, trucks
+and fences, and it drops the natural/manmade split that matches CLIP PC1.
+
+## Training
+
+`configs/grids/train_semantic.json` pins every hyperparameter to the values saved in the
+PCA coarse checkpoints (`/data/ymehta3/alexnet_pca/cfg*/config.json`): batch size 32,
+32 workers, AdamW lr 5e-4, wd 1e-3, 20 epochs, 2 warmup, cosine, grad clip 1.0, AMP,
+augmentation on, CustomCNN with dropout 0.3 and batchnorm. Checkpoints go to
+`/data/ymehta3/semantic/cfg8{a,b,c}`.
+
+```bash
+python runners/train_runner.py --grid configs/grids/train_semantic.json \
+    --arch configs/train/architectures/custom_cnn.json
+```
 
 ## Files and usage
 
 - `class_dimensions.csv` — one row per class: `class_idx, wnid, class_name` + six 0/1 columns.
 - `dimension_definitions.md` — exact questions and anchor examples used for assignment.
-- Generate per-image labels (same format as PCA labels) for any dimension set:
+- `n_classes_8.csv` — per-image labels for natural × handheld × indoor (see above).
+- Regenerate, or build labels for any other dimension set:
 
 ```bash
 python scripts/coarsegrain/make_semantic_labels.py --dims natural handheld indoor
