@@ -239,6 +239,9 @@ def load_all_tvsd_data(cfg: Dict, subjects=None, regions=None) -> Dict:
     """
     Load TVSD macaque MUA responses for requested subjects and regions.
 
+    Preprocessing keeps electrodes with mean reliability > 0.3, the threshold used
+    by Papale et al. (2025) when preparing TVSD for model training.
+
     Args:
         cfg: Config dict.
         subjects: List of subject indices to load (default: [0, 1]).
