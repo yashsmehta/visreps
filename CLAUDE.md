@@ -127,17 +127,19 @@ python runners/eval_runner.py --grid configs/grids/eval_default.json  # Grid swe
 
 **Datasets:** NSD (~9k train / ~1k test, 8 subjects, early/ventral visual stream), TVSD (~22k train / 100 test, 2 monkeys, V1/V4/IT), THINGS (~1,854 concepts, 80/20 concept-level train/test split).
 
-**RSA — NSD/TVSD:** Per subject, score every layer on train (subsample 1,000 stimuli, Pearson RDMs, compare via Spearman/Kendall). **One layer per ROI**: the layer with the highest mean selection score across subjects. Re-extract that layer without SRP → per-subject test RDM score → 1,000-iteration bootstrap (90% subsample) for 95% CIs. Per-subject selection scores are still saved in `layer_selection_scores`.
+**RSA — NSD/TVSD:** Per subject, score every layer on train (subsample 1,000 stimuli, Pearson RDMs, compare via Spearman/Kendall). **One layer per ROI**: the layer with the highest mean selection score across subjects. Re-extract that layer without SRP → per-subject test RDM score → 1,000-iteration bootstrap (resampling stimuli with replacement) for percentile 95% CIs. Per-subject selection scores are still saved in `layer_selection_scores`.
 
-**RSA — THINGS:** Fixed 80/20 concept-level split (seed=42). 20% (~370 concepts) for layer selection, 80% (~1,480 concepts) for evaluation. Re-extract best layer without SRP, concept-average for eval set. Bootstrap 1,000 iterations (90% subsample) on eval set for 95% CIs.
+**RSA — THINGS:** Fixed 80/20 concept-level split (seed=42). 20% (~370 concepts) for layer selection, 80% (~1,480 concepts) for evaluation. Re-extract best layer without SRP, concept-average for eval set. Bootstrap 1,000 iterations (resampling concepts with replacement) on eval set for 95% CIs.
 
 **Bootstrap CI aggregation for plots:** `get_condition_summary()` (in `plotter_utils.py`) aggregates bootstrap CIs across seeds by element-wise averaging of the 1,000-iteration bootstrap distributions, then taking the 2.5th/97.5th percentiles. Point estimate = mean score across seeds. Falls back to ±1.96 × SEM across seed means only if bootstrap data is missing.
 
-**Encoding — NSD/TVSD only** (Pearson r, not applicable to THINGS): Per subject, score every layer via 80/20 fit/val split with `RidgeCV(cv=5)`. **One layer per ROI** (highest mean val r across subjects) → refit on each subject's full train → predict test → mean Pearson r across voxels → 1,000-iteration bootstrap on cached predictions for 95% CIs. Uses SRP throughout (fixed seed 42), z-normalization with fit-only stats during selection.
+**Encoding — NSD/TVSD only** (Pearson r, not applicable to THINGS): Per subject, score every layer via 80/20 fit/val split with `RidgeCV(cv=5)`. **One layer per ROI** (highest mean val r across subjects) → refit on each subject's full train → predict test → mean Pearson r across voxels → 1,000-iteration bootstrap (resampling stimuli with replacement) on cached predictions for 95% CIs. Uses SRP throughout (fixed seed 42), z-normalization with fit-only stats during selection.
 
 ## Results Database
 
 Eval results are stored in `results.db` (SQLite).
+
+**`results_legacy.db`** holds every result produced before the 2026-09-05 full re-run (9,859 result rows). It is a verified, read-only snapshot of the old `results.db`; `results.db` was reset to empty at that point and now contains only results from the current TVSD electrode-selection / eval configuration. Do not mix rows across the two — query legacy results explicitly from `results_legacy.db` when a historical comparison is needed.
 
 **Tables** (one row per run per metric — `compare_method` is part of the `run_id` hash):
 - `results` — one row per (run, compare_method, layer). Columns: `run_id`, `compare_method`, `layer`, `score`, `ci_low`, `ci_high`, `analysis`, `seed`, `epoch`, `region`, `subject_idx`, `neural_dataset`, `cfg_id`, `pca_labels`, `pca_n_classes`, `pca_labels_folder`, `model_name`, `checkpoint_dir`, `reconstruct_from_pcs`, `pca_k`. Deduped via `UNIQUE(run_id, compare_method, layer)`.

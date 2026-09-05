@@ -119,8 +119,8 @@ def evaluate_layer(
 ) -> Dict:
     """Refit RidgeCV for ``layer`` on full train, score on test (mean Pearson r).
 
-    If ``bootstrap``, subsample 90% of the test predictions/targets
-    ``n_bootstrap`` times and recompute the score for 95% CIs.
+    If ``bootstrap``, resample the test predictions/targets with replacement
+    ``n_bootstrap`` times and recompute the score for percentile 95% CIs.
     ``reconstruct_pca_k`` reconstructs the activations from that many
     train-fitted PCs before fitting.
     """
@@ -167,10 +167,9 @@ def evaluate_layer(
 
     ci_low, ci_high, bootstrap_scores_list = None, None, None
     if bootstrap:
-        n_subsample = int(n_test * 0.9)
         bootstrap_scores = np.empty(n_bootstrap, dtype=np.float64)
         for i in range(n_bootstrap):
-            boot_idx = rng.choice(n_test, size=n_subsample, replace=False)
+            boot_idx = rng.choice(n_test, size=n_test, replace=True)
             bootstrap_scores[i] = float(
                 correlation_score(Y_test_gpu[boot_idx], pred_test[boot_idx]).mean()
             )

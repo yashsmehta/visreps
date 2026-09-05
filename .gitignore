@@ -32,6 +32,7 @@ slurm_logs/
 .claude/commands/
 
 bonner-libraries/
+pca_labels_semantic/
 
 # Large data files (keep locally, regenerable)
 experiments/things_visualizations/data/
@@ -46,3 +47,5 @@ manuscript/
 # Ignore all CSV files except those in pca_labels
 *.csv
 !pca_labels/**/*.csv
+*.db-wal
+*.db-shm

@@ -19,7 +19,7 @@ from visreps.analysis.encoding_score import (
     _fit_and_score, compute_encoding_score, evaluate_layer, select_layer_scores,
 )
 from visreps.analysis.rsa import (
-    _kendall_tau_a, compute_rdm, compute_rdm_correlation, compute_rsa, score_rdm_pair,
+    _average_ranks, _kendall_tau_a, _spearman, compute_rdm, compute_rdm_correlation, compute_rsa, score_rdm_pair,
 )
 from visreps.evals import _best_layer_across_subjects
 import visreps.utils as vu
@@ -62,6 +62,43 @@ def test_kendall_tau_a_matches_brute_force():
     i, j = np.triu_indices(150, 1)
     expected = np.mean(np.sign(a[i] - a[j]) * np.sign(b[i] - b[j]))
     assert _kendall_tau_a(a, b)[0] == pytest.approx(expected, abs=1e-12)
+
+
+def test_bootstrap_resamples_with_replacement_and_is_unbiased():
+    """Duplicated stimuli must not contribute zero-dissimilarity self-pairs.
+
+    Those cells are identically 0 in both RDMs; keeping them biases the
+    bootstrap distribution above the point estimate by ~0.01.
+    """
+    x = torch.randn(200, 50, generator=torch.Generator().manual_seed(5))
+    y = x + 1.2 * torch.randn(200, 50, generator=torch.Generator().manual_seed(6))
+    model_rdm, neural_rdm = compute_rdm(x), compute_rdm(y)
+    point = compute_rdm_correlation(model_rdm, neural_rdm, correlation="Spearman")
+
+    _, lo, hi, boots = score_rdm_pair(
+        model_rdm, neural_rdm, "spearman", bootstrap=True, n_bootstrap=300
+    )
+    boots = np.asarray(boots)
+    assert not np.isnan(boots).any()
+    assert abs(boots.mean() - point) < 0.005
+    assert lo <= point <= hi
+
+
+@pytest.mark.parametrize("values", [
+    torch.randn(10000, generator=torch.Generator().manual_seed(7)),          # no ties
+    torch.randn(2000, generator=torch.Generator().manual_seed(7)).repeat(5),  # heavy ties
+    torch.randint(0, 7, (5000,)).float(),                                     # few uniques
+])
+def test_fast_spearman_matches_scipy_exactly(values):
+    """The GPU path must reproduce scipy's average-rank Spearman, ties included."""
+    noise = torch.randn(values.numel(), generator=torch.Generator().manual_seed(8))
+    other = values + 0.3 * noise
+    assert _average_ranks(values).numpy() == pytest.approx(
+        scipy.stats.rankdata(values.numpy()) - 1, abs=1e-12
+    )
+    assert _spearman(values, other) == pytest.approx(
+        scipy.stats.spearmanr(values.numpy(), other.numpy()).statistic, abs=1e-12
+    )
 
 
 def test_bootstrap_is_deterministic_and_brackets_score():
