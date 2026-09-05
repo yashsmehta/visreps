@@ -26,15 +26,27 @@ Medium and large breeds (retrievers, shepherds, hounds over 12 kg, mastiffs, hus
 setters, pointers, boxers, Dobermans, Great Danes, wolves, hyenas...) = 0. Foxes (2–8 kg) = 1.
 
 ## indoor (1 = indoor, 0 = outdoor)
-Where would you normally encounter it: inside a building or home (1), or outside (0)?
-1: all dog breeds and house pets (cats, hamster, guinea pig, goldfish, rabbit), furniture,
-   appliances, kitchenware, prepared food and drinks, fruit and vegetables (as bought and eaten),
-   clothing, tools, musical instruments, electronics, books, toys, indoor sports gear
-   (basketball, ping-pong ball, pool table, dumbbell, barbell, punching bag).
-0: wild animals, farm animals, wolves and foxes, plants and flowers growing, fungi, landscapes,
-   vehicles, buildings, bridges, fences, monuments, outdoor sports gear (soccer ball, rugby ball,
-   golf ball, ski, bobsled, racket), garden tools (shovel, lawn mower, plow), weapons like cannon
-   and rifle, outdoor structures (pier, dock, fountain, tent, yurt).
+Where would you normally encounter it, judged by where ImageNet actually photographs it:
+inside a building or home (1), or outside under the sky (0)?
+1: all dog breeds and house pets (cats, hamster, guinea pig, goldfish, rabbit, axolotl),
+   furniture, appliances, kitchenware, prepared food and drinks, produce that is photographed
+   as bought (apples, bananas, oranges, nuts in a bowl), clothing worn indoors, tools, musical
+   instruments, electronics, books, toys, indoor sports gear (basketball, ping-pong ball, pool
+   table, dumbbell, barbell, punching bag), shops and interiors (bakery, cinema, garage,
+   greenhouse, prison, subway train), cockroach, houseplants (African violet, moth orchid, bonsai),
+   indoor-court sports (volleyball), hats and mittens photographed as products (sombrero, mitten).
+0: wild animals, farm animals, wolves and foxes, plants and
+   flowers growing, fungi, produce photographed on the plant or in the field (berries, figs,
+   cabbages, pumpkins, mushrooms), landscapes, vehicles, buildings, bridges, fences, monuments,
+   outdoor sports gear (soccer ball, rugby ball, golf ball, ski, bobsled, racket), garden tools
+   (shovel, lawn mower, plow), weapons like cannon and rifle, outdoor structures (pier, dock,
+   fountain, tent, yurt), outdoor garments (bikini, swimming trunks, poncho, fur coat, cowboy
+   hat, military uniform, boots), cameras and binoculars, backpack, padlock,
+   shopping cart, seat belt.
+Re-audited 2026-09-05 against CLIP zero-shot indoor/outdoor scores on 64 photos per class
+(``scripts/coarsegrain/audit_indoor_clip.py``) and the per-class montages; 66 classes were
+flipped where the rule above and the photo evidence agreed. Dog breeds stay indoor so that
+natural × large × indoor is not empty.
 
 ## self_moving (1 = moves on its own, 0 = stationary)
 Does it move around by its own power, meaning muscles, an engine, a motor, sails, or lift?
