@@ -308,6 +308,8 @@ def _compute_run_id(cfg) -> str:
     """Deterministic hash of experiment identity fields."""
     identity = {f: cfg.get(f) for f in _IDENTITY_FIELDS}
     identity["subject_idx"] = str(identity.get("subject_idx"))
+    if cfg.get("bn_calibration") not in (None, "none"):
+        identity["bn_calibration"] = cfg.bn_calibration
     raw = json.dumps(identity, sort_keys=True)
     return hashlib.sha256(raw.encode()).hexdigest()[:12]
 
@@ -532,7 +534,7 @@ class ConfigVerifier:
     VALID_MODEL_SOURCES = {"checkpoint", "torchvision"}
     VALID_ANALYSES = {"rsa", "encoding_score"}
     VALID_COMPARE_METHODS = {"spearman", "kendall"}
-    VALID_NEURAL_DATASETS = {"nsd", "things-behavior", "tvsd", "nsd_synthetic", "cusack"}
+    VALID_NEURAL_DATASETS = {"nsd", "things-behavior", "tvsd"}
     def __init__(self, cfg: OmegaConf):
         """Initialize verifier with configuration."""
         self.cfg = cfg
@@ -632,7 +634,7 @@ class ConfigVerifier:
                 )
                 self.cfg.subject_idx = "N/A"
 
-        if self.cfg.neural_dataset.lower() in ("nsd", "nsd_synthetic"):
+        if self.cfg.neural_dataset.lower() == "nsd":
             # Normalize subject_idx to list
             subj = self.cfg.subject_idx
             if isinstance(subj, int):
@@ -696,11 +698,6 @@ class ConfigVerifier:
                         f"Invalid region for TVSD: {r}. Must be one of {valid_regions}"
                     )
 
-        if self.cfg.neural_dataset.lower() == "cusack":
-            # Cusack always evaluates both age groups on evc + vvc
-            self.cfg.subject_idx = ["2month", "9month"]
-            self.cfg.region = ["evc", "vvc"]
-
         compare_method = self.cfg.get("compare_method", "spearman").lower()
         if compare_method not in self.VALID_COMPARE_METHODS:
             self.rprint(
@@ -722,16 +719,6 @@ class ConfigVerifier:
                 raise AssertionError(
                     "analysis=encoding_score is not supported for things-behavior "
                     "(behavioral embeddings have no voxels to predict). Use analysis=rsa instead."
-                )
-            if self.cfg.neural_dataset.lower() == "nsd_synthetic":
-                raise AssertionError(
-                    "analysis=encoding_score is not supported for nsd_synthetic. "
-                    "Use analysis=rsa instead."
-                )
-            if self.cfg.neural_dataset.lower() == "cusack":
-                raise AssertionError(
-                    "analysis=encoding_score is not supported for cusack "
-                    "(only 36 stimuli). Use analysis=rsa instead."
                 )
             # Encoding metric is always Pearson r — override whatever the user set
             # (compare_method is an RSA concept). This also ensures run_id hashing

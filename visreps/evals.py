@@ -1,17 +1,13 @@
-import os
-import pickle
-import sqlite3
-
 import torch
 import pandas as pd
 from omegaconf import OmegaConf, ListConfig
-from visreps.utils import rprint, save_results, _compute_run_id
+from visreps.utils import rprint, save_results
 from visreps.utils import get_seed_letter
 import visreps.models.utils as mutils
+from visreps.models.batchnorm import prepare_eval_batchnorm, training_image_ids
 from visreps.dataloaders.neural import (
     get_neural_loader,
     load_all_nsd_data,
-    load_nsd_synthetic_test_data,
     load_all_tvsd_data,
     _make_loader,
 )
@@ -311,13 +307,23 @@ def eval(cfg):
     if dataset == "things-behavior":
         _print_header(cfg)
         model = mutils.load_model(cfg, dev, verbose=verbose)
-        model = mutils.configure_feature_extractor(cfg, model, verbose=verbose)
-
         neural_data, dl = get_neural_loader(cfg)
         if "CLIP" in cfg.get("model_name", ""):
-            dl.dataset.transform = _get_eval_transform(cfg)
+            dl.dataset.tr = _get_eval_transform(cfg)
         rprint(f"  THINGS data loaded", style="success")
 
+        # Match prepare_concept_alignment's insertion order and missing-image filter.
+        available = set(dl.dataset.keys)
+        concepts = [c for c, images in neural_data["image_ids"].items()
+                    if available.intersection(images)]
+        perm = np.random.RandomState(42).permutation(len(concepts))
+        n_sel = int(len(concepts) * 0.2)
+        sel_idx, eval_idx = perm[:n_sel], perm[n_sel:]
+        train_images = {sid for i in sel_idx for sid in neural_data["image_ids"][concepts[i]]}
+        test_images = {sid for i in eval_idx for sid in neural_data["image_ids"][concepts[i]]}
+        calibration_ids = (train_images - test_images) & available
+        prepare_eval_batchnorm(model, cfg, dl, calibration_ids, dev)
+        model = mutils.configure_feature_extractor(cfg, model, verbose=verbose)
         acts, ids = mutils.get_activations(model, dl, dev)
 
         # Merge train/test images, average activations per concept
@@ -325,12 +331,7 @@ def eval(cfg):
         del acts, neural_data, ids
         torch.cuda.empty_cache()
 
-        # Fixed 80/20 split: 20% for layer selection, 80% for evaluation
-        rng = np.random.RandomState(42)
-        n_concepts = all_concepts.neural.size(0)
-        perm = rng.permutation(n_concepts)
-        n_sel = int(n_concepts * 0.2)
-        sel_idx, eval_idx = perm[:n_sel], perm[n_sel:]
+        assert all_concepts.stimulus_ids == concepts, "THINGS split order changed"
 
         selection = AlignmentData(
             activations={l: a[sel_idx] for l, a in all_concepts.activations.items()},
@@ -397,20 +398,6 @@ def eval(cfg):
             save_results(results, cfg)
         return results
 
-    # ── NSD SYNTHETIC: dedicated RSA path (reuses NSD layer selection) ──
-    if dataset == "nsd_synthetic":
-        subjects = _listify(cfg.subject_idx)
-        regions = _listify(cfg.region)
-        _print_header(cfg, len(subjects), len(regions))
-        return _eval_rsa_nsd_synthetic(cfg, subjects, regions, dev, verbose)
-
-    # ── CUSACK 2025: dedicated RSA path (reuses NSD layer selection) ──
-    if dataset == "cusack":
-        age_groups = _listify(cfg.subject_idx)
-        regions = _listify(cfg.region)
-        _print_header(cfg, len(age_groups), len(regions))
-        return _eval_rsa_cusack(cfg, age_groups, regions, dev, verbose)
-
     # ── NSD / TVSD: unified multi-subject path ──────────
     subjects = _listify(cfg.subject_idx)
     regions = _listify(cfg.region)
@@ -419,7 +406,6 @@ def eval(cfg):
 
     # Load model once
     model = mutils.load_model(cfg, dev, verbose=verbose)
-    model = mutils.configure_feature_extractor(cfg, model, verbose=verbose)
 
     # Load all neural data once
     if dataset == "nsd":
@@ -438,6 +424,9 @@ def eval(cfg):
     # Single forward pass -> SRP activations
     transform = _get_eval_transform(cfg)
     dl = _make_loader(stimuli, transform, cfg.batchsize, cfg.num_workers)
+    prepare_eval_batchnorm(model, cfg, dl,
+                           training_image_ids(all_data["neural"], stimuli.keys()), dev)
+    model = mutils.configure_feature_extractor(cfg, model, verbose=verbose)
     acts, ids = mutils.get_activations(model, dl, dev)
     rprint(f"  Activations extracted once for all subjects/regions", style="success")
     del dl
@@ -483,142 +472,6 @@ def _eval_rsa(cfg, model, acts, ids, all_data, subjects, regions, dev, verbose):
         test_neural, per_region_layers, regions, subjects,
         per_region_scores, verbose,
     )
-
-
-# ───────────── NSD Synthetic RSA helper ──────────────────
-def _lookup_nsd_best_layers(cfg, subjects, regions):
-    """Look up the per-region RSA layer from regular NSD evaluation results.
-
-    Computes the run_id that the corresponding NSD eval would have produced for
-    each subject and queries the results DB. All subjects of a region must have
-    the same layer (one layer per ROI); otherwise the NSD eval is stale.
-
-    Returns: {region: layer_name}
-    """
-    method = cfg.get("compare_method", "spearman").lower()
-    conn = sqlite3.connect("results.db")
-
-    layers = {}
-    for region in regions:
-        subject_layers = {}
-        for subj in subjects:
-            nsd_cfg = OmegaConf.merge(cfg, {
-                "neural_dataset": "nsd",
-                "analysis": "rsa",
-                "subject_idx": subj,
-                "region": region,
-                "compare_method": method,
-            })
-            run_id = _compute_run_id(nsd_cfg)
-
-            row = pd.read_sql_query(
-                "SELECT layer FROM results WHERE run_id=? AND compare_method=?",
-                conn, params=(run_id, method),
-            )
-            if row.empty:
-                raise ValueError(
-                    f"No NSD RSA result found (run_id={run_id}) for "
-                    f"seed={cfg.seed}, region={region}, subj={subj}, "
-                    f"cfg_id={cfg.cfg_id}. Run NSD eval first."
-                )
-            subject_layers[subj] = row.iloc[0]["layer"]
-
-        if len(set(subject_layers.values())) != 1:
-            raise ValueError(
-                f"NSD RSA results for region={region} have different layers per subject "
-                f"({subject_layers}). Re-run the NSD eval so one layer is selected per ROI."
-            )
-        layers[region] = next(iter(subject_layers.values()))
-
-    conn.close()
-    return layers
-
-
-def _eval_rsa_nsd_synthetic(cfg, subjects, regions, dev, verbose):
-    """RSA on NSD Synthetic: reuse best layers from NSD, score on synthetic stimuli."""
-    best_layers = _lookup_nsd_best_layers(cfg, subjects, regions)
-    for region, layer in best_layers.items():
-        rprint(f"    {region}: reusing layer {layer} from NSD", style="info")
-
-    test_data = load_nsd_synthetic_test_data(cfg, subjects=subjects, regions=regions)
-    rprint(f"  Loaded {len(test_data['test_ids'])} synthetic test stimuli", style="success")
-
-    model = mutils.load_model(cfg, dev, verbose=verbose)
-    model = mutils.configure_feature_extractor(cfg, model, verbose=verbose)
-
-    return _reextract_and_score(
-        model, cfg, dev,
-        test_data["stimuli"], test_data["test_ids"], test_data["neural"],
-        best_layers, regions, subjects, verbose=verbose,
-    )
-
-
-# ──────────────── Cusack 2025 RSA helper ─────────────────
-def _eval_rsa_cusack(cfg, age_groups, regions, dev, verbose):
-    """RSA on Cusack: score all layers (no SRP) on 36 infant stimuli."""
-    with open("datasets/neural/cusack2025/fmri_responses.pkl", "rb") as f:
-        fmri = pickle.load(f)
-    test_ids = sorted(fmri[regions[0]][age_groups[0]].keys())
-    stimuli = {sid: os.path.join("datasets/neural/cusack2025/display_images", f"{sid}.png")
-               for sid in test_ids}
-
-    # One forward pass, no SRP — 36 stimuli is tiny
-    model = mutils.load_model(cfg, dev, verbose=verbose)
-    model = mutils.configure_feature_extractor(cfg, model, verbose=verbose)
-    dl = _make_loader(stimuli, _get_eval_transform(cfg), cfg.batchsize, cfg.num_workers)
-
-    model.eval()
-    acts = {}
-    with torch.no_grad():
-        for imgs, keys in dl:
-            features = model(imgs.to(dev))
-            for layer, feat in features.items():
-                acts.setdefault(layer, []).append(feat.cpu().flatten(start_dim=1))
-    acts = {layer: torch.cat(t) for layer, t in acts.items()}
-    rprint(f"  Extracted {len(acts)} layers × {len(test_ids)} stimuli (no SRP)", style="success")
-
-    del model, dl
-    torch.cuda.empty_cache()
-
-    # Precompute model RDMs once (don't depend on region/age_group)
-    model_rdms = {layer: compute_rdm(a) for layer, a in acts.items()}
-    del acts
-
-    method = cfg.get("compare_method", "spearman").lower()
-    correlation = method.capitalize()
-    all_results = []
-
-    for region in regions:
-        for ag in age_groups:
-            responses = [fmri[region][ag][sid] for sid in test_ids]
-            neural_rdm = compute_rdm(torch.as_tensor(np.stack(responses), dtype=torch.float32))
-
-            layer_scores = [
-                {"layer": layer, "score": compute_rdm_correlation(
-                    rdm, neural_rdm, correlation=correlation)}
-                for layer, rdm in model_rdms.items()
-            ]
-            best = max(layer_scores, key=lambda x: x["score"])
-
-            result = _make_rsa_result(
-                best["layer"], method, best["score"], None, None, layer_scores)
-            result["region"] = region
-            result["subject_idx"] = ag
-
-            if cfg.get("log_expdata"):
-                save_cfg = OmegaConf.merge(cfg, {"subject_idx": ag, "region": region})
-                save_results(pd.DataFrame([result]), save_cfg, quiet=True)
-
-            all_results.append(result)
-
-            rprint(f"\n  ── {region} / {ag} {'─' * max(1, 30 - len(region) - len(ag))}", style="info")
-            for entry in layer_scores:
-                marker = " ◀" if entry["layer"] == best["layer"] else ""
-                rprint(f"    {entry['layer']:12s} {entry['score']:.4f}{marker}", style="highlight")
-
-    if cfg.get("log_expdata"):
-        rprint(f"\n    Saved {len(all_results)} results to results.db", style="success")
-    return pd.DataFrame(all_results)
 
 
 # ──────────────── encoding score helper ─────────────────

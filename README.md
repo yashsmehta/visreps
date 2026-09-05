@@ -119,6 +119,18 @@ python runners/eval_runner.py --grid configs/grids/eval_default.json
 
 </details>
 
+Evaluation automatically recalibrates BatchNorm on training images for NSD, TVSD,
+and THINGS behavior before extracting features. THINGS uses its 20% concept-level
+selection split; NSD/TVSD exclude all participating subjects' test images. Learned
+weights stay fixed, dropout stays off, and evaluation uses frozen recalibrated
+statistics. Models without BatchNorm are unchanged.
+
+Only BN buffers are cached in `model_checkpoints/bn_stats/`, keyed by the original
+model state, dataset, calibration image IDs, preprocessing, and calibration settings.
+Defaults are deterministic shuffled batches of 64; override `bn_calibration_batchsize`
+or `bn_cache_dir` if needed. Changing the calibration identity creates a new cache
+and a distinct results run ID. Original checkpoints and historical results are retained.
+
 > Results land in `results.db`; plot with the scripts under `plotters/<dataset>/`.
 > Configs in `configs/train/` and `configs/eval/` set defaults; `--override key=value` overrides any field.
 
