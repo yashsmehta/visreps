@@ -111,6 +111,7 @@ python runners/eval_runner.py --grid configs/grids/eval_default.json  # Grid swe
 - `subject_idx`: list or int. NSD: `[0,1,2,3,4,5,6,7]`; TVSD: `[0, 1]`. Scalars are normalized to lists. THINGS: ignored (set to "N/A").
 - `return_nodes`: ["conv1", "conv2", "conv3", "conv4", "conv5", "fc1", "fc2"]
 - `compare_method`: "spearman" (default) or "kendall" — which RDM comparison metric to use
+- `encoding_solver`: "fast" (default; himalaya `RidgeCV` with cuSOLVER's `gesvda` SVD, ~2.5× faster) or "himalaya" (stock himalaya SVD, the original slower computation). Encoding score only.
 - `bootstrap`: true/false (compute bootstrap CIs)
 
 **Unified eval behavior:**
@@ -133,7 +134,7 @@ python runners/eval_runner.py --grid configs/grids/eval_default.json  # Grid swe
 
 **Bootstrap CI aggregation for plots:** `get_condition_summary()` (in `plotter_utils.py`) aggregates bootstrap CIs across seeds by element-wise averaging of the 1,000-iteration bootstrap distributions, then taking the 2.5th/97.5th percentiles. Point estimate = mean score across seeds. Falls back to ±1.96 × SEM across seed means only if bootstrap data is missing.
 
-**Encoding — NSD/TVSD only** (Pearson r, not applicable to THINGS): Per subject, score every layer via 80/20 fit/val split with `RidgeCV(cv=5)`. **One layer per ROI** (highest mean val r across subjects) → refit on each subject's full train → predict test → mean Pearson r across voxels → 1,000-iteration bootstrap (resampling stimuli with replacement) on cached predictions for 95% CIs. Uses SRP throughout (fixed seed 42), z-normalization with fit-only stats during selection.
+**Encoding — NSD/TVSD only** (Pearson r, not applicable to THINGS): Per subject, score every layer via 80/20 fit/val split with `RidgeCV(cv=5)`. **One layer per ROI** (highest mean val r across subjects) → refit on each subject's full train → predict test → mean Pearson r across voxels → 1,000-iteration bootstrap (resampling stimuli with replacement) on cached predictions for 95% CIs. Uses SRP throughout (fixed seed 42), z-normalization with fit-only stats during selection. Speed: a subject's ROIs share stimuli, so their voxels are concatenated and fit together (one `RidgeCV` per subject and layer, identical per-voxel results since alpha is chosen per target), and himalaya's SVD is routed through cuSOLVER's `gesvda` driver (`encoding_score._fast_svd`), which is faster and more accurate than the default on these tall matrices.
 
 ## Results Database
 

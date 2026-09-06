@@ -176,8 +176,9 @@ Compute neural alignment scores between CNN representations and brain/behavioral
 **Purpose**: GPU-accelerated ridge regression encoding models.
 
 **Key Functions**:
-- `select_layer_scores(selection, seed)`: Per-layer mean Pearson r on a seeded 80/20 fit/val split of train (himalaya `RidgeCV`, fit-only z-norm stats).
-- `evaluate_layer(layer, selection, evaluation, bootstrap, ...)`: Refit the given layer on full train, score on test, optional 90%-subsample bootstrap CIs. Returns a result dict.
+- `select_layer_scores(selection, seed, target_groups=None)`: Per-layer mean Pearson r on a seeded 80/20 fit/val split of train (himalaya `RidgeCV`, fit-only z-norm stats). `target_groups` ({name: voxel-column slice}) scores several ROIs from one fit.
+- `evaluate_layer(layer, selection, evaluation, bootstrap, ..., target_groups=None)`: Refit the given layer on full train, score on test, optional stimulus-resampling bootstrap CIs (vectorised in chunks). Returns a result dict, or {group: result} with `target_groups`.
+- `_fast_svd`: replaces himalaya's SVD with cuSOLVER's `gesvda` driver (the SVD is >90% of a `RidgeCV` fit). `gesvda` is approximate and has no convergence guarantee on low-rank inputs — late layers of coarse-label models in particular — where it either raises or returns a bad factorization. Both cases fall back to the default driver and disable `gesvda` for the rest of the process, so an unsuitable model costs one failed attempt rather than one per CV fold. `cfg.encoding_solver` picks between `"fast"` (this path, default) and `"himalaya"` (stock SVD); see `SOLVERS` and `_set_solver`.
 - `compute_encoding_score(selection, evaluation, ...)`: Single-subject convenience wrapper (select → evaluate); used by tests.
 
 ### `extract_representations.py`
