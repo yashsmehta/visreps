@@ -23,7 +23,7 @@ from typing import Dict, List, Optional, TYPE_CHECKING
 
 import numpy as np
 import torch
-from himalaya.backend import set_backend
+from himalaya.backend import set_backend, torch_cuda as _himalaya_torch_cuda
 from himalaya.ridge import RidgeCV
 from himalaya.scoring import correlation_score
 from visreps.utils import rprint
@@ -39,6 +39,51 @@ logger = logging.getLogger(__name__)
 # Spending the same 20 points on 6 decades instead of 20 gives 0.32-decade
 # steps (2.1x apart) rather than 1.05 (11.3x), at no extra cost.
 ALPHAS = np.logspace(2, 8, 20)
+
+# "fast": himalaya's SVD is replaced by cuSOLVER's gesvda driver (default).
+# "himalaya": himalaya's stock torch.svd — the original, slower computation.
+SOLVERS = ("fast", "himalaya")
+_HIMALAYA_SVD = _himalaya_torch_cuda.svd
+
+
+# ──────────────── faster SVD for himalaya ─────────────────
+# Whether gesvda is usable for the design matrix of the current RidgeCV fit.
+# gesvda rejects rank-deficient matrices (e.g. fc layers with dead units); one
+# fit runs six SVDs of the same design, so after one failure the rest of that
+# fit goes straight to the default driver. Reset by ``_fit_and_score``.
+_svd_state = {"gesvda_ok": True}
+
+
+def _fast_svd(X, full_matrices=True):
+    """Thin SVD via cuSOLVER's ``gesvda`` driver for tall CUDA matrices.
+
+    RidgeCV spends >90% of its time in SVDs of the (n_stimuli, n_features)
+    design matrix. On well-conditioned tall matrices ``gesvda`` is ~2x faster
+    than torch's default driver and far more accurate; on rank-deficient ones
+    it raises, and we fall back to the default driver (same result as the
+    "himalaya" solver for that fit). Returns (U, s, Vh) like himalaya's wrapper.
+    """
+    # `not full_matrices`: the fast path always computes the thin SVD, so it may
+    # only stand in when the caller asked for one (himalaya's ridge path does).
+    if (_svd_state["gesvda_ok"] and not full_matrices
+            and X.is_cuda and X.ndim == 2 and X.shape[0] >= X.shape[1]):
+        try:
+            U, s, Vh = torch.linalg.svd(X, full_matrices=False, driver="gesvda")
+            residual = ((U * s) @ Vh - X).norm() / X.norm().clamp_min(1e-30)
+            if torch.isfinite(residual) and residual < 1e-3:
+                return U, s, Vh
+            logger.info(f"gesvda SVD residual {residual:.2e}; using default driver for this fit")
+        except torch.linalg.LinAlgError:
+            logger.info("gesvda SVD did not converge (rank-deficient design); using default driver for this fit")
+        _svd_state["gesvda_ok"] = False
+    return _HIMALAYA_SVD(X, full_matrices=full_matrices)
+
+
+def _set_solver(solver):
+    """Route himalaya's SVD through ``_fast_svd`` ("fast") or its own ("himalaya")."""
+    if solver not in SOLVERS:
+        raise ValueError(f"encoding solver must be one of {SOLVERS}, got {solver!r}")
+    _himalaya_torch_cuda.svd = _fast_svd if solver == "fast" else _HIMALAYA_SVD
 
 
 def _znorm(X, mean, std):
@@ -72,6 +117,7 @@ def _fit_and_score(X_tr, Y_tr, X_te, Y_te, alphas, backend):
     # fit_intercept=False because data is already z-normalized (zero mean).
     # Avoids himalaya's internal X_offset copy which doubles GPU memory.
     model = RidgeCV(alphas=alphas, cv=5, fit_intercept=False)
+    _svd_state["gesvda_ok"] = True
     model.fit(X_tr, Y_tr)
     if not hasattr(X_te, 'device') or X_te.device.type == 'cpu':
         X_te = backend.asarray(X_te)
@@ -109,15 +155,17 @@ def _bootstrap_scores(Y, pred, groups, n_bootstrap, rng):
 
 def select_layer_scores(
     selection: "AlignmentData", seed: int = 42, verbose: bool = False,
-    target_groups: Optional[Dict[str, slice]] = None,
+    target_groups: Optional[Dict[str, slice]] = None, solver: str = "fast",
 ) -> List[Dict] | Dict[str, List[Dict]]:
     """Per-layer validation score on a seeded 80/20 fit/val split of the train data.
 
     Y and X are z-normalized with fit-only stats (no leakage into val).
     Returns [{"layer": name, "score": mean Pearson r on val}, ...], or, when
     ``target_groups`` is given, {group: that list scored on the group's voxels}.
+    ``solver`` is "fast" (gesvda SVD) or "himalaya" (stock SVD), see ``SOLVERS``.
     """
     backend = set_backend("torch_cuda", on_error="warn")
+    _set_solver(solver)
     groups = target_groups or {None: slice(None)}
     train_acts = _flatten_to_cpu(selection.activations)
     Y_train = selection.neural.cpu().float()
@@ -162,6 +210,7 @@ def evaluate_layer(
     verbose: bool = False,
     reconstruct_pca_k: int | None = None,
     target_groups: Optional[Dict[str, slice]] = None,
+    solver: str = "fast",
 ) -> Dict:
     """Refit RidgeCV for ``layer`` on full train, score on test (mean Pearson r).
 
@@ -169,9 +218,11 @@ def evaluate_layer(
     ``n_bootstrap`` times and recompute the score for percentile 95% CIs.
     ``reconstruct_pca_k`` reconstructs the activations from that many
     train-fitted PCs before fitting. With ``target_groups``, returns
-    {group: result dict} scored on each group's voxels.
+    {group: result dict} scored on each group's voxels. ``solver`` is "fast"
+    (gesvda SVD) or "himalaya" (stock SVD), see ``SOLVERS``.
     """
     backend = set_backend("torch_cuda", on_error="warn")
+    _set_solver(solver)
     rng = np.random.RandomState(seed)
     groups = target_groups or {None: slice(None)}
 
@@ -243,6 +294,7 @@ def compute_encoding_score(
     verbose: bool = False,
     reconstruct_pca_k: int | None = None,
     quiet: bool = False,
+    solver: str = "fast",
 ) -> List[Dict]:
     """Single-subject encoding score: select best layer on train, evaluate on test.
 
@@ -257,7 +309,7 @@ def compute_encoding_score(
             style="info",
         )
 
-    selection_scores = select_layer_scores(selection, seed=seed, verbose=verbose)
+    selection_scores = select_layer_scores(selection, seed=seed, verbose=verbose, solver=solver)
     best = max(selection_scores, key=lambda s: s["score"])
     if verbose:
         rprint(f"  Best layer: {best['layer']} (val r={best['score']:.4f})", style="highlight")
@@ -265,7 +317,7 @@ def compute_encoding_score(
     result = evaluate_layer(
         best["layer"], selection, evaluation,
         bootstrap=bootstrap, n_bootstrap=n_bootstrap, seed=seed,
-        verbose=verbose, reconstruct_pca_k=reconstruct_pca_k,
+        verbose=verbose, reconstruct_pca_k=reconstruct_pca_k, solver=solver,
     )
     result["layer_selection_scores"] = selection_scores
 

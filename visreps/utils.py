@@ -310,6 +310,8 @@ def _compute_run_id(cfg) -> str:
     identity["subject_idx"] = str(identity.get("subject_idx"))
     if cfg.get("bn_calibration") not in (None, "none"):
         identity["bn_calibration"] = cfg.bn_calibration
+    if cfg.get("encoding_solver", "fast") != "fast":  # default keeps existing run_ids
+        identity["encoding_solver"] = cfg.encoding_solver
     raw = json.dumps(identity, sort_keys=True)
     return hashlib.sha256(raw.encode()).hexdigest()[:12]
 
@@ -724,6 +726,14 @@ class ConfigVerifier:
             # (compare_method is an RSA concept). This also ensures run_id hashing
             # uses "pearson" consistently.
             self.cfg.compare_method = "pearson"
+            # "fast" (default) swaps himalaya's SVD for cuSOLVER's gesvda driver;
+            # "himalaya" keeps the stock solver. See encoding_score.SOLVERS.
+            solver = self.cfg.get("encoding_solver", "fast")
+            if solver not in ("fast", "himalaya"):
+                raise AssertionError(
+                    f"Invalid encoding_solver: {solver}. Must be 'fast' or 'himalaya'."
+                )
+            self.cfg.encoding_solver = solver
 
         # Model loading validation
         if self.cfg.load_model_from not in self.VALID_MODEL_SOURCES:

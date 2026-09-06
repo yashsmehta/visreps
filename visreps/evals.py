@@ -492,6 +492,7 @@ def _eval_encoding(cfg, model, acts, ids, all_data, subjects, regions, verbose):
     bootstrap = cfg.get("bootstrap", True)
     n_bootstrap = cfg.get("n_bootstrap", 1000)
     pca_k = cfg.get("pca_k", 1) if cfg.get("reconstruct_from_pcs") else None
+    solver = cfg.get("encoding_solver", "fast")
 
     def _subject_data(subj):
         """Train/test AlignmentData with all regions' voxels side by side, plus {region: column slice}."""
@@ -514,7 +515,7 @@ def _eval_encoding(cfg, model, acts, ids, all_data, subjects, regions, verbose):
     selection_scores = {region: {} for region in regions}
     for subj in subjects:
         train_data, _, groups = _subject_data(subj)
-        per_region = select_layer_scores(train_data, verbose=verbose, target_groups=groups)
+        per_region = select_layer_scores(train_data, verbose=verbose, target_groups=groups, solver=solver)
         for region in regions:
             selection_scores[region][subj] = per_region[region]
         del train_data
@@ -538,7 +539,7 @@ def _eval_encoding(cfg, model, acts, ids, all_data, subjects, regions, verbose):
             results = evaluate_layer(
                 layer, train_data, test_data,
                 bootstrap=bootstrap, n_bootstrap=n_bootstrap,
-                verbose=verbose, reconstruct_pca_k=pca_k, target_groups=layer_groups,
+                verbose=verbose, reconstruct_pca_k=pca_k, target_groups=layer_groups, solver=solver,
             )
             for region, result in results.items():
                 result["layer_selection_scores"] = selection_scores[region][subj]
