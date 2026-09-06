@@ -12,6 +12,23 @@ from matplotlib.ticker import AutoMinorLocator, MultipleLocator, FuncFormatter
 from scipy import stats
 
 DB_PATH = "results.db"
+NOISE_CEILING_PATH = "datasets/neural/noise_ceilings.json"
+
+
+def get_noise_ceiling(neural_dataset, region, compare_method="spearman",
+                      path=NOISE_CEILING_PATH):
+    """Within-subject noise ceiling for an ROI, or None if not computed.
+
+    Returns the dict written by ``scripts/compute_noise_ceiling.py`` (keys
+    "ceiling", "sem", ...). Ceilings exist only for RSA, since they are built
+    from RDM correlations.
+    """
+    try:
+        with open(path) as f:
+            ceilings = json.load(f)
+    except FileNotFoundError:
+        return None
+    return ceilings.get(f"{neural_dataset}|{region}|{compare_method}") or None
 
 
 # --------------------------------------------------

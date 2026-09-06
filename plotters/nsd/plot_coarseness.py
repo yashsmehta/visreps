@@ -35,6 +35,8 @@ if __name__ == "__main__":
     p.add_argument("--analysis", default="rsa", choices=["rsa", "encoding_score"])
     p.add_argument("--compare_method", default=None, choices=["spearman", "pearson"],
                    help="Defaults to spearman for RSA, pearson for encoding_score")
+    p.add_argument("--no_noise_ceiling", action="store_true",
+                   help="Hide the noise ceiling")
     args = p.parse_args()
 
     preset = REGION_PRESETS[args.regions]
@@ -49,6 +51,7 @@ if __name__ == "__main__":
         "compare_method": args.compare_method or (
             "pearson" if args.analysis == "encoding_score" else "spearman"),
         "output_suffix": suffix,
+        "noise_ceiling": not args.no_noise_ceiling,
         **{k: v for k, v in preset.items() if k != "output_suffix"},
     }
 

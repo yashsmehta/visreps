@@ -11,7 +11,7 @@ import matplotlib.transforms as transforms
 from matplotlib.ticker import AutoMinorLocator
 import seaborn as sns
 
-from plotter_utils import get_condition_summary, get_subject_scores
+from plotter_utils import get_condition_summary, get_subject_scores, get_noise_ceiling
 
 # ── Constants ────────────────────────────────────────────────────────────
 COARSE_CFGS = [2, 4, 8, 16, 32, 64]
@@ -34,6 +34,7 @@ plt.rcParams["hatch.color"] = "grey"
 blues = sns.color_palette("Blues", n_colors=N_COARSE + 1)[1:]
 UNTRAINED_COLOR = "#AAAAAA"
 BASELINE_COLOR = "#FFA500"
+CEILING_COLOR = "#4D4D4D"
 BAR_WIDTH = 0.72
 
 
@@ -117,6 +118,11 @@ def plot_coarseness_bars(dcfg, pca_model, output_dir, dataset_label=None):
                                    compare_method, epoch=0, analysis=analysis)
         has_untrained = not np.isnan(un["mean"])
 
+        # Within-subject noise ceiling (RSA only; None until computed)
+        ceiling = (get_noise_ceiling(nd, region, compare_method)
+                   if dcfg.get("noise_ceiling", True) and analysis == "rsa"
+                   else None)
+
         # Build X positions
         if has_untrained:
             X_COARSE = np.arange(1.5, 1.5 + N_COARSE)
@@ -178,6 +184,21 @@ def plot_coarseness_bars(dcfg, pca_model, output_dir, dataset_label=None):
         dr = max(vhi - vlo, 0.01)
         y_bottom = max(0, vlo - 0.20 * dr)
         y_top = vhi + 0.20 * dr
+        if ceiling:
+            # The ceiling sits above every bar; show it rather than clip it.
+            y_top = max(y_top, ceiling["ceiling"] + 0.12 * dr)
+
+        # Noise ceiling, behind everything
+        if ceiling:
+            ax.axhline(ceiling["ceiling"], color=CEILING_COLOR,
+                       linewidth=1.3 * scale, linestyle="--", dashes=(5, 3),
+                       zorder=1)
+            ax.annotate("noise ceiling", xy=(0.985, ceiling["ceiling"]),
+                        xycoords=transforms.blended_transform_factory(
+                            ax.transAxes, ax.transData),
+                        xytext=(0, 3 * scale), textcoords="offset points",
+                        ha="right", va="bottom", fontsize=9 * scale,
+                        color=CEILING_COLOR, style="italic", zorder=6)
 
         # Draw fancy bars
         for k in range(len(all_x)):
