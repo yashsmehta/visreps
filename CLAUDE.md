@@ -126,9 +126,22 @@ python runners/eval_runner.py --grid configs/grids/eval_default.json  # Grid swe
 
 **Sparse Random Projection (SRP):** All layer activations are projected to k=4096 dims (`SparseRandomProjection`, cached in `model_checkpoints/srp_cache/`) to keep memory bounded. RSA re-extracts the best layer *without* SRP for exact test RDMs; encoding score uses SRP throughout.
 
-**Datasets:** NSD (~9k train / ~1k test, 8 subjects, early/ventral visual stream), TVSD (~22k train / 100 test, 2 monkeys, V1/V4/IT), THINGS (~1,854 concepts, 80/20 concept-level train/test split).
+**Datasets:** NSD (~9k train / ~1k test, 8 subjects, early/ventral visual stream), TVSD (~22k train / 100 test, 2 monkeys, V1/V4/IT; RSA uses a 20/80 split of the *train* stimuli, not the 100-stimulus test set — see below), THINGS (~1,854 concepts, 80/20 concept-level train/test split).
 
 **RSA — NSD/TVSD:** Per subject, score every layer on train (subsample 1,000 stimuli, Pearson RDMs, compare via Spearman/Kendall). **One layer per ROI**: the layer with the highest mean selection score across subjects. Re-extract that layer without SRP → per-subject test RDM score → 1,000-iteration bootstrap (resampling stimuli with replacement) for percentile 95% CIs. Per-subject selection scores are still saved in `layer_selection_scores`.
+
+**RSA — TVSD reports on train stimuli, not the 100-stimulus test set.** `_tvsd_train_split()`
+in `evals.py` splits the 22,248 train stimuli at the stimulus level (seed 42, shared across
+subjects and regions since both monkeys saw the same images): `tvsd_select_frac` (0.2) for layer
+selection, the rest for reporting, capped at `n_report` (5,000) because the full 80% would need a
+17,798-stimulus RDM and a ~14 GB no-SRP conv1 re-extraction. The split half lands under the
+`"train"` key and the reporting half under `"test"`, so every downstream RSA step is unchanged.
+Set `tvsd_rsa_on_train=false` to restore the old behaviour.
+**Consequence:** train stimuli were each presented once, so reporting RDMs are single-trial.
+Scores are attenuated ~25% relative to the 30-repetition test set and **no within-subject noise
+ceiling exists for them** — `nsd_ceiling`/`tvsd_ceiling` in `visreps/analysis/noise_ceiling.py`
+measure the test set, which is no longer what TVSD RSA reports. Use the cross-monkey RDM
+correlation if a reference is needed.
 
 **RSA — THINGS:** Fixed 80/20 concept-level split (seed=42). 20% (~370 concepts) for layer selection, 80% (~1,480 concepts) for evaluation. Re-extract best layer without SRP, concept-average for eval set. Bootstrap 1,000 iterations (resampling concepts with replacement) on eval set for 95% CIs.
 

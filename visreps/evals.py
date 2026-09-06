@@ -133,6 +133,55 @@ def _best_layer_across_subjects(subject_scores):
     return mean_scores.idxmax(), float(mean_scores.max())
 
 
+_TVSD_SELECT_FRAC = 0.2
+
+
+def _tvsd_train_split(all_data, *, select_frac=_TVSD_SELECT_FRAC,
+                      n_report=None, seed=42):
+    """Re-split TVSD so RSA is selected and reported on *train* stimuli.
+
+    TVSD's held-out set is only 100 stimuli. This instead splits the 22,248
+    train stimuli at the stimulus level: ``select_frac`` for layer selection and
+    the remainder for reporting. Both monkeys saw the same images, so one split
+    serves every subject and region and the per-region layer stays comparable.
+
+    Note the train stimuli were each presented once, so the reporting RDM is
+    built from single-trial responses -- scores are attenuated relative to the
+    30-repetition test set, and no within-subject noise ceiling exists for them.
+
+    The rewrite puts the selection half under "train" and the reporting half
+    under "test", so every downstream RSA step runs unchanged.
+
+    Returns:
+        (select_ids, report_ids)
+    """
+    neural = all_data["neural"]
+    regions, subjects = all_data["regions"], all_data["subjects"]
+
+    common = sorted(set.intersection(*[
+        set(neural[r][s]["train"]) for r in regions for s in subjects
+    ]))
+    rng = np.random.RandomState(seed)
+    order = rng.permutation(len(common))
+    n_sel = int(round(select_frac * len(common)))
+    select_ids = sorted(common[i] for i in order[:n_sel])
+    report_ids = sorted(common[i] for i in order[n_sel:])
+
+    if n_report is not None and n_report < len(report_ids):
+        keep = rng.choice(len(report_ids), size=n_report, replace=False)
+        report_ids = sorted(report_ids[i] for i in keep)
+
+    for region in regions:
+        for subj in subjects:
+            train = neural[region][subj]["train"]
+            neural[region][subj] = {
+                "train": {sid: train[sid] for sid in select_ids},
+                "test": {sid: train[sid] for sid in report_ids},
+            }
+    all_data["shared_test_ids"] = report_ids
+    return select_ids, report_ids
+
+
 def _select_rsa_layers(acts, ids, neural, subjects, regions,
                        method, n_select=1000, verbose=False):
     """Per-region layer selection using SRP activations.
@@ -412,6 +461,18 @@ def eval(cfg):
         all_data = load_all_nsd_data(cfg, subjects=subjects, regions=regions)
     elif dataset == "tvsd":
         all_data = load_all_tvsd_data(cfg, subjects=subjects, regions=regions)
+        if (cfg.get("analysis", "rsa").lower() == "rsa"
+                and cfg.get("tvsd_rsa_on_train", True)):
+            frac = cfg.get("tvsd_select_frac", _TVSD_SELECT_FRAC)
+            sel_ids, rep_ids = _tvsd_train_split(
+                all_data, select_frac=frac, n_report=cfg.get("n_report", 5000))
+            cfg.n_select = None  # the selection split is already the subsample
+            rprint(
+                f"  TVSD RSA on train stimuli: {len(sel_ids)} for layer selection "
+                f"({frac:.0%}), {len(rep_ids)} for reporting "
+                f"(single-trial, no noise ceiling)",
+                style="info",
+            )
     else:
         raise ValueError(f"Unsupported neural_dataset='{dataset}' for multi-subject eval")
 
