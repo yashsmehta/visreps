@@ -145,7 +145,7 @@ def test_ridge_recovers_exact_linear_map():
     Y = X @ W
     _, r = _fit_and_score(backend.asarray(X[:200]), backend.asarray(Y[:200]),
                           torch.from_numpy(X[200:]), backend.asarray(Y[200:]), np.logspace(-6, 2, 9), backend)
-    assert r > 0.99
+    assert float(r.mean()) > 0.99
 
 
 def test_encoding_selects_generating_layer_and_scores_it(synthetic):

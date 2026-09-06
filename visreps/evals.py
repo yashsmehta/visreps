@@ -482,56 +482,83 @@ def _eval_encoding(cfg, model, acts, ids, all_data, subjects, regions, verbose):
     data; the region's layer is the best on average across subjects.
     Phase 2: that layer is refit on each subject's full train data and scored
     on its test data.
+
+    A subject's regions share the same stimuli, so their voxels are concatenated
+    and fit together: one ridge fit per (subject, layer) instead of one per
+    (subject, layer, region). Alpha selection and weights are per voxel, so
+    the per-region scores are identical to fitting each region on its own.
     """
     neural = all_data["neural"]
     bootstrap = cfg.get("bootstrap", True)
     n_bootstrap = cfg.get("n_bootstrap", 1000)
     pca_k = cfg.get("pca_k", 1) if cfg.get("reconstruct_from_pcs") else None
 
-    def _subject_data(region, subj):
-        return prepare_traintest_alignment(cfg, acts, neural[region][subj], ids)
+    def _subject_data(subj):
+        """Train/test AlignmentData with all regions' voxels side by side, plus {region: column slice}."""
+        train, test = prepare_traintest_alignment(cfg, acts, neural[regions[0]][subj], ids)
+        train_neural, test_neural, groups, start = [], [], {}, 0
+        for region in regions:
+            _, tr, tr_ids = _align_stimulus_level({}, neural[region][subj]["train"], ids)
+            _, te, te_ids = _align_stimulus_level({}, neural[region][subj]["test"], ids)
+            assert tr_ids == train.stimulus_ids and te_ids == test.stimulus_ids, \
+                f"subject {subj}: {region} does not share stimuli with {regions[0]}"
+            train_neural.append(tr)
+            test_neural.append(te)
+            groups[region] = slice(start, start + tr.size(1))
+            start += tr.size(1)
+        train.neural = torch.cat(train_neural, dim=1)
+        test.neural = torch.cat(test_neural, dim=1)
+        return train, test, groups
 
-    all_results = []
-    region_means = {}
+    rprint("\n  Phase 1: layer selection", style="info")
+    selection_scores = {region: {} for region in regions}
+    for subj in subjects:
+        train_data, _, groups = _subject_data(subj)
+        per_region = select_layer_scores(train_data, verbose=verbose, target_groups=groups)
+        for region in regions:
+            selection_scores[region][subj] = per_region[region]
+        del train_data
+    best_layers = {}
     for region in regions:
-        rprint(f"\n  Phase 1: layer selection for {region}", style="info")
-        selection_scores = {}
-        for subj in subjects:
-            train_data, _ = _subject_data(region, subj)
-            selection_scores[subj] = select_layer_scores(train_data, verbose=verbose)
-            del train_data
-        best_layer, best_score = _best_layer_across_subjects(selection_scores)
+        best_layer, best_score = _best_layer_across_subjects(selection_scores[region])
+        best_layers[region] = best_layer
         rprint(
             f"    {region}: {best_layer} (mean val r {best_score:.4f} "
             f"across {len(subjects)} subjects)",
             style="info",
         )
 
-        rprint(f"  Phase 2: test evaluation for {region}", style="info")
-        region_scores = []
-        for subj in subjects:
-            train_data, test_data = _subject_data(region, subj)
-            result = evaluate_layer(
-                best_layer, train_data, test_data,
+    rprint("  Phase 2: test evaluation", style="info")
+    all_results = []
+    region_scores = {region: [] for region in regions}
+    for subj in subjects:
+        train_data, test_data, groups = _subject_data(subj)
+        for layer in sorted(set(best_layers.values())):
+            layer_groups = {r: groups[r] for r in regions if best_layers[r] == layer}
+            results = evaluate_layer(
+                layer, train_data, test_data,
                 bootstrap=bootstrap, n_bootstrap=n_bootstrap,
-                verbose=verbose, reconstruct_pca_k=pca_k,
+                verbose=verbose, reconstruct_pca_k=pca_k, target_groups=layer_groups,
             )
-            del train_data, test_data
-            result["layer_selection_scores"] = selection_scores[subj]
-            result["region"] = region
-            result["subject_idx"] = subj
+            for region, result in results.items():
+                result["layer_selection_scores"] = selection_scores[region][subj]
+                result["region"] = region
+                result["subject_idx"] = subj
 
-            if cfg.get("log_expdata"):
-                save_cfg = OmegaConf.merge(cfg, {"subject_idx": subj, "region": region})
-                save_results(pd.DataFrame([result]), save_cfg, quiet=True)
+                if cfg.get("log_expdata"):
+                    save_cfg = OmegaConf.merge(cfg, {"subject_idx": subj, "region": region})
+                    save_results(pd.DataFrame([result]), save_cfg, quiet=True)
 
-            all_results.append(result)
-            region_scores.append(result["score"])
+                all_results.append(result)
+                region_scores[region].append(result["score"])
+        del train_data, test_data
 
-        _print_region_results(region, best_layer, region_scores, subjects)
+    region_means = {}
+    for region in regions:
+        _print_region_results(region, best_layers[region], region_scores[region], subjects)
         if cfg.get("log_expdata"):
             rprint(f"    Saved {len(subjects)} results to results.db", style="success")
-        region_means[region] = np.mean(region_scores)
+        region_means[region] = np.mean(region_scores[region])
 
     _print_cross_region_summary(region_means)
 
