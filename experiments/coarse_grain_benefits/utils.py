@@ -142,8 +142,7 @@ def get_feature_extractor(model, layers):
         layers = [layers]
 
     return_nodes = {layer: layer for layer in layers}
-    extractor = FeatureExtractor(model, return_nodes=return_nodes,
-                                 post_relu=True, extract_pre_and_post=False)
+    extractor = FeatureExtractor(model, return_nodes=return_nodes)
     return extractor.eval()
 
 

@@ -1,0 +1,5 @@
+{
+  "imagenet_version": "2012",
+  "dataset_path": "/data/shared/datasets/ilsvrc2012",
+  "checkpoint_dir": "alexnet_imagenet2012_cnn_recipe"
+}

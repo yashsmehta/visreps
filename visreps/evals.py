@@ -1,6 +1,8 @@
 import torch
 import pandas as pd
 from omegaconf import OmegaConf, ListConfig
+import sqlite3
+import visreps.utils as vutils
 from visreps.utils import rprint, save_results
 from visreps.utils import get_seed_letter
 import visreps.models.utils as mutils
@@ -8,7 +10,9 @@ from visreps.models.batchnorm import prepare_eval_batchnorm, training_image_ids
 from visreps.dataloaders.neural import (
     get_neural_loader,
     load_all_nsd_data,
+    load_all_nsd_synthetic_data,
     load_all_tvsd_data,
+    NsdSyntheticTransform,
     _make_loader,
 )
 from visreps.dataloaders.obj_cls import get_transform
@@ -91,8 +95,10 @@ def _listify(val):
 
 
 def _get_eval_transform(cfg):
-    """Return the correct preprocessing transform based on model."""
+    """Return the correct preprocessing transform based on dataset and model."""
     stats = "clip" if "CLIP" in cfg.get("model_name", "") else "imgnet"
+    if cfg.get("neural_dataset", "").lower() == "nsd_synthetic":
+        return NsdSyntheticTransform(ds_stats=stats)
     return get_transform(ds_stats=stats)
 
 
@@ -236,6 +242,81 @@ def _select_rsa_layers(acts, ids, neural, subjects, regions,
     return per_region_layer, per_region_scores
 
 
+def _lookup_nsd_best_layers(cfg, subjects, regions):
+    """Reuse each ROI's layer from the matching regular-NSD RSA run in results.db.
+
+    NSD-synthetic has no training split, so no layer is selected here: it comes
+    from the regular-NSD run with the same model, seed and epoch. One layer per
+    ROI, so every requested subject of a region must agree.
+    """
+    match = {
+        "neural_dataset": "nsd",
+        "analysis": "rsa",
+        "compare_method": cfg.get("compare_method", "spearman").lower(),
+        "seed": cfg.get("seed"),
+        "epoch": cfg.get("epoch"),
+        "cfg_id": cfg.get("cfg_id"),
+        "model_name": cfg.get("model_name"),
+        "checkpoint_dir": cfg.get("checkpoint_dir"),
+        "reconstruct_from_pcs": bool(cfg.get("reconstruct_from_pcs", False)),
+    }
+    where = " AND ".join(f"{field} IS ?" for field in match)
+    # Same database results are written to; read-only so a lookup can never write.
+    conn = sqlite3.connect(f"file:{vutils._RESULTS_DB_PATH}?mode=ro", uri=True)
+    try:
+        rows = pd.read_sql_query(
+            f"SELECT region, subject_idx, layer FROM results WHERE {where}",
+            conn, params=list(match.values()))
+    finally:
+        conn.close()
+    rows = rows[rows.subject_idx.astype(str).isin({str(s) for s in subjects})]
+
+    layers = {}
+    for region in regions:
+        found = rows[rows.region == region]
+        if found.empty:
+            raise ValueError(
+                f"No regular-NSD RSA result for region={region} with "
+                f"{ {k: v for k, v in match.items() if k not in ('neural_dataset', 'analysis')} }. "
+                f"Run the same eval with neural_dataset=nsd first.")
+        if found.layer.nunique() != 1:
+            raise ValueError(
+                f"NSD results for region={region} disagree on the layer "
+                f"({dict(zip(found.subject_idx, found.layer))}). Re-run the NSD eval "
+                f"so one layer is selected per ROI.")
+        layers[region] = found.layer.iloc[0]
+        rprint(f"    {region}: reusing layer {layers[region]} from NSD "
+               f"({found.subject_idx.nunique()} subjects agree)", style="info")
+    return layers
+
+
+def _split_synthetic_stimuli(ids, seed=42):
+    """Fixed stratified 50/50 split of the synthetic stimuli for in-dataset layer selection.
+
+    Each stimulus family (e.g. ``spiral_A_sf1``, ``word4_pos2``) contributes half its
+    members to selection and half to reporting, so both halves are representative.
+    """
+    rng = np.random.RandomState(seed)
+    families = {}
+    for sid in ids:
+        families.setdefault(sid.rsplit("_", 1)[0], []).append(sid)
+    select = set()
+    for members in families.values():
+        members = sorted(members)
+        rng.shuffle(members)
+        select.update(members[:len(members) // 2])
+    return sorted(select), sorted(sid for sid in ids if sid not in select)
+
+
+def _print_layer_report(selection_scores, regions, subjects):
+    """Mean selection score across subjects for every layer, per region."""
+    for region in regions:
+        layers = [d["layer"] for d in selection_scores[region][subjects[0]]]
+        means = {l: np.mean([next(d["score"] for d in selection_scores[region][s] if d["layer"] == l)
+                             for s in subjects]) for l in layers}
+        rprint(f"    {region}: " + "  ".join(f"{l} {m:.3f}" for l, m in means.items()), style="info")
+
+
 def _reextract_and_score(model, cfg, dev, test_stimuli, test_ids,
                          test_neural, best_layers, regions, subjects,
                          selection_scores=None, verbose=False):
@@ -347,7 +428,10 @@ def eval(cfg):
         cfg = _load_cfg(cfg)
     elif cfg.load_model_from == "torchvision":
         cfg = _set_torchvision_cfg(cfg)
-    cfg.return_nodes = list(mutils.TORCHVISION_RETURN_NODES[cfg.model_name])
+    # Default to the model's full layer set, but honour an explicit
+    # return_nodes (config or --override) so a run can be pinned to one layer.
+    if not cfg.get("return_nodes"):
+        cfg.return_nodes = list(mutils.TORCHVISION_RETURN_NODES[cfg.model_name])
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     dataset = cfg.neural_dataset.lower()
@@ -446,6 +530,47 @@ def eval(cfg):
         if cfg.get("log_expdata"):
             save_results(results, cfg)
         return results
+
+    # ── NSD-SYNTHETIC: OOD test set, layers reused from the matching NSD run ──
+    if dataset == "nsd_synthetic":
+        subjects, regions = _listify(cfg.subject_idx), _listify(cfg.region)
+        _print_header(cfg, len(subjects), len(regions))
+        best_layers = _lookup_nsd_best_layers(cfg, subjects, regions)
+        data = load_all_nsd_synthetic_data(cfg, subjects=subjects, regions=regions)
+        rprint(f"  {len(data['stimuli'])} synthetic test stimuli", style="success")
+        model = mutils.load_model(cfg, dev, verbose=verbose)
+        if cfg.get("bn_calibration_source", "checkpoint") == "nsd":
+            # Same BN statistics the NSD run selected its layer with: calibrate on
+            # NSD training images under the NSD transform, which hits that run's cache.
+            nsd_cfg = OmegaConf.merge(cfg, {"neural_dataset": "nsd"})
+            nsd = load_all_nsd_data(nsd_cfg, subjects=subjects, regions=regions)
+            dl = _make_loader(nsd["stimuli"], _get_eval_transform(nsd_cfg),
+                              cfg.batchsize, cfg.num_workers)
+            prepare_eval_batchnorm(model, nsd_cfg, dl,
+                                   training_image_ids(nsd["neural"], nsd["stimuli"].keys()), dev)
+            cfg.bn_calibration = nsd_cfg.bn_calibration
+            del nsd, dl
+        model = mutils.configure_feature_extractor(cfg, model, verbose=verbose)
+        test_ids, selection_scores = data["test_ids"], None
+        if cfg.get("layer_source", "nsd") == "split":
+            # Select on half the synthetic stimuli instead of inheriting from NSD.
+            select_ids, test_ids = _split_synthetic_stimuli(data["test_ids"])
+            rprint(f"  Split: {len(select_ids)} stimuli for selection, {len(test_ids)} for reporting",
+                   style="info")
+            dl = _make_loader({sid: data["stimuli"][sid] for sid in select_ids},
+                              _get_eval_transform(cfg), cfg.batchsize, cfg.num_workers)
+            acts, ids = mutils.get_activations(model, dl, dev)
+            select_neural = {r: {s: {"train": {sid: data["neural"][r][s][sid] for sid in select_ids}}
+                                 for s in subjects} for r in regions}
+            method = cfg.get("compare_method", "spearman").lower()
+            best_layers, selection_scores = _select_rsa_layers(
+                acts, ids, select_neural, subjects, regions, method, n_select=None)
+            _print_layer_report(selection_scores, regions, subjects)
+            del acts, dl
+        test_stimuli = {sid: data["stimuli"][sid] for sid in test_ids}
+        return _reextract_and_score(model, cfg, dev, test_stimuli, test_ids,
+                                    data["neural"], best_layers, regions, subjects,
+                                    selection_scores, verbose)
 
     # ── NSD / TVSD: unified multi-subject path ──────────
     subjects = _listify(cfg.subject_idx)

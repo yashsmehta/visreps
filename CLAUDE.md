@@ -105,7 +105,7 @@ python runners/eval_runner.py --grid configs/grids/eval_default.json  # Grid swe
 **Key config options:**
 - `load_model_from`: "checkpoint" or "torchvision"
 - `cfg_id`: must match `pca_n_classes` from training (or 1000 for standard)
-- `neural_dataset`: "nsd", "things-behavior", "tvsd"
+- `neural_dataset`: "nsd", "nsd_synthetic", "things-behavior", "tvsd"
 - `analysis`: "rsa" or "encoding_score"
 - `region`: list or string. NSD: `["early visual stream", "ventral visual stream"]`; TVSD: `["V1", "V4", "IT"]`. Scalars are normalized to lists by `ConfigVerifier`.
 - `subject_idx`: list or int. NSD: `[0,1,2,3,4,5,6,7]`; TVSD: `[0, 1]`. Scalars are normalized to lists. THINGS: ignored (set to "N/A").
@@ -127,6 +127,27 @@ python runners/eval_runner.py --grid configs/grids/eval_default.json  # Grid swe
 **Sparse Random Projection (SRP):** All layer activations are projected to k=4096 dims (`SparseRandomProjection`, cached in `model_checkpoints/srp_cache/`) to keep memory bounded. RSA re-extracts the best layer *without* SRP for exact test RDMs; encoding score uses SRP throughout.
 
 **Datasets:** NSD (~9k train / ~1k test, 8 subjects, early/ventral visual stream), TVSD (~22k train / 100 test, 2 monkeys, V1/V4/IT; RSA uses a 20/80 split of the *train* stimuli, not the 100-stimulus test set — see below), THINGS (~1,854 concepts, 80/20 concept-level train/test split).
+
+**NSD-synthetic** is an out-of-distribution *test set* for NSD: the same 8 subjects and the same
+region names, but 220 synthetic stimuli (spirals, words at varying retinal positions, contrast
+and noise patterns) instead of natural scenes. Because the regions and subjects match, an eval
+config becomes a synthetic run by changing `neural_dataset` from `nsd` to `nsd_synthetic` and
+nothing else. Two things differ under the hood:
+- **No train split.** By default (`layer_source=nsd`) each ROI reuses the layer chosen by the
+  matching regular-NSD run, looked up from `results.db`; run the NSD eval first or the synthetic
+  run raises. `layer_source=split` instead selects in-dataset on a fixed stratified 50/50 split
+  (seed 42, half of each stimulus family) and reports on the other half, printing every layer's
+  selection score. The 16 word stimuli that are blank after cropping (`word{4,6}_pos{1,5}_*`)
+  are always excluded, leaving 204.
+- **Its own input transform.** The raw images are 714x1360 (a centred 714x714 content square
+  with grey padding), so `NsdSyntheticTransform` square-crops before resizing and applies the
+  `sqrt` linearisation from the dataset authors' code. The standard `Resize(256) +
+  CenterCrop(224)` clips a 45-pixel band and truncates the word-position stimuli.
+BatchNorm defaults to the checkpoint's original ImageNet statistics
+(`bn_calibration_source=checkpoint`) — there is no synthetic training split, and calibrating on
+the 220 test images would leak. `bn_calibration_source=nsd` instead reuses the NSD-calibrated
+statistics the inherited layer was selected with (served from `model_checkpoints/bn_stats/`),
+making selection and evaluation consistent. The two give different numbers; say which one.
 
 **RSA — NSD/TVSD:** Per subject, score every layer on train (subsample 1,000 stimuli, Pearson RDMs, compare via Spearman/Kendall). **One layer per ROI**: the layer with the highest mean selection score across subjects. Re-extract that layer without SRP → per-subject test RDM score → 1,000-iteration bootstrap (resampling stimuli with replacement) for percentile 95% CIs. Per-subject selection scores are still saved in `layer_selection_scores`.
 

@@ -1,0 +1,148 @@
+Region '['early visual stream', 'ventral visual stream']' provided for 
+'things-behavior' dataset. Setting to 'N/A'.
+Subject index '[0, 1, 2, 3, 4, 5, 6, 7]' provided for 'things-behavior' dataset.
+Setting to 'N/A'.
+
+START imagenet2010_epoch20 things-behavior
+
+  ── RSA · Spearman ────────────────────────────
+  cfg1000a · seed 1 · epoch 20
+  THINGS-BEHAVIOR
+
+  ✓ Loaded checkpoint (cfg1000a)
+  THINGS data loaded
+  ✓ 7 post-activation extraction points
+  ✓ SRP transformers for 7 layers (k=4096)
+  Extracting activations ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 204/204 batches 0:00:32
+  370 selection concepts, 1484 evaluation concepts
+  Re-extracting fc1 without SRP for exact test RDMs...
+  ✓ Re-extracted fc1: streaming concept-average (1484 concepts)
+
+  fc1     0.4078
+SAVED experiments/alexnet_dataset_comparison/results/imagenet2010_epoch20_things-behavior.json
+Region '['early visual stream', 'ventral visual stream']' provided for 
+'things-behavior' dataset. Setting to 'N/A'.
+Subject index '[0, 1, 2, 3, 4, 5, 6, 7]' provided for 'things-behavior' dataset.
+Setting to 'N/A'.
+
+START torchvision_imagenet2012 things-behavior
+
+  ── RSA · Spearman ────────────────────────────
+  cfgpretrained.a · seed 1 · epoch -1
+  THINGS-BEHAVIOR
+
+  THINGS data loaded
+  ✓ 7 post-activation extraction points
+  ✓ SRP transformers for 7 layers (k=4096)
+  Extracting activations ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 204/204 batches 0:00:30
+  370 selection concepts, 1484 evaluation concepts
+  Re-extracting fc2 without SRP for exact test RDMs...
+  ✓ Re-extracted fc2: streaming concept-average (1484 concepts)
+
+  fc2     0.4916
+SAVED experiments/alexnet_dataset_comparison/results/torchvision_imagenet2012_things-behavior.json
+
+START imagenet2010_epoch20 nsd
+
+  ── RSA · Spearman ────────────────────────────
+  cfg1000a · seed 1 · epoch 20
+  NSD · 8 subjects × 2 regions
+
+  ✓ Loaded checkpoint (cfg1000a)
+  70566 stimuli, 907 shared test
+  ✓ 7 post-activation extraction points
+  ✓ SRP transformers for 7 layers (k=4096)
+  Extracting activations ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 552/552 batches 0:00:23
+  Activations extracted once for all subjects/regions
+
+  Phase 1: Per-subject layer selection
+    early visual stream: fc1 (mean selection score 0.1482 across 8 subjects)
+    ventral visual stream: fc1 (mean selection score 0.1647 across 8 subjects)
+  Freed bulk SRP activations
+
+  Phase 2: Test evaluation
+  Test dataloader: 907 stimuli
+  Re-extracting fc1 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 8/8 batches 0:00:01
+  ✓ Re-extracted fc1: torch.Size([907, 4096]) (exact, no SRP)
+
+  ── early visual stream · fc1 ──────────────────
+    S0   0.1999
+    S1   0.1751
+    S2   0.1404
+    S3   0.1621
+    S4   0.1793
+    S5   0.1656
+    S6   0.1449
+    S7   0.1531
+    ──────────────────────────────────
+    Mean     0.1650 ± 0.0183
+
+  ── ventral visual stream · fc1 ────────────────
+    S0   0.2172
+    S1   0.2126
+    S2   0.1818
+    S3   0.1721
+    S4   0.2037
+    S5   0.1827
+    S6   0.2118
+    S7   0.1658
+    ──────────────────────────────────
+    Mean     0.1934 ± 0.0188
+
+  ══════════════════════════════════════════════
+  early visual stream            0.1650
+  ventral visual stream          0.1934
+SAVED experiments/alexnet_dataset_comparison/results/imagenet2010_epoch20_nsd.json
+
+START torchvision_imagenet2012 nsd
+
+  ── RSA · Spearman ────────────────────────────
+  cfgpretrained.a · seed 1 · epoch -1
+  NSD · 8 subjects × 2 regions
+
+  70566 stimuli, 907 shared test
+  ✓ 7 post-activation extraction points
+  ✓ SRP transformers for 7 layers (k=4096)
+  Extracting activations ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 552/552 batches 0:00:23
+  Activations extracted once for all subjects/regions
+
+  Phase 1: Per-subject layer selection
+    early visual stream: conv4 (mean selection score 0.1710 across 8 subjects)
+    ventral visual stream: fc2 (mean selection score 0.2637 across 8 subjects)
+  Freed bulk SRP activations
+
+  Phase 2: Test evaluation
+  Test dataloader: 907 stimuli
+  Re-extracting conv4 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 8/8 batches 0:00:01
+  ✓ Re-extracted conv4: torch.Size([907, 43264]) (exact, no SRP)
+  Re-extracting fc2 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 8/8 batches 0:00:00
+  ✓ Re-extracted fc2: torch.Size([907, 4096]) (exact, no SRP)
+
+  ── early visual stream · conv4 ────────────────
+    S0   0.2925
+    S1   0.2571
+    S2   0.1869
+    S3   0.2266
+    S4   0.2058
+    S5   0.2091
+    S6   0.1874
+    S7   0.1946
+    ──────────────────────────────────
+    Mean     0.2200 ± 0.0350
+
+  ── ventral visual stream · fc2 ────────────────
+    S0   0.3181
+    S1   0.3129
+    S2   0.2752
+    S3   0.2529
+    S4   0.3076
+    S5   0.2661
+    S6   0.3088
+    S7   0.2322
+    ──────────────────────────────────
+    Mean     0.2842 ± 0.0300
+
+  ══════════════════════════════════════════════
+  early visual stream            0.2200
+  ventral visual stream          0.2842
+SAVED experiments/alexnet_dataset_comparison/results/torchvision_imagenet2012_nsd.json

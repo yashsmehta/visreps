@@ -93,8 +93,7 @@ def load_trained_alexnet(checkpoint_dir, n_classes, seed, device):
 
 
 def extract_features(model, loader, device, layers, pool_size=3, l2_norm=False):
-    extractor = FeatureExtractor(model, return_nodes=layers,
-                                 extract_pre_and_post=False, post_relu=True)
+    extractor = FeatureExtractor(model, return_nodes=layers)
     extractor.to(device).eval()
     pool = nn.AdaptiveAvgPool2d((pool_size, pool_size))
 

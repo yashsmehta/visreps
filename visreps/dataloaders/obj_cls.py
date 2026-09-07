@@ -339,7 +339,7 @@ def _build_transform(cfg, split: str, *, shuffle: bool, preprocess: bool):
     if not augment:
         return _eval_transform(image_size=image_size)
 
-    augment_type = "mild" if cfg.get("model_class") == "custom_model" else "standard"
+    augment_type = cfg.get("augment_type", "mild" if cfg.get("model_class") == "custom_model" else "standard")
     if augment_type == "mild":
         return _train_transform_mild(image_size=image_size)
     return _train_transform_standard(image_size=image_size)
@@ -347,7 +347,14 @@ def _build_transform(cfg, split: str, *, shuffle: bool, preprocess: bool):
 
 def prepare_imgnet_data(cfg, pca_labels, shuffle, preprocess, train_test_split):
     """Build parquet-backed ImageNet datasets + dataloaders."""
-    if ImageNetParquet is None:
+    backend = cfg.get("imagenet_backend", "auto")
+    if backend not in {"auto", "folder", "parquet"}:
+        raise ValueError(f"Unknown imagenet_backend: {backend!r}")
+    if cfg.get("imagenet_version") is not None and backend != "folder":
+        raise ValueError("Explicit ImageNet version requires imagenet_backend='folder'")
+    if backend == "parquet" and ImageNetParquet is None:
+        raise ImportError("imagenet_backend='parquet' requires imagenet_loader")
+    if backend == "folder" or ImageNetParquet is None:
         # Lab cluster: no parquet package, ImageNet is a folder per class.
         from visreps.dataloaders.obj_cls_folder import prepare_imgnet_data as _folder
         return _folder(cfg, pca_labels, shuffle, preprocess, train_test_split)

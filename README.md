@@ -125,6 +125,12 @@ selection split; NSD/TVSD exclude all participating subjects' test images. Learn
 weights stay fixed, dropout stays off, and evaluation uses frozen recalibrated
 statistics. Models without BatchNorm are unchanged.
 
+Layer selection always uses post-activation features: `conv1`–`conv5`, `fc1`,
+and `fc2` for CustomCNN (seven candidates, after BatchNorm and ReLU).
+Other architectures retain their selected block outputs. There is no pre/post
+selection option. Result identities record this extraction protocol separately
+from historical pre/post results.
+
 Only BN buffers are cached in `model_checkpoints/bn_stats/`, keyed by the original
 model state, dataset, calibration image IDs, preprocessing, and calibration settings.
 Defaults are deterministic shuffled batches of 64; override `bn_calibration_batchsize`

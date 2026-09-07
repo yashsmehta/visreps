@@ -1,0 +1,98 @@
+  ✓ Loaded checkpoint (cfg32a)
+  Loaded BN statistics: model_checkpoints/bn_stats/nsd_62de1eaa5444a4c39249ea924b9cc736f40f5259c0e9842a64612a463841f5df.pt
+  ✓ 7 post-activation extraction points
+
+START clip32: {'early visual stream': 'fc1', 'ventral visual stream': 'fc1'}; 69566 NSD calibration images; 220 OOD test images
+  Test dataloader: 220 stimuli
+  Re-extracting fc1 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2/2 batches 0:00:02
+  ✓ Re-extracted fc1: torch.Size([220, 4096]) (exact, no SRP)
+
+  ── early visual stream · fc1 ──────────────────
+    S0   0.2644
+    S1   0.3403
+    S2   0.2855
+    S3   0.2549
+    S4   0.2826
+    S5   0.2401
+    S6   0.3025
+    S7   0.2056
+    ──────────────────────────────────
+    Mean     0.2720 ± 0.0382
+
+  ── ventral visual stream · fc1 ────────────────
+    S0   0.2818
+    S1   0.3797
+    S2   0.2743
+    S3   0.2466
+    S4   0.2200
+    S5   0.1301
+    S6   0.2167
+    S7   0.0862
+    ──────────────────────────────────
+    Mean     0.2294 ± 0.0854
+
+  ══════════════════════════════════════════════
+  early visual stream            0.2720
+  ventral visual stream          0.2294
+  ✓ Loaded checkpoint (cfg1000a)
+  Loaded BN statistics: model_checkpoints/bn_stats/nsd_e7f393b371ff50e15262bde74be57e1591606296a516b3762e962b484c3cb937.pt
+  ✓ 7 post-activation extraction points
+
+START default1000: {'early visual stream': 'conv4', 'ventral visual stream': 'fc2'}; 69566 NSD calibration images; 220 OOD test images
+  Test dataloader: 220 stimuli
+  Re-extracting conv4 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2/2 batches 0:00:03
+  ✓ Re-extracted conv4: torch.Size([220, 64896]) (exact, no SRP)
+  Re-extracting fc2 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2/2 batches 0:00:01
+  ✓ Re-extracted fc2: torch.Size([220, 4096]) (exact, no SRP)
+
+  ── early visual stream · conv4 ────────────────
+    S0   0.1305
+    S1   0.1877
+    S2   0.1051
+    S3   0.1528
+    S4   0.1486
+    S5   0.1404
+    S6   0.1531
+    S7   0.1246
+    ──────────────────────────────────
+    Mean     0.1428 ± 0.0228
+
+  ── ventral visual stream · fc2 ────────────────
+    S0   0.3504
+    S1   0.4269
+    S2   0.3117
+    S3   0.2840
+    S4   0.2493
+    S5   0.1700
+    S6   0.2605
+    S7   0.1051
+    ──────────────────────────────────
+    Mean     0.2697 ± 0.0940
+
+  ══════════════════════════════════════════════
+  early visual stream            0.1428
+  ventral visual stream          0.2697
+               region       model  mean_score       sd layer
+  early visual stream      clip32    0.271976 0.040827   fc1
+  early visual stream default1000    0.142845 0.024410 conv4
+ventral visual stream      clip32    0.229439 0.091244   fc1
+ventral visual stream default1000    0.269736 0.100518   fc2
+model                                clip32  default1000  clip32_minus_default1000
+region                subject_idx                                                 
+early visual stream   0            0.264383     0.130509                  0.133875
+                      1            0.340301     0.187717                  0.152584
+                      2            0.285465     0.105054                  0.180411
+                      3            0.254915     0.152801                  0.102115
+                      4            0.282618     0.148615                  0.134003
+                      5            0.240099     0.140393                  0.099705
+                      6            0.302461     0.153098                  0.149363
+                      7            0.205568     0.124576                  0.080992
+ventral visual stream 0            0.281847     0.350364                 -0.068517
+                      1            0.379692     0.426939                 -0.047246
+                      2            0.274306     0.311658                 -0.037353
+                      3            0.246649     0.283990                 -0.037342
+                      4            0.220037     0.249298                 -0.029261
+                      5            0.130116     0.170038                 -0.039922
+                      6            0.216718     0.260517                 -0.043800
+                      7            0.086151     0.105083                 -0.018931
+Verified database unchanged

@@ -3,12 +3,12 @@ import torch
 import torch.nn as nn
 from .ecnet import ECTiedNet as _ECTiedNet
 
-def AlexNet(pretrained_dataset="imagenet1k", num_classes=1000):
+def AlexNet(pretrained_dataset="imagenet1k", num_classes=1000, dropout=0.5):
     """AlexNet with optional ImageNet pretraining."""
     if pretrained_dataset == "imagenet1k":
-        model = models.alexnet(weights=models.AlexNet_Weights.IMAGENET1K_V1)
+        model = models.alexnet(weights=models.AlexNet_Weights.IMAGENET1K_V1, dropout=dropout)
     elif pretrained_dataset == "none":
-        model = models.alexnet(weights=None)
+        model = models.alexnet(weights=None, dropout=dropout)
     else:
         raise ValueError(f"Invalid pretrained dataset: {pretrained_dataset}")
     
@@ -218,4 +218,3 @@ def ConvNeXt_Base(pretrained_dataset="imagenet1k", num_classes=None):
         torch.nn.init.zeros_(model.classifier[2].bias)
 
     return model
-

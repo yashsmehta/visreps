@@ -1,0 +1,11 @@
+[
+  "neural_dataset=things-behavior",
+  "num_workers=8",
+  "batchsize=128",
+  "log_expdata=false",
+  "bootstrap=false",
+  "reconstruct_from_pcs=false",
+  "load_model_from=torchvision",
+  "model_name=AlexNet",
+  "pretrained_dataset=imagenet1k"
+]

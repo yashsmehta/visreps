@@ -1,7 +1,6 @@
 """Feature extraction, layer naming, and config validation (no weights downloaded)."""
 import pytest
 import torch
-import torchvision.models as tv_models
 from omegaconf import OmegaConf
 
 from visreps.evals import _listify, _set_torchvision_cfg
@@ -12,19 +11,33 @@ from visreps.utils import ConfigVerifier, get_seed_letter
 
 
 def _extract(model, nodes):
-    fe = FeatureExtractor(model.eval(), {n: n for n in nodes}, extract_pre_and_post=True)
+    fe = FeatureExtractor(model.eval(), {n: n for n in nodes})
     with torch.no_grad():
         return fe(torch.randn(2, 3, 224, 224))
 
 
 # ───────────────────────── feature extraction ─────────────────────────
-@pytest.mark.parametrize("model", [CustomCNN(num_classes=8), tv_models.alexnet()])
-def test_pre_activations_are_not_overwritten_by_inplace_relu(model):
-    out = _extract(model, ["conv1", "fc1"])
-    for layer in ["conv1", "fc1"]:
-        assert out[f"{layer}_pre"].min() < 0, f"{layer}_pre looks post-ReLU"
-        assert out[f"{layer}_post"].min() >= 0
-        assert not torch.equal(out[f"{layer}_pre"], out[f"{layer}_post"])
+@pytest.mark.parametrize("normalization", [True, False])
+def test_features_are_post_normalization_and_activation(normalization):
+    from torch import nn
+    model = nn.Module()
+    norm = nn.BatchNorm2d(2) if normalization else nn.Identity()
+    if normalization:
+        with torch.no_grad():
+            norm.running_mean.fill_(3)
+            norm.running_var.fill_(4)
+            norm.weight.fill_(2)
+            norm.bias.fill_(-1)
+    model.features = nn.Sequential(nn.Conv2d(3, 2, 1), norm, nn.ReLU(inplace=True))
+    model.classifier = nn.Sequential(nn.Flatten(), nn.Linear(8, 2))
+    model.forward = lambda x: model.classifier(model.features(x))
+    model.eval()
+    x = torch.randn(2, 3, 2, 2)
+    expected = norm(model.features[0](x)).detach().clone()
+    extractor = FeatureExtractor(model, {"conv1": "conv1"})
+    out = extractor(x)
+    assert set(out) == {"conv1"}
+    torch.testing.assert_close(out["conv1"], expected.relu())
 
 
 @pytest.mark.parametrize("model_name", ["AlexNet", "VGG16", "ResNet50", "ViTBase", "ConvNeXt_Base"])
@@ -33,7 +46,7 @@ def test_every_declared_return_node_produces_output(model_name):
     nodes = TORCHVISION_RETURN_NODES[model_name]
     out = _extract(model, nodes)
     for node in nodes:
-        assert any(k in out for k in (node, f"{node}_pre", f"{node}_post")), f"{node} missing: {list(out)}"
+        assert node in out, f"{node} missing: {list(out)}"
     assert all(t.shape[0] == 2 for t in out.values())
 
 
@@ -54,8 +67,13 @@ def test_timm_extractor_return_nodes(model_name, timm_id):
 
 def test_custom_cnn_layer_names_and_forward():
     model = CustomCNN(num_classes=10)
-    fe = FeatureExtractor(model.eval(), {n: n for n in ["conv1", "conv5", "fc2"]})
-    assert set(fe.layer_mapping) == {"conv1_pre", "conv1_post", "conv5_pre", "conv5_post", "fc2_pre", "fc2_post"}
+    nodes = TORCHVISION_RETURN_NODES["CustomCNN"]
+    fe = FeatureExtractor(model.eval(), {n: n for n in nodes})
+    with torch.no_grad():
+        out = fe(torch.randn(2, 3, 224, 224))
+    assert len(out) == 7
+    assert set(out) == set(nodes)
+    assert all((value >= 0).all() for value in out.values())
     with torch.no_grad():
         assert model(torch.randn(2, 3, 224, 224)).shape == (2, 10)
 

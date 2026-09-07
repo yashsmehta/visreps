@@ -1,0 +1,12 @@
+[
+  "neural_dataset=nsd",
+  "num_workers=8",
+  "batchsize=128",
+  "log_expdata=false",
+  "bootstrap=false",
+  "reconstruct_from_pcs=false",
+  "load_model_from=checkpoint",
+  "cfg_id=1000",
+  "checkpoint_dir=model_checkpoints/alexnet_imagenet2010_cnn_recipe",
+  "checkpoint_model=checkpoint_epoch_20.pth"
+]

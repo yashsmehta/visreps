@@ -310,6 +310,8 @@ def _compute_run_id(cfg) -> str:
     identity["subject_idx"] = str(identity.get("subject_idx"))
     if cfg.get("bn_calibration") not in (None, "none"):
         identity["bn_calibration"] = cfg.bn_calibration
+    if cfg.get("feature_extraction"):
+        identity["feature_extraction"] = cfg.feature_extraction
     if cfg.get("encoding_solver", "fast") != "fast":  # default keeps existing run_ids
         identity["encoding_solver"] = cfg.encoding_solver
     raw = json.dumps(identity, sort_keys=True)
@@ -536,7 +538,7 @@ class ConfigVerifier:
     VALID_MODEL_SOURCES = {"checkpoint", "torchvision"}
     VALID_ANALYSES = {"rsa", "encoding_score"}
     VALID_COMPARE_METHODS = {"spearman", "kendall"}
-    VALID_NEURAL_DATASETS = {"nsd", "things-behavior", "tvsd"}
+    VALID_NEURAL_DATASETS = {"nsd", "nsd_synthetic", "things-behavior", "tvsd"}
     def __init__(self, cfg: OmegaConf):
         """Initialize verifier with configuration."""
         self.cfg = cfg
@@ -636,7 +638,7 @@ class ConfigVerifier:
                 )
                 self.cfg.subject_idx = "N/A"
 
-        if self.cfg.neural_dataset.lower() == "nsd":
+        if self.cfg.neural_dataset.lower() in ("nsd", "nsd_synthetic"):
             # Normalize subject_idx to list
             subj = self.cfg.subject_idx
             if isinstance(subj, int):

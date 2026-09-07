@@ -1,0 +1,5 @@
+{
+  "imagenet_version": "2010",
+  "dataset_path": "/data/shared/datasets/imagenet",
+  "checkpoint_dir": "alexnet_imagenet2010_cnn_recipe"
+}

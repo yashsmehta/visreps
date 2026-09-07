@@ -44,30 +44,16 @@ TORCHVISION_RETURN_NODES = {
 }
 
 class FeatureExtractor(nn.Module):
-    def __init__(self, model: nn.Module, return_nodes: Dict[str, str] = None,
-                 post_relu: bool = True, extract_pre_and_post: bool = True):
+    def __init__(self, model: nn.Module, return_nodes: Dict[str, str]):
         super().__init__()
         self.model = model
         # If return_nodes is a list, convert to dict mapping name to itself
         if isinstance(return_nodes, list):
             return_nodes = {node: node for node in return_nodes}
         self.return_nodes = return_nodes
-        self.post_relu = post_relu
-        self.extract_pre_and_post = extract_pre_and_post
         self.features = {}
-        self.handles = []  # Initialize handles list
-
-        base_mapping = self._create_layer_mapping()
-
-        if self.extract_pre_and_post:
-            post_mapping = self._remap_to_post_relu(base_mapping)
-            self.layer_mapping, self.return_nodes = self._build_pre_post_mapping(
-                base_mapping, post_mapping
-            )
-        elif self.post_relu:
-            self.layer_mapping = self._remap_to_post_relu(base_mapping)
-        else:
-            self.layer_mapping = base_mapping
+        self.handles = []
+        self.layer_mapping = self._activation_mapping(self._create_layer_mapping())
 
         self._attach_hooks()
         
@@ -179,110 +165,41 @@ class FeatureExtractor(nn.Module):
                     fc_count += 1
                     seen_modules.add(id(module))
         
-        for semantic_name, path in sorted(mapping.items()):
-            module = dict(self.model.named_modules())[path]
-        
         return mapping
 
-    def _remap_to_post_relu(self, mapping):
-        """Remap layer paths from Conv2d/Linear to their downstream activation fn.
-
-        For Sequential containers (AlexNet/VGG/CustomCNN), searches forward from
-        each mapped module to find the next ReLU/GELU/LeakyReLU in the sequence.
-        This gives post-normalization, post-ReLU activations — the actual output that
-        downstream layers (and, by analogy, downstream brain areas) receive.
-        """
-        relu_mapping = {}
-        requested = set(self.return_nodes or [])
-        for semantic_name, module_path in mapping.items():
-            if requested and semantic_name not in requested:
-                relu_mapping[semantic_name] = module_path
+    def _activation_mapping(self, mapping):
+        """Use downstream activations for CNN layers; retain block outputs."""
+        for name in self.return_nodes:
+            path = mapping[name]
+            if isinstance(self.model, torchvision.models.resnet.ResNet) and path == "conv1":
+                mapping[name] = "relu"
                 continue
-            parts = module_path.split('.')
-            if len(parts) == 2:
-                container_name, idx_str = parts
-                container = getattr(self.model, container_name, None)
-                if container is not None and isinstance(container, nn.Sequential):
-                    try:
-                        module_idx = int(idx_str)
-                    except ValueError:
-                        relu_mapping[semantic_name] = module_path
-                        continue
-                    found = False
-                    for i in range(module_idx + 1, len(container)):
-                        if isinstance(container[i], (nn.ReLU, nn.GELU, nn.LeakyReLU)):
-                            relu_mapping[semantic_name] = f'{container_name}.{i}'
-                            found = True
-                            break
-                        # Stop if we hit another Conv/Linear (no activation for this layer)
-                        if isinstance(container[i], (nn.Conv2d, nn.Conv1d, nn.Conv3d, nn.Linear)):
-                            break
-                    if not found:
-                        relu_mapping[semantic_name] = module_path
-                else:
-                    relu_mapping[semantic_name] = module_path
-            else:
-                # Non-Sequential paths (e.g. ResNet 'layer1.0.conv1') — keep original
-                relu_mapping[semantic_name] = module_path
-        return relu_mapping
-
-    def _build_pre_post_mapping(self, base_mapping, post_mapping):
-        """Build expanded mapping with _pre and _post entries for each layer.
-
-        _pre  = raw Conv2d/Linear output (before normalization and ReLU)
-        _post = post-normalization, post-ReLU output
-
-        Layers where no activation function was found (base == post path)
-        are kept as a single entry with no suffix.
-        """
-        combined_mapping = {}
-        expanded_return_nodes = {}
-
-        for semantic_name, output_name in (self.return_nodes or {}).items():
-            base_path = base_mapping.get(semantic_name)
-            post_path = post_mapping.get(semantic_name)
-
-            if base_path is None:
-                print(f"Warning: {semantic_name} not found in base mapping")
+            parent, _, index = path.rpartition(".")
+            if not index.isdigit():
                 continue
-
-            if post_path is not None and base_path != post_path:
-                pre_name = f"{semantic_name}_pre"
-                post_name = f"{semantic_name}_post"
-                combined_mapping[pre_name] = base_path
-                combined_mapping[post_name] = post_path
-                expanded_return_nodes[pre_name] = pre_name
-                expanded_return_nodes[post_name] = post_name
-            else:
-                # No activation found downstream — keep single entry
-                combined_mapping[semantic_name] = base_path
-                expanded_return_nodes[semantic_name] = output_name
-
-        return combined_mapping, expanded_return_nodes
+            container = self.model.get_submodule(parent)
+            if not isinstance(container, nn.Sequential):
+                continue
+            for i in range(int(index) + 1, len(container)):
+                module = container[i]
+                if isinstance(module, (nn.ReLU, nn.GELU, nn.LeakyReLU)):
+                    mapping[name] = f"{parent}.{i}"
+                    break
+                if isinstance(module, (nn.Conv1d, nn.Conv2d, nn.Conv3d, nn.Linear)):
+                    break
+        return mapping
 
     def _attach_hooks(self):
-        # Convert semantic names to actual layer paths
-        actual_nodes = {}
-        for semantic_name in self.return_nodes:
-            if semantic_name in self.layer_mapping:
-                actual_path = self.layer_mapping[semantic_name]
-                actual_nodes[actual_path] = self.return_nodes[semantic_name]
-            else:
-                print(f"Warning: {semantic_name} not found in model")
-        
-        # Attach hooks using actual paths
-        for name, module in self.model.named_modules():
-            if name in actual_nodes:
-                def get_hook(name):
-                    def hook(module, input, output):
-                        # Clone: a downstream in-place ReLU would otherwise overwrite
-                        # the captured pre-activation tensor (torchvision AlexNet/VGG).
-                        self.features[actual_nodes[name]] = output.clone()
-                    return hook
-                
-                handle = module.register_forward_hook(get_hook(name))
-                self.handles.append(handle)
-    
+        modules = dict(self.model.named_modules())
+        for semantic_name, output_name in self.return_nodes.items():
+            path = self.layer_mapping[semantic_name]
+
+            def hook(module, inputs, output, key=output_name):
+                self.features[key] = output.clone()
+
+            handle = modules[path].register_forward_hook(hook)
+            self.handles.append(handle)
+
     def forward(self, x):
         self.features.clear()
         self.model(x)
@@ -293,6 +210,7 @@ class FeatureExtractor(nn.Module):
             handle.remove()
 
 def configure_feature_extractor(cfg, model, verbose=False):
+    cfg.feature_extraction = "post_activation_v1"
     return_nodes = OmegaConf.to_container(cfg.get("return_nodes", {}), resolve=True)
     if not return_nodes:
         raise ValueError("return_nodes must be specified in config")
@@ -306,14 +224,11 @@ def configure_feature_extractor(cfg, model, verbose=False):
         return model
 
     model.eval()
-    extractor = FeatureExtractor(model, return_nodes, extract_pre_and_post=True)
+    extractor = FeatureExtractor(model, return_nodes)
     n_points = len(extractor.return_nodes)
-    n_layers = len(return_nodes)
-    suffix = f" ({n_layers} layers × pre/post)" if n_points > n_layers else ""
-    rprint(f"  ✓ {n_points} extraction points{suffix}", style="success")
+    rprint(f"  ✓ {n_points} post-activation extraction points", style="success")
     if verbose:
         rprint(f"    Layers: {list(return_nodes.keys())}", style="info")
-        rprint(f"    Points: {list(extractor.return_nodes.keys())}", style="info")
     return extractor
 
 
@@ -406,7 +321,7 @@ def extract_single_layer(
         model: FeatureExtractor (same as used for SRP extraction).
         dataloader: Same dataloader (covers all stimuli, shuffle=False).
         device: GPU device.
-        layer_name: Layer to extract, e.g. "conv5_post".
+        layer_name: Layer to extract, e.g. "conv5".
         stimulus_ids: If provided, only keep activations for these IDs.
 
     Returns:
@@ -507,7 +422,8 @@ def load_model(cfg, device, num_classes=None, verbose=False):
         pretrained_dataset = getattr(cfg, 'pretrained_dataset', "none")
         
         # Load model - classifier layer is already replaced in model_fn
-        model = model_fn(pretrained_dataset, num_classes)
+        kwargs = {"dropout": cfg.get("dropout", 0.5)} if model_name == "AlexNet" else {}
+        model = model_fn(pretrained_dataset, num_classes, **kwargs)
 
     return model.to(device)
 

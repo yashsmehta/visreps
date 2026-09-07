@@ -87,6 +87,11 @@ class ExperimentRunner:
             params.update(fixed_params)
             params.update(self.extra_overrides)
 
+            skip_reason = self.should_skip(params)
+            if skip_reason:
+                console.print(f"  [dim]{global_idx}/{total}  skip · {skip_reason}[/dim]")
+                continue
+
             params = self.process_params(params, global_idx, total)
 
             self._run_single(params)
@@ -96,6 +101,10 @@ class ExperimentRunner:
     def print_sweep_summary(self, total: int, n_grids: int):
         """Hook for subclasses to print a sweep-level summary."""
         console.print(f"  {total} runs across {n_grids} grid group{'s' if n_grids > 1 else ''}", style="dim")
+
+    def should_skip(self, params: Dict[str, Any]) -> Optional[str]:
+        """Hook for subclasses: return a reason string to skip this run, else None."""
+        return None
 
     def process_params(self, params: Dict[str, Any],
                        run_idx: int, total: int) -> Dict[str, Any]:

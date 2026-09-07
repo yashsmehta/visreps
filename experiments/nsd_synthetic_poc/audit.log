@@ -1,0 +1,52 @@
+{
+  "pngs_exactly_match_hdf5": 220,
+  "loader_tensors_exactly_match_reference": 220,
+  "raw_shape": [
+    714,
+    1360,
+    3
+  ],
+  "model_input_shape": [
+    3,
+    224,
+    224
+  ],
+  "legacy_blank_stimuli": [
+    "word4_pos1_1",
+    "word4_pos1_2",
+    "word4_pos1_3",
+    "word4_pos1_4",
+    "word4_pos5_1",
+    "word4_pos5_2",
+    "word4_pos5_3",
+    "word4_pos5_4",
+    "word6_pos1_1",
+    "word6_pos1_2",
+    "word6_pos1_3",
+    "word6_pos1_4",
+    "word6_pos5_1",
+    "word6_pos5_2",
+    "word6_pos5_3",
+    "word6_pos5_4"
+  ],
+  "reference_blank_stimuli": [
+    "word4_pos1_1",
+    "word4_pos1_2",
+    "word4_pos1_3",
+    "word4_pos1_4",
+    "word4_pos5_1",
+    "word4_pos5_2",
+    "word4_pos5_3",
+    "word4_pos5_4",
+    "word6_pos1_1",
+    "word6_pos1_2",
+    "word6_pos1_3",
+    "word6_pos1_4",
+    "word6_pos5_1",
+    "word6_pos5_2",
+    "word6_pos5_3",
+    "word6_pos5_4"
+  ],
+  "reference_source": "https://github.com/gifale95/NSD-synthetic/blob/0628d49f5441e5429fcc26468d0938d368e3ed45/paper_figure_4/01_extract_nsdsynthetic_image_features.py",
+  "transform": "SyntheticReferenceTransform(sqrt_uint8, CenterCrop(min_size), Resize(224,224,bilinear), ToTensor, ImageNetNormalize)"
+}

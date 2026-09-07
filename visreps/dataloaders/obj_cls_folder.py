@@ -135,13 +135,19 @@ def prepare_imgnet_data(cfg, pca_labels, shuffle, preprocess, train_test_split):
     """Build folder-backed ImageNet datasets + dataloaders."""
     from visreps.dataloaders.obj_cls import create_dataloader, get_transform
 
+    version = str(cfg.get("imagenet_version", "2010"))
+    if version not in {"2010", "2012"}:
+        raise ValueError(f"Unsupported imagenet_version: {version!r}")
+    if version == "2012":
+        return prepare_imagenet2012(cfg, pca_labels, shuffle, preprocess, train_test_split)
+
     base_path = resolve_dataset_path(cfg)
     splits = ["train", "test"] if train_test_split else ["all"]
     datasets, loaders, info = {}, {}, []
 
     for split in splits:
         augment = cfg.get("data_augment", False) and split == "train" and shuffle and preprocess
-        augment_type = "mild" if cfg.get("model_class") == "custom_model" else "standard"
+        augment_type = cfg.get("augment_type", "mild" if cfg.get("model_class") == "custom_model" else "standard")
         tfms = get_transform(ds_stats="imgnet", data_augment=augment, image_size=224,
                              preprocess=preprocess, augment_type=augment_type)
         dataset = ImageNetDataset(base_path, split=split, transform=tfms,
@@ -160,4 +166,42 @@ def prepare_imgnet_data(cfg, pca_labels, shuffle, preprocess, train_test_split):
         info.append(f"{split}={len(dataset)}")
 
     print(f"📊 ImageNet ({cfg.get('dataset', 'imagenet')}, folder backend): {', '.join(info)}")
+    return datasets, loaders
+
+
+def prepare_imagenet2012(cfg, pca_labels, shuffle, preprocess, train_test_split):
+    """Official 2012 train/val folders; derive labels from their own synsets."""
+    from torchvision.datasets import ImageFolder
+    from visreps.dataloaders.obj_cls import create_dataloader, get_transform
+
+    if pca_labels:
+        raise ValueError("ImageNet-2012 folder backend supports original labels only")
+    root = cfg.get("dataset_path")
+    if not root:
+        raise ValueError("Set dataset_path to ImageNet-2012 with train/<wnid> and val/<wnid>")
+    if cfg.get("train_fraction", 1.0) != 1.0:
+        raise ValueError("ImageNet-2012 folder backend requires train_fraction=1.0")
+    datasets, loaders = {}, {}
+    mapping = None
+    for split in (["train", "test"] if train_test_split else ["all"]):
+        folder = Path(root) / ("val" if split == "test" else "train")
+        augment = cfg.get("data_augment", False) and split == "train" and shuffle and preprocess
+        transform = get_transform(
+            data_augment=augment, preprocess=preprocess,
+            image_size=cfg.get("image_size", 224),
+            augment_type=cfg.get("augment_type", "mild" if cfg.get("model_class") == "custom_model" else "standard"),
+        )
+        dataset = ImageFolder(folder, transform=transform)
+        if len(dataset.classes) != 1000:
+            raise ValueError(f"Expected 1000 ImageNet-2012 classes in {folder}, got {len(dataset.classes)}")
+        if mapping is not None and dataset.class_to_idx != mapping:
+            raise ValueError("ImageNet-2012 train/val class mappings differ")
+        mapping = dataset.class_to_idx
+        dataset.num_classes = len(dataset.classes)
+        datasets[split] = dataset
+        loaders[split] = create_dataloader(
+            dataset, batch_size=cfg.get("batchsize", 32),
+            num_workers=cfg.get("num_workers", 8), shuffle=shuffle and split == "train",
+        )
+    print("📊 ImageNet-2012 (official splits): " + ", ".join(f"{s}={len(d)}" for s, d in datasets.items()))
     return datasets, loaders

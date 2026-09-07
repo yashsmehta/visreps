@@ -8,7 +8,7 @@ from torchvision import transforms
 import h5py
 
 import visreps.utils as utils
-from visreps.dataloaders.obj_cls import get_transform
+from visreps.dataloaders.obj_cls import get_transform, DS_MEAN, DS_STD
 logger = logging.getLogger(__name__)
 
 
@@ -46,7 +46,7 @@ def load_nsd_data(cfg: Dict) -> Tuple[Dict[str, Dict[str, np.ndarray]], Dict[str
     subj = cfg["subject_idx"]
 
     root = utils.get_env_var("NSD_DATA_DIR")
-    nsd = utils.load_pickle(os.path.join(root, "nsd_data.pkl"))
+    nsd = utils.load_pickle(os.path.join(root, cfg.get("nsd_data_file", "nsd_data.pkl")))
 
     shared_ids = nsd["shared_ids"]
     fmri_xr = nsd["data"][region_key][subj]
@@ -125,7 +125,7 @@ def load_all_nsd_data(cfg: Dict, subjects=None, regions=None) -> Dict:
 
     ``nsd_data.pkl`` is the reliable-voxel default for all evaluations. The
     preprocessing pipeline preserves all ROI voxels separately in
-    ``nsd_data_unfiltered.pkl``.
+    ``nsd_data_unfiltered.pkl``; select it with ``cfg.nsd_data_file``.
 
     Args:
         cfg: Config dict.
@@ -145,7 +145,7 @@ def load_all_nsd_data(cfg: Dict, subjects=None, regions=None) -> Dict:
                     if regions is None or name in regions]
 
     root = utils.get_env_var("NSD_DATA_DIR")
-    nsd = utils.load_pickle(os.path.join(root, "nsd_data.pkl"))
+    nsd = utils.load_pickle(os.path.join(root, cfg.get("nsd_data_file", "nsd_data.pkl")))
     shared_ids = nsd["shared_ids"]
 
     neural = {}
@@ -191,6 +191,75 @@ def load_all_nsd_data(cfg: Dict, subjects=None, regions=None) -> Dict:
         "stimuli": stimuli,
         "shared_test_ids": shared_test_ids,
     }
+
+
+# ──────────────────── NSD-SYNTHETIC ─────────────────────
+class NsdSyntheticTransform:
+    """Input transform used by the NSD-synthetic authors (Gifford et al. 2025).
+
+    The raw images are 714x1360: a centred 714x714 content square with grey
+    padding either side. Squaring with ``CenterCrop`` before resizing keeps the
+    whole square, unlike the standard ``Resize(256) + CenterCrop(224)`` pipeline,
+    which clips a 45-pixel band and truncates the word-position stimuli.
+    Reference: gifale95/NSD-synthetic, paper_figure_4/01_extract_nsdsynthetic_image_features.py
+    """
+
+    def __init__(self, ds_stats: str = "imgnet"):
+        self.after_crop = transforms.Compose([
+            transforms.Resize((224, 224), interpolation=transforms.InterpolationMode.BILINEAR),
+            transforms.ToTensor(),
+            transforms.Normalize(DS_MEAN[ds_stats], DS_STD[ds_stats]),
+        ])
+
+    def __call__(self, image):
+        linear = (np.sqrt(np.asarray(image.convert("RGB")) / 255) * 255).astype(np.uint8)
+        square = Image.fromarray(linear)
+        return self.after_crop(transforms.CenterCrop(min(square.size))(square))
+
+    def __repr__(self):
+        return "NsdSyntheticTransform(sqrt, CenterCrop(min_size), Resize(224), ToTensor, Normalize)"
+
+
+# Words at retinal positions 1 and 5 lie outside the 714x714 content square, so these
+# 16 stimuli are blank after cropping: pixel-identical images that inflate RDM structure.
+_BLANK_AFTER_CROP = {f"word{n}_pos{p}_{i}" for n in (4, 6) for p in (1, 5) for i in range(1, 5)}
+
+
+def load_all_nsd_synthetic_data(cfg: Dict, subjects=None, regions=None) -> Dict:
+    """Load NCSNR-filtered NSD-synthetic responses: 204 shared stimuli, test only.
+
+    Same subjects and region names as NSD, so an eval config can swap
+    ``neural_dataset`` from ``nsd`` to ``nsd_synthetic`` and nothing else. There
+    is no train split — the per-ROI layer comes from the matching regular-NSD run.
+
+    Returns:
+        dict with keys "regions", "subjects", "neural" ({region: {subj: {sid: resp}}}),
+        "stimuli" ({sid: png path}) and "test_ids".
+    """
+    subjects = subjects if subjects is not None else _NSD_SUBJECTS
+    region_pairs = [(pkl_key, name) for name, pkl_key in _NSD_REGION_MAP.items()
+                    if regions is None or name in regions]
+
+    root = os.path.join("datasets", "neural", "nsd_synthetic")
+    synth = utils.load_pickle(os.path.join(
+        root, cfg.get("nsd_synthetic_data_file", "nsd_synthetic_data.pkl")))
+    test_ids = [sid for sid in synth["shared_stimulus_names"] if sid not in _BLANK_AFTER_CROP]
+
+    neural = {
+        name: {subj: {sid: synth["data"][pkl_key][subj].sel(stimulus=sid).values
+                      for sid in test_ids}
+               for subj in subjects}
+        for pkl_key, name in region_pairs
+    }
+    stimuli = {sid: os.path.join(root, "stimuli", f"{sid}.png") for sid in test_ids}
+
+    region_names = [name for _, name in region_pairs]
+    logger.info(
+        f"Loaded NSD-synthetic: {len(subjects)} subjects x {len(region_names)} regions, "
+        f"{len(test_ids)} stimuli (NCSNR > {synth['ncsnr_threshold']})"
+    )
+    return {"regions": region_names, "subjects": list(subjects),
+            "neural": neural, "stimuli": stimuli, "test_ids": test_ids}
 
 
 # ──────────────────────── THINGS ────────────────────────

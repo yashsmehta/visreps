@@ -1,0 +1,440 @@
+
+START tvsd_clip32_saved_imagenet
+
+  ── RSA · Spearman ────────────────────────────
+  cfg32a · seed 1 · epoch 20
+  TVSD · 2 subjects × 3 regions
+
+  ✓ Loaded checkpoint (cfg32a)
+  22348 stimuli, 100 shared test
+  Using original checkpoint BN buffers; no recalibration
+  ✓ 7 post-activation extraction points
+  ✓ SRP transformers for 7 layers (k=4096)
+  Extracting activations ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 175/175 batches 0:00:30
+  Activations extracted once for all subjects/regions
+
+  Phase 1: Per-subject layer selection
+    V1: conv3 (mean selection score 0.0732 across 2 subjects)
+    V4: fc1 (mean selection score 0.1752 across 2 subjects)
+    IT: fc1 (mean selection score 0.1185 across 2 subjects)
+  Freed bulk SRP activations
+
+  Phase 2: Test evaluation
+  Test dataloader: 100 stimuli
+  Re-extracting conv3 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1/1 batches 0:00:00
+  ✓ Re-extracted conv3: torch.Size([100, 64896]) (exact, no SRP)
+  Re-extracting fc1 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1/1 batches 0:00:00
+  ✓ Re-extracted fc1: torch.Size([100, 4096]) (exact, no SRP)
+
+  ── V1 · conv3 ─────────────────────────────────
+    S0   0.1527
+    S1   0.1686
+    ──────────────────────────────────
+    Mean     0.1607 ± 0.0080
+
+  ── V4 · fc1 ───────────────────────────────────
+    S0   0.2623
+    S1   0.1490
+    ──────────────────────────────────
+    Mean     0.2056 ± 0.0566
+
+  ── IT · fc1 ───────────────────────────────────
+    S0   0.1446
+    S1   0.1529
+    ──────────────────────────────────
+    Mean     0.1488 ± 0.0042
+
+  ══════════════════════════════════════════════
+  V1                             0.1607
+  V4                             0.2056
+  IT                             0.1488
+SAVED experiments/bn_recalibration/dataset_stats_comparison/tvsd_clip32_saved_imagenet.json
+
+START tvsd_clip32_dataset_recalibrated
+
+  ── RSA · Spearman ────────────────────────────
+  cfg32a · seed 1 · epoch 20
+  TVSD · 2 subjects × 3 regions
+
+  ✓ Loaded checkpoint (cfg32a)
+  22348 stimuli, 100 shared test
+  Loaded BN statistics: model_checkpoints/bn_stats/tvsd_ceb2841de2eb1c5d75e6bc20eb1c913e96d9c5b3a923749d697df3040292211f.pt
+  ✓ 7 post-activation extraction points
+  ✓ SRP transformers for 7 layers (k=4096)
+  Extracting activations ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 175/175 batches 0:00:28
+  Activations extracted once for all subjects/regions
+
+  Phase 1: Per-subject layer selection
+    V1: conv3 (mean selection score 0.0839 across 2 subjects)
+    V4: fc1 (mean selection score 0.1858 across 2 subjects)
+    IT: fc1 (mean selection score 0.1270 across 2 subjects)
+  Freed bulk SRP activations
+
+  Phase 2: Test evaluation
+  Test dataloader: 100 stimuli
+  Re-extracting conv3 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1/1 batches 0:00:00
+  ✓ Re-extracted conv3: torch.Size([100, 64896]) (exact, no SRP)
+  Re-extracting fc1 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1/1 batches 0:00:00
+  ✓ Re-extracted fc1: torch.Size([100, 4096]) (exact, no SRP)
+
+  ── V1 · conv3 ─────────────────────────────────
+    S0   0.1683
+    S1   0.1759
+    ──────────────────────────────────
+    Mean     0.1721 ± 0.0038
+
+  ── V4 · fc1 ───────────────────────────────────
+    S0   0.2644
+    S1   0.1559
+    ──────────────────────────────────
+    Mean     0.2101 ± 0.0543
+
+  ── IT · fc1 ───────────────────────────────────
+    S0   0.1516
+    S1   0.1493
+    ──────────────────────────────────
+    Mean     0.1505 ± 0.0011
+
+  ══════════════════════════════════════════════
+  V1                             0.1721
+  V4                             0.2101
+  IT                             0.1505
+SAVED experiments/bn_recalibration/dataset_stats_comparison/tvsd_clip32_dataset_recalibrated.json
+
+START tvsd_default1000_saved_imagenet
+
+  ── RSA · Spearman ────────────────────────────
+  cfg1000a · seed 1 · epoch 20
+  TVSD · 2 subjects × 3 regions
+
+  ✓ Loaded checkpoint (cfg1000a)
+  22348 stimuli, 100 shared test
+  Using original checkpoint BN buffers; no recalibration
+  ✓ 7 post-activation extraction points
+  ✓ SRP transformers for 7 layers (k=4096)
+  Extracting activations ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 175/175 batches 0:00:28
+  Activations extracted once for all subjects/regions
+
+  Phase 1: Per-subject layer selection
+    V1: fc1 (mean selection score 0.0742 across 2 subjects)
+    V4: fc1 (mean selection score 0.1840 across 2 subjects)
+    IT: fc1 (mean selection score 0.1257 across 2 subjects)
+  Freed bulk SRP activations
+
+  Phase 2: Test evaluation
+  Test dataloader: 100 stimuli
+  Re-extracting fc1 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1/1 batches 0:00:00
+  ✓ Re-extracted fc1: torch.Size([100, 4096]) (exact, no SRP)
+
+  ── V1 · fc1 ───────────────────────────────────
+    S0   0.0999
+    S1   0.1063
+    ──────────────────────────────────
+    Mean     0.1031 ± 0.0032
+
+  ── V4 · fc1 ───────────────────────────────────
+    S0   0.2753
+    S1   0.2008
+    ──────────────────────────────────
+    Mean     0.2381 ± 0.0372
+
+  ── IT · fc1 ───────────────────────────────────
+    S0   0.1685
+    S1   0.1728
+    ──────────────────────────────────
+    Mean     0.1707 ± 0.0021
+
+  ══════════════════════════════════════════════
+  V1                             0.1031
+  V4                             0.2381
+  IT                             0.1707
+SAVED experiments/bn_recalibration/dataset_stats_comparison/tvsd_default1000_saved_imagenet.json
+
+START tvsd_default1000_dataset_recalibrated
+
+  ── RSA · Spearman ────────────────────────────
+  cfg1000a · seed 1 · epoch 20
+  TVSD · 2 subjects × 3 regions
+
+  ✓ Loaded checkpoint (cfg1000a)
+  22348 stimuli, 100 shared test
+  Loaded BN statistics: model_checkpoints/bn_stats/tvsd_fc9387254c3964aee6abf43fa59e1cd04df2bef6ff45269ceb083d74c86232da.pt
+  ✓ 7 post-activation extraction points
+  ✓ SRP transformers for 7 layers (k=4096)
+  Extracting activations ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 175/175 batches 0:00:28
+  Activations extracted once for all subjects/regions
+
+  Phase 1: Per-subject layer selection
+    V1: fc1 (mean selection score 0.0833 across 2 subjects)
+    V4: fc1 (mean selection score 0.1880 across 2 subjects)
+    IT: fc1 (mean selection score 0.1299 across 2 subjects)
+  Freed bulk SRP activations
+
+  Phase 2: Test evaluation
+  Test dataloader: 100 stimuli
+  Re-extracting fc1 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1/1 batches 0:00:00
+  ✓ Re-extracted fc1: torch.Size([100, 4096]) (exact, no SRP)
+
+  ── V1 · fc1 ───────────────────────────────────
+    S0   0.1063
+    S1   0.1132
+    ──────────────────────────────────
+    Mean     0.1097 ± 0.0035
+
+  ── V4 · fc1 ───────────────────────────────────
+    S0   0.2773
+    S1   0.2055
+    ──────────────────────────────────
+    Mean     0.2414 ± 0.0359
+
+  ── IT · fc1 ───────────────────────────────────
+    S0   0.1837
+    S1   0.1708
+    ──────────────────────────────────
+    Mean     0.1773 ± 0.0065
+
+  ══════════════════════════════════════════════
+  V1                             0.1097
+  V4                             0.2414
+  IT                             0.1773
+SAVED experiments/bn_recalibration/dataset_stats_comparison/tvsd_default1000_dataset_recalibrated.json
+
+START nsd_clip32_saved_imagenet
+
+  ── RSA · Spearman ────────────────────────────
+  cfg32a · seed 1 · epoch 20
+  NSD · 8 subjects × 2 regions
+
+  ✓ Loaded checkpoint (cfg32a)
+  70566 stimuli, 907 shared test
+  Using original checkpoint BN buffers; no recalibration
+  ✓ 7 post-activation extraction points
+  ✓ SRP transformers for 7 layers (k=4096)
+  Extracting activations ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 552/552 batches 0:00:36
+  Activations extracted once for all subjects/regions
+
+  Phase 1: Per-subject layer selection
+    early visual stream: conv4 (mean selection score 0.1545 across 8 subjects)
+    ventral visual stream: fc1 (mean selection score 0.2710 across 8 subjects)
+  Freed bulk SRP activations
+
+  Phase 2: Test evaluation
+  Test dataloader: 907 stimuli
+  Re-extracting conv4 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 8/8 batches 0:00:00
+  ✓ Re-extracted conv4: torch.Size([907, 64896]) (exact, no SRP)
+  Re-extracting fc1 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 8/8 batches 0:00:00
+  ✓ Re-extracted fc1: torch.Size([907, 4096]) (exact, no SRP)
+
+  ── early visual stream · conv4 ────────────────
+    S0   0.2780
+    S1   0.2423
+    S2   0.1854
+    S3   0.2240
+    S4   0.1943
+    S5   0.1924
+    S6   0.1784
+    S7   0.1917
+    ──────────────────────────────────
+    Mean     0.2108 ± 0.0323
+
+  ── ventral visual stream · fc1 ────────────────
+    S0   0.3275
+    S1   0.3304
+    S2   0.2870
+    S3   0.2738
+    S4   0.3225
+    S5   0.2711
+    S6   0.3172
+    S7   0.2471
+    ──────────────────────────────────
+    Mean     0.2971 ± 0.0294
+
+  ══════════════════════════════════════════════
+  early visual stream            0.2108
+  ventral visual stream          0.2971
+SAVED experiments/bn_recalibration/dataset_stats_comparison/nsd_clip32_saved_imagenet.json
+
+START nsd_clip32_dataset_recalibrated
+
+  ── RSA · Spearman ────────────────────────────
+  cfg32a · seed 1 · epoch 20
+  NSD · 8 subjects × 2 regions
+
+  ✓ Loaded checkpoint (cfg32a)
+  70566 stimuli, 907 shared test
+  Loaded BN statistics: model_checkpoints/bn_stats/nsd_62de1eaa5444a4c39249ea924b9cc736f40f5259c0e9842a64612a463841f5df.pt
+  ✓ 7 post-activation extraction points
+  ✓ SRP transformers for 7 layers (k=4096)
+  Extracting activations ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 552/552 batches 0:00:36
+  Activations extracted once for all subjects/regions
+
+  Phase 1: Per-subject layer selection
+    early visual stream: fc1 (mean selection score 0.1578 across 8 subjects)
+    ventral visual stream: fc1 (mean selection score 0.2913 across 8 subjects)
+  Freed bulk SRP activations
+
+  Phase 2: Test evaluation
+  Test dataloader: 907 stimuli
+  Re-extracting fc1 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 8/8 batches 0:00:01
+  ✓ Re-extracted fc1: torch.Size([907, 4096]) (exact, no SRP)
+
+  ── early visual stream · fc1 ──────────────────
+    S0   0.2039
+    S1   0.1751
+    S2   0.1429
+    S3   0.1735
+    S4   0.1898
+    S5   0.1863
+    S6   0.1414
+    S7   0.1602
+    ──────────────────────────────────
+    Mean     0.1716 ± 0.0208
+
+  ── ventral visual stream · fc1 ────────────────
+    S0   0.3396
+    S1   0.3551
+    S2   0.3119
+    S3   0.2985
+    S4   0.3448
+    S5   0.2833
+    S6   0.3279
+    S7   0.2640
+    ──────────────────────────────────
+    Mean     0.3156 ± 0.0299
+
+  ══════════════════════════════════════════════
+  early visual stream            0.1716
+  ventral visual stream          0.3156
+SAVED experiments/bn_recalibration/dataset_stats_comparison/nsd_clip32_dataset_recalibrated.json
+
+START nsd_default1000_saved_imagenet
+
+  ── RSA · Spearman ────────────────────────────
+  cfg1000a · seed 1 · epoch 20
+  NSD · 8 subjects × 2 regions
+
+  ✓ Loaded checkpoint (cfg1000a)
+  70566 stimuli, 907 shared test
+  Using original checkpoint BN buffers; no recalibration
+  ✓ 7 post-activation extraction points
+  ✓ SRP transformers for 7 layers (k=4096)
+  Extracting activations ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 552/552 batches 0:00:37
+  Activations extracted once for all subjects/regions
+
+  Phase 1: Per-subject layer selection
+    early visual stream: conv4 (mean selection score 0.1756 across 8 subjects)
+    ventral visual stream: fc1 (mean selection score 0.2220 across 8 subjects)
+  Freed bulk SRP activations
+
+  Phase 2: Test evaluation
+  Test dataloader: 907 stimuli
+  Re-extracting conv4 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 8/8 batches 0:00:01
+  ✓ Re-extracted conv4: torch.Size([907, 64896]) (exact, no SRP)
+  Re-extracting fc1 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 8/8 batches 0:00:00
+  ✓ Re-extracted fc1: torch.Size([907, 4096]) (exact, no SRP)
+
+  ── early visual stream · conv4 ────────────────
+    S0   0.3054
+    S1   0.2695
+    S2   0.2023
+    S3   0.2408
+    S4   0.2042
+    S5   0.2046
+    S6   0.1986
+    S7   0.2028
+    ──────────────────────────────────
+    Mean     0.2285 ± 0.0373
+
+  ── ventral visual stream · fc1 ────────────────
+    S0   0.2730
+    S1   0.2683
+    S2   0.2389
+    S3   0.2260
+    S4   0.2674
+    S5   0.2333
+    S6   0.2725
+    S7   0.2064
+    ──────────────────────────────────
+    Mean     0.2482 ± 0.0238
+
+  ══════════════════════════════════════════════
+  early visual stream            0.2285
+  ventral visual stream          0.2482
+SAVED experiments/bn_recalibration/dataset_stats_comparison/nsd_default1000_saved_imagenet.json
+
+START nsd_default1000_dataset_recalibrated
+
+  ── RSA · Spearman ────────────────────────────
+  cfg1000a · seed 1 · epoch 20
+  NSD · 8 subjects × 2 regions
+
+  ✓ Loaded checkpoint (cfg1000a)
+  70566 stimuli, 907 shared test
+  Loaded BN statistics: model_checkpoints/bn_stats/nsd_e7f393b371ff50e15262bde74be57e1591606296a516b3762e962b484c3cb937.pt
+  ✓ 7 post-activation extraction points
+  ✓ SRP transformers for 7 layers (k=4096)
+  Extracting activations ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 552/552 batches 0:00:37
+  Activations extracted once for all subjects/regions
+
+  Phase 1: Per-subject layer selection
+    early visual stream: conv4 (mean selection score 0.1832 across 8 subjects)
+    ventral visual stream: fc2 (mean selection score 0.2395 across 8 subjects)
+  Freed bulk SRP activations
+
+  Phase 2: Test evaluation
+  Test dataloader: 907 stimuli
+  Re-extracting conv4 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 8/8 batches 0:00:01
+  ✓ Re-extracted conv4: torch.Size([907, 64896]) (exact, no SRP)
+  Re-extracting fc2 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 8/8 batches 0:00:00
+  ✓ Re-extracted fc2: torch.Size([907, 4096]) (exact, no SRP)
+
+  ── early visual stream · conv4 ────────────────
+    S0   0.3211
+    S1   0.2821
+    S2   0.2074
+    S3   0.2483
+    S4   0.2137
+    S5   0.2157
+    S6   0.2072
+    S7   0.2109
+    ──────────────────────────────────
+    Mean     0.2383 ± 0.0398
+
+  ── ventral visual stream · fc2 ────────────────
+    S0   0.2770
+    S1   0.2867
+    S2   0.2547
+    S3   0.2489
+    S4   0.2943
+    S5   0.2411
+    S6   0.2764
+    S7   0.2191
+    ──────────────────────────────────
+    Mean     0.2623 ± 0.0239
+
+  ══════════════════════════════════════════════
+  early visual stream            0.2383
+  ventral visual stream          0.2623
+SAVED experiments/bn_recalibration/dataset_stats_comparison/nsd_default1000_dataset_recalibrated.json
+dataset                region       model         bn_condition  mean_score layer  n_subjects
+   tvsd                    V1      clip32       saved_imagenet    0.160652 conv3           2
+   tvsd                    V4      clip32       saved_imagenet    0.205644   fc1           2
+   tvsd                    IT      clip32       saved_imagenet    0.148761   fc1           2
+   tvsd                    V1      clip32 dataset_recalibrated    0.172090 conv3           2
+   tvsd                    V4      clip32 dataset_recalibrated    0.210119   fc1           2
+   tvsd                    IT      clip32 dataset_recalibrated    0.150469   fc1           2
+   tvsd                    V1 default1000       saved_imagenet    0.103109   fc1           2
+   tvsd                    V4 default1000       saved_imagenet    0.238077   fc1           2
+   tvsd                    IT default1000       saved_imagenet    0.170658   fc1           2
+   tvsd                    V1 default1000 dataset_recalibrated    0.109742   fc1           2
+   tvsd                    V4 default1000 dataset_recalibrated    0.241392   fc1           2
+   tvsd                    IT default1000 dataset_recalibrated    0.177289   fc1           2
+    nsd   early visual stream      clip32       saved_imagenet    0.210820 conv4           8
+    nsd ventral visual stream      clip32       saved_imagenet    0.297065   fc1           8
+    nsd   early visual stream      clip32 dataset_recalibrated    0.171634   fc1           8
+    nsd ventral visual stream      clip32 dataset_recalibrated    0.315644   fc1           8
+    nsd   early visual stream default1000       saved_imagenet    0.228522 conv4           8
+    nsd ventral visual stream default1000       saved_imagenet    0.248210   fc1           8
+    nsd   early visual stream default1000 dataset_recalibrated    0.238310 conv4           8
+    nsd ventral visual stream default1000 dataset_recalibrated    0.262288   fc2           8
+Confirmed: results.db SHA-256 unchanged

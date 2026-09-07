@@ -1,0 +1,98 @@
+[
+  {
+    "subject_idx": 0,
+    "region": "early",
+    "retained": 3909,
+    "total": 5917
+  },
+  {
+    "subject_idx": 0,
+    "region": "ventral",
+    "retained": 3531,
+    "total": 7604
+  },
+  {
+    "subject_idx": 1,
+    "region": "early",
+    "retained": 3058,
+    "total": 4611
+  },
+  {
+    "subject_idx": 1,
+    "region": "ventral",
+    "retained": 4132,
+    "total": 8185
+  },
+  {
+    "subject_idx": 2,
+    "region": "early",
+    "retained": 3284,
+    "total": 5148
+  },
+  {
+    "subject_idx": 2,
+    "region": "ventral",
+    "retained": 3528,
+    "total": 8167
+  },
+  {
+    "subject_idx": 3,
+    "region": "early",
+    "retained": 2769,
+    "total": 4054
+  },
+  {
+    "subject_idx": 3,
+    "region": "ventral",
+    "retained": 3427,
+    "total": 7645
+  },
+  {
+    "subject_idx": 4,
+    "region": "early",
+    "retained": 3636,
+    "total": 4494
+  },
+  {
+    "subject_idx": 4,
+    "region": "ventral",
+    "retained": 3371,
+    "total": 6619
+  },
+  {
+    "subject_idx": 5,
+    "region": "early",
+    "retained": 4857,
+    "total": 5860
+  },
+  {
+    "subject_idx": 5,
+    "region": "ventral",
+    "retained": 4437,
+    "total": 9666
+  },
+  {
+    "subject_idx": 6,
+    "region": "early",
+    "retained": 2804,
+    "total": 4559
+  },
+  {
+    "subject_idx": 6,
+    "region": "ventral",
+    "retained": 2554,
+    "total": 6515
+  },
+  {
+    "subject_idx": 7,
+    "region": "early",
+    "retained": 2415,
+    "total": 4596
+  },
+  {
+    "subject_idx": 7,
+    "region": "ventral",
+    "retained": 2654,
+    "total": 8350
+  }
+]

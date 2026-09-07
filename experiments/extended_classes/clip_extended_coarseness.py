@@ -5,7 +5,7 @@ labels on the custom CNN (epoch 20). Unlike Panel B of Figure 3, this uses a
 true log₂ x-axis (no axis break) since coarse labels extend to 1024.
 
 Usage:
-    python manuscript/figures/fig3/clip_extended_coarseness.py
+    python manuscript/figures/fig2/clip_extended_coarseness.py
 """
 
 import sys
@@ -23,7 +23,7 @@ sys.path.insert(0, "manuscript/figures")
 from fig_utils import setup_style
 
 # ── Config ───────────────────────────────────────────────────────────────
-OUTPUT_DIR = "manuscript/figures/fig3"
+OUTPUT_DIR = "manuscript/figures/fig2"
 COARSE_CFGS = [2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]
 PCA_FOLDER = "pca_labels_clip"
 

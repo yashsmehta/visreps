@@ -110,8 +110,7 @@ def create_untrained_model(device):
 def extract_all_layers(model, loader, device, layers=ALL_LAYERS):
     """Extract post-ReLU features from all layers."""
     return_nodes = {layer: layer for layer in layers}
-    extractor = FeatureExtractor(model, return_nodes=return_nodes,
-                                 post_relu=True, extract_pre_and_post=False)
+    extractor = FeatureExtractor(model, return_nodes=return_nodes)
     extractor.to(device).eval()
 
     adaptive_pool = torch.nn.AdaptiveAvgPool2d((CONV_POOL_SIZE, CONV_POOL_SIZE))
