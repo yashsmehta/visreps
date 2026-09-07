@@ -25,12 +25,17 @@ MODELS = {
 # Everything listed here gets submitted. Comment out what you don't want.
 EXPERIMENTS = [
     {
-        "name": "coarsegrain",
-        "models": ["ResNet50", "ConvNeXt_Base", "ViTBase"],
-        "seeds": [1],
-        "pca_n_classes": [2, 4, 8, 16, 64],
+        "name": "coarsegrain_seeds23",
+        "models": ["ResNet50"],
+        "seeds": [2, 3],
+        "pca_n_classes": [2, 4, 8, 16, 32, 64],
         "pca_labels_folder": "pca_labels_clip",
-    }
+    },
+    {
+        "name": "standard_seeds23",
+        "models": ["ResNet50"],
+        "seeds": [2, 3],
+    },
 ]
 
 SLURM_CONFIG = {
