@@ -4,10 +4,12 @@
 
 * ``dataset`` (default): recalibrate on the neural dataset's training images
   (THINGS selection split; NSD/TVSD train images minus every subject's test set).
-* ``imagenet``: recalibrate on a fixed random subset of ImageNet training images,
-  i.e. the distribution the weights were trained on. Use this for BatchNorm
-  architectures (ResNet-50) whose checkpoint statistics are unreliable — see
-  ``experiments/bn_recalibration/README.md``.
+* ``imagenet``: recalibrate on a fixed random subset of 512,000 ImageNet training
+  images in batches of 256, i.e. the distribution the weights were trained on.
+  Use this for BatchNorm architectures (ResNet-50) whose checkpoint statistics are
+  unreliable — see ``experiments/bn_recalibration/README.md``. The recipe is
+  fixed: 128,000 images or batches of 64 under-sample the heavy-tailed channels
+  of coarse-trained ResNet-50s (16-class THINGS RSA 0.48 instead of 0.56).
 * ``checkpoint``: keep the checkpoint's own running statistics.
 
 Only BN buffers are ever changed; weights stay fixed and the model is returned in
@@ -24,7 +26,11 @@ from torch import nn
 from torch.utils.data import DataLoader, Subset
 
 SOURCES = ("dataset", "imagenet", "checkpoint")
-IMAGENET_IMAGES = 128_000  # ~500 batches of 256, matching the March 2026 recipe
+# Fixed recipes, not configurable: the calibration identity is part of every run_id.
+IMAGENET_IMAGES = 512_000      # 2,000 batches of 256, the validated March 2026 recipe
+IMAGENET_BATCH_SIZE = 256
+DATASET_BATCH_SIZE = 64        # neural-dataset calibration (unchanged since 2026-09-05)
+_REMOVED_OPTIONS = ("bn_calibration_images", "bn_calibration_batchsize")
 
 
 def training_image_ids(neural, available):
@@ -52,11 +58,13 @@ def _model_digest(model):
     return digest.hexdigest()
 
 
-def _batch_size(cfg):
-    batch_size = int(cfg.get("bn_calibration_batchsize", 64))
-    if batch_size < 2:
-        raise ValueError("bn_calibration_batchsize must be at least 2")
-    return batch_size
+def _reject_removed_options(cfg):
+    """The calibration recipes are fixed; refuse configs that try to change them."""
+    present = [k for k in _REMOVED_OPTIONS if cfg.get(k) is not None]
+    if present:
+        raise ValueError(f"{present} are not configurable: BatchNorm calibration uses "
+                         f"{IMAGENET_IMAGES} ImageNet images in batches of {IMAGENET_BATCH_SIZE} "
+                         f"(imagenet) or batches of {DATASET_BATCH_SIZE} (dataset).")
 
 
 def _batches(n, batch_size, seed=0):
@@ -76,6 +84,7 @@ def prepare_eval_batchnorm(model, cfg, loader, image_ids, device):
     only used by the ``dataset`` source. Sets ``cfg.bn_calibration`` to an identity
     string that becomes part of the results run ID.
     """
+    _reject_removed_options(cfg)
     model.eval()
     source = cfg.get("bn_calibration_source", "dataset")
     if source not in SOURCES:
@@ -99,7 +108,7 @@ def _calibrate_on_dataset(model, cfg, norms, loader, image_ids, device):
     image_ids = sorted(set(image_ids))
     if len(image_ids) < 2:
         raise ValueError("BN calibration requires at least two training images")
-    batch_size = _batch_size(cfg)
+    batch_size = DATASET_BATCH_SIZE
     metadata = dict(version=1, model=_model_digest(model), dataset=cfg.neural_dataset,
                     image_ids=image_ids, transform=repr(loader.dataset.tr),
                     batch_size=batch_size, shuffle_seed=0, torch_version=str(torch.__version__))
@@ -118,8 +127,7 @@ def _calibrate_on_dataset(model, cfg, norms, loader, image_ids, device):
 def _calibrate_on_imagenet(model, cfg, norms, device):
     from visreps.dataloaders.obj_cls import get_obj_cls_loader
 
-    n_images = int(cfg.get("bn_calibration_images", IMAGENET_IMAGES))
-    batch_size = _batch_size(cfg)
+    n_images, batch_size = IMAGENET_IMAGES, IMAGENET_BATCH_SIZE
     # The loader picks the backend (and ImageNet release) itself unless overridden.
     data_cfg = {"dataset": "imagenet", "pca_labels": False, "data_augment": False,
                 "batchsize": batch_size, "num_workers": int(cfg.get("num_workers", 8))}

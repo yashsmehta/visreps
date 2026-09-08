@@ -9,6 +9,7 @@ from omegaconf import OmegaConf
 from torchvision.transforms import ToTensor
 
 from visreps.dataloaders.neural import _make_loader
+from visreps.models import batchnorm
 from visreps.models.batchnorm import prepare_eval_batchnorm, training_image_ids
 from visreps.utils import _compute_run_id
 
@@ -19,7 +20,8 @@ def test_excludes_test_images_across_subjects():
     assert training_image_ids(neural, ["a", "b", "c"]) == ["a"]
 
 
-def test_calibration_and_cache(tmp_path):
+def test_calibration_and_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(batchnorm, "DATASET_BATCH_SIZE", 2)
     torch.manual_seed(1)
     model = nn.Sequential(nn.Conv2d(3, 2, 1), nn.BatchNorm2d(2), nn.ReLU(),
                           nn.AdaptiveAvgPool2d(1), nn.Flatten(), nn.Dropout(0.9),
@@ -27,8 +29,7 @@ def test_calibration_and_cache(tmp_path):
     original = copy.deepcopy(model)
     images = {str(i): np.full((4, 4, 3), i * 20, dtype=np.uint8) for i in range(6)}
     loader = _make_loader(images, ToTensor(), 2, 0)
-    cfg = OmegaConf.create(dict(neural_dataset="nsd", bn_cache_dir=str(tmp_path),
-                                bn_calibration_batchsize=2))
+    cfg = OmegaConf.create(dict(neural_dataset="nsd", bn_cache_dir=str(tmp_path)))
     old_id = _compute_run_id(cfg)
     dropout_modes = []
     hook = model[5].register_forward_pre_hook(lambda m, _: dropout_modes.append(m.training))
@@ -101,11 +102,12 @@ def test_imagenet_source_ignores_dataset_images(tmp_path, monkeypatch):
         return {"train": imagenet, "test": imagenet}, {}
     monkeypatch.setattr(obj_cls, "get_obj_cls_loader", fake_loader)
 
+    monkeypatch.setattr(batchnorm, "IMAGENET_IMAGES", 10)
+    monkeypatch.setattr(batchnorm, "IMAGENET_BATCH_SIZE", 5)
     model = _bn_model()
     original = copy.deepcopy(model)
     cfg = OmegaConf.create(dict(neural_dataset="things-behavior", bn_cache_dir=str(tmp_path),
-                                bn_calibration_source="imagenet", bn_calibration_images=10,
-                                bn_calibration_batchsize=5, num_workers=0))
+                                bn_calibration_source="imagenet", num_workers=0))
     seen = []
     model.register_forward_pre_hook(lambda m, inp: seen.append(inp[0].shape[0]))
     prepare_eval_batchnorm(model, cfg, None, [], "cpu")
@@ -124,6 +126,13 @@ def test_imagenet_source_ignores_dataset_images(tmp_path, monkeypatch):
     prepare_eval_batchnorm(reloaded, cfg2, None, [], "cpu")
     assert cfg2.bn_calibration == cfg.bn_calibration
     torch.testing.assert_close(reloaded[1].running_var, model[1].running_var, rtol=0, atol=0)
+
+
+def test_calibration_recipe_is_not_configurable(tmp_path):
+    for key in ("bn_calibration_images", "bn_calibration_batchsize"):
+        cfg = OmegaConf.create({"neural_dataset": "nsd", "bn_cache_dir": str(tmp_path), key: 8})
+        with pytest.raises(ValueError, match="not configurable"):
+            prepare_eval_batchnorm(_bn_model(), cfg, None, [], "cpu")
 
 
 def test_no_batchnorm_and_empty_training_set(tmp_path):

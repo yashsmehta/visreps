@@ -151,7 +151,8 @@ making selection and evaluation consistent. The two give different numbers; say 
 
 **BatchNorm calibration source (all datasets).** `bn_calibration_source` in an eval config is
 `dataset` (default: recalibrate on the neural dataset's training images), `imagenet`
-(recalibrate on a fixed 128,000-image ImageNet subset, cached per checkpoint in
+(recalibrate on a fixed 512,000-image ImageNet subset in batches of 256, a hard-coded
+recipe with no config knobs, cached per checkpoint in
 `model_checkpoints/bn_stats/imagenet_*.pt`) or `checkpoint` (keep the saved statistics).
 **ResNet-50 must be evaluated with `imagenet`**: its checkpoint statistics are a ~320-image EMA
 that misses the heavy-tailed activations of coarse-trained models, and THINGS recalibration only

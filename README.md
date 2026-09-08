@@ -123,7 +123,7 @@ Evaluation recalibrates BatchNorm before extracting features, controlled by
 `bn_calibration_source`. The default, `dataset`, calibrates on the neural dataset's
 training images (THINGS: its 20% concept-level selection split; NSD/TVSD: all
 participating subjects' test images excluded). `imagenet` calibrates on a fixed
-random 128,000-image subset of ImageNet training images (`bn_calibration_images`),
+random 512,000-image subset of ImageNet training images in batches of 256,
 the distribution the weights were trained on; use it for ResNet-50, whose checkpoint
 statistics are unreliable and whose coarse-trained models score very differently under
 the two sources (see `experiments/bn_recalibration/README.md`). `checkpoint` keeps the
@@ -138,8 +138,8 @@ from historical pre/post results.
 
 Only BN buffers are cached in `model_checkpoints/bn_stats/`, keyed by the original
 model state, dataset, calibration image IDs, preprocessing, and calibration settings.
-Defaults are deterministic shuffled batches of 64; override `bn_calibration_batchsize`
-or `bn_cache_dir` if needed. Changing the calibration identity creates a new cache
+Batches are deterministic and shuffled (256 for `imagenet`, 64 for `dataset`); the
+recipes are fixed and not configurable, only `bn_cache_dir` can be overridden. Changing the calibration identity creates a new cache
 and a distinct results run ID. Original checkpoints and historical results are retained.
 
 > Results land in `results.db`; plot with the scripts under `plotters/<dataset>/`.
