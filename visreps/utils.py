@@ -737,6 +737,18 @@ class ConfigVerifier:
                 )
             self.cfg.encoding_solver = solver
 
+        # BatchNorm statistics source (see visreps/models/batchnorm.py). nsd_synthetic
+        # additionally accepts "nsd" (reuse the matching NSD run's statistics).
+        bn_source = self.cfg.get("bn_calibration_source")
+        if bn_source is not None:
+            allowed = ("dataset", "imagenet", "checkpoint")
+            if self.cfg.neural_dataset.lower() == "nsd_synthetic":
+                allowed = ("checkpoint", "nsd", "imagenet")
+            if bn_source not in allowed:
+                raise AssertionError(
+                    f"Invalid bn_calibration_source: {bn_source}. Must be one of {allowed}."
+                )
+
         # Model loading validation
         if self.cfg.load_model_from not in self.VALID_MODEL_SOURCES:
             self.rprint(

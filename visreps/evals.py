@@ -539,7 +539,13 @@ def eval(cfg):
         data = load_all_nsd_synthetic_data(cfg, subjects=subjects, regions=regions)
         rprint(f"  {len(data['stimuli'])} synthetic test stimuli", style="success")
         model = mutils.load_model(cfg, dev, verbose=verbose)
-        if cfg.get("bn_calibration_source", "checkpoint") == "nsd":
+        bn_source = cfg.get("bn_calibration_source", "checkpoint")
+        if bn_source == "dataset":
+            raise ValueError("nsd_synthetic has no training split to calibrate BatchNorm on; "
+                             "use bn_calibration_source=checkpoint, nsd or imagenet")
+        if bn_source == "imagenet":
+            prepare_eval_batchnorm(model, cfg, None, [], dev)
+        elif bn_source == "nsd":
             # Same BN statistics the NSD run selected its layer with: calibrate on
             # NSD training images under the NSD transform, which hits that run's cache.
             nsd_cfg = OmegaConf.merge(cfg, {"neural_dataset": "nsd"})

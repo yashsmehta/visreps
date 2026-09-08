@@ -1,4 +1,18 @@
-"""Training-image-only BatchNorm calibration for evaluation."""
+"""BatchNorm statistics for evaluation.
+
+``bn_calibration_source`` selects where the running statistics come from:
+
+* ``dataset`` (default): recalibrate on the neural dataset's training images
+  (THINGS selection split; NSD/TVSD train images minus every subject's test set).
+* ``imagenet``: recalibrate on a fixed random subset of ImageNet training images,
+  i.e. the distribution the weights were trained on. Use this for BatchNorm
+  architectures (ResNet-50) whose checkpoint statistics are unreliable — see
+  ``experiments/bn_recalibration/README.md``.
+* ``checkpoint``: keep the checkpoint's own running statistics.
+
+Only BN buffers are ever changed; weights stay fixed and the model is returned in
+eval mode. Recalibrated buffers are cached in ``model_checkpoints/bn_stats/``.
+"""
 import hashlib
 import json
 import os
@@ -8,6 +22,9 @@ import tempfile
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, Subset
+
+SOURCES = ("dataset", "imagenet", "checkpoint")
+IMAGENET_IMAGES = 128_000  # ~500 batches of 256, matching the March 2026 recipe
 
 
 def training_image_ids(neural, available):
@@ -20,42 +37,120 @@ def training_image_ids(neural, available):
     return sorted((train - test) & set(available))
 
 
-def prepare_eval_batchnorm(model, cfg, loader, image_ids, device):
-    """Load or compute BN buffers; leave weights fixed and the model in eval mode.
+def _norm_layers(model):
+    return {name: m for name, m in model.named_modules()
+            if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d))}
 
-    Calibration uses deterministic shuffled batches, cumulative batch-statistic
-    averages, and no dropout. A final singleton is merged into the previous batch
-    because FC BatchNorm needs at least two images. Only BN buffers are cached.
-    """
-    model.eval()
-    norms = {name: m for name, m in model.named_modules()
-             if isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d))}
-    if not norms:
-        cfg.bn_calibration = "none"
-        return model
-    if any(not m.track_running_stats for m in norms.values()):
-        raise ValueError("BN calibration requires track_running_stats=True")
-    image_ids = sorted(set(image_ids))
-    if len(image_ids) < 2:
-        raise ValueError("BN calibration requires at least two training images")
-    batch_size = int(cfg.get("bn_calibration_batchsize", 64))
-    if batch_size < 2:
-        raise ValueError("bn_calibration_batchsize must be at least 2")
 
-    # Hash the original model, including buffers, so seeds/epochs cannot collide.
+def _model_digest(model):
+    """Hash the model, including buffers, so seeds/epochs cannot collide."""
     digest = hashlib.sha256()
     for name, value in model.state_dict().items():
         value = value.detach().cpu().contiguous()
         digest.update(str((name, str(value.dtype), tuple(value.shape))).encode())
         digest.update(value.reshape(-1).view(torch.uint8).numpy().tobytes())
-    metadata = dict(version=1, model=digest.hexdigest(), dataset=cfg.neural_dataset,
+    return digest.hexdigest()
+
+
+def _batch_size(cfg):
+    batch_size = int(cfg.get("bn_calibration_batchsize", 64))
+    if batch_size < 2:
+        raise ValueError("bn_calibration_batchsize must be at least 2")
+    return batch_size
+
+
+def _batches(n, batch_size, seed=0):
+    """Deterministic shuffled batches; a final singleton is merged into the previous
+    batch because FC BatchNorm needs at least two images."""
+    order = torch.randperm(n, generator=torch.Generator().manual_seed(seed)).tolist()
+    batches = [order[i:i + batch_size] for i in range(0, len(order), batch_size)]
+    if len(batches) > 1 and len(batches[-1]) == 1:
+        batches[-2].extend(batches.pop())
+    return batches
+
+
+def prepare_eval_batchnorm(model, cfg, loader, image_ids, device):
+    """Load or compute BN buffers per ``cfg.bn_calibration_source``.
+
+    ``loader``/``image_ids`` describe the neural dataset's training images and are
+    only used by the ``dataset`` source. Sets ``cfg.bn_calibration`` to an identity
+    string that becomes part of the results run ID.
+    """
+    model.eval()
+    source = cfg.get("bn_calibration_source", "dataset")
+    if source not in SOURCES:
+        raise ValueError(f"bn_calibration_source must be one of {SOURCES}, got {source!r}")
+    norms = _norm_layers(model)
+    if not norms:
+        cfg.bn_calibration = "none"
+        return model
+    if source == "checkpoint":
+        cfg.bn_calibration = "checkpoint"
+        return model
+    if any(not m.track_running_stats for m in norms.values()):
+        raise ValueError("BN calibration requires track_running_stats=True")
+
+    if source == "imagenet":
+        return _calibrate_on_imagenet(model, cfg, norms, device)
+    return _calibrate_on_dataset(model, cfg, norms, loader, image_ids, device)
+
+
+def _calibrate_on_dataset(model, cfg, norms, loader, image_ids, device):
+    image_ids = sorted(set(image_ids))
+    if len(image_ids) < 2:
+        raise ValueError("BN calibration requires at least two training images")
+    batch_size = _batch_size(cfg)
+    metadata = dict(version=1, model=_model_digest(model), dataset=cfg.neural_dataset,
                     image_ids=image_ids, transform=repr(loader.dataset.tr),
                     batch_size=batch_size, shuffle_seed=0, torch_version=str(torch.__version__))
+
+    def make_loader():
+        indices = {key: i for i, key in enumerate(loader.dataset.keys)}
+        subset = Subset(loader.dataset, [indices[key] for key in image_ids])
+        return DataLoader(subset, batch_sampler=_batches(len(subset), batch_size),
+                          num_workers=loader.num_workers, collate_fn=loader.collate_fn,
+                          pin_memory=loader.pin_memory), len(subset)
+
+    return _load_or_calibrate(model, cfg, norms, metadata, cfg.neural_dataset,
+                              make_loader, device)
+
+
+def _calibrate_on_imagenet(model, cfg, norms, device):
+    from visreps.dataloaders.obj_cls import get_obj_cls_loader
+
+    n_images = int(cfg.get("bn_calibration_images", IMAGENET_IMAGES))
+    batch_size = _batch_size(cfg)
+    # The loader picks the backend (and ImageNet release) itself unless overridden.
+    data_cfg = {"dataset": "imagenet", "pca_labels": False, "data_augment": False,
+                "batchsize": batch_size, "num_workers": int(cfg.get("num_workers", 8))}
+    for key in ("imagenet_backend", "imagenet_version"):
+        if cfg.get(key) is not None:
+            data_cfg[key] = str(cfg.get(key))
+    metadata = dict(version=1, model=_model_digest(model), dataset="imagenet",
+                    imagenet_version=data_cfg.get("imagenet_version", "default"),
+                    n_images=n_images, subset_seed=0, batch_size=batch_size, shuffle_seed=0,
+                    torch_version=str(torch.__version__))
+
+    def make_loader():
+        datasets, _ = get_obj_cls_loader(data_cfg, shuffle=False)
+        train = datasets["train"]
+        n = min(n_images, len(train))
+        pick = torch.randperm(len(train), generator=torch.Generator().manual_seed(0))[:n]
+        subset = Subset(train, sorted(pick.tolist()))
+        return DataLoader(subset, batch_sampler=_batches(n, batch_size),
+                          num_workers=data_cfg["num_workers"], pin_memory=True), n
+
+    return _load_or_calibrate(model, cfg, norms, metadata, "imagenet", make_loader, device)
+
+
+def _load_or_calibrate(model, cfg, norms, metadata, tag, make_loader, device):
+    """Serve BN buffers from the cache, or compute them (cumulative batch-statistic
+    average, no dropout) and cache them. Only BN buffers are stored."""
     identity = hashlib.sha256(json.dumps(metadata, sort_keys=True).encode()).hexdigest()
     cfg.bn_calibration = identity
     cache_dir = Path(cfg.get("bn_cache_dir", "model_checkpoints/bn_stats"))
     cache_dir.mkdir(parents=True, exist_ok=True)
-    cache = cache_dir / f"{cfg.neural_dataset}_{identity}.pt"
+    cache = cache_dir / f"{tag}_{identity}.pt"
     if cache.exists():
         saved = torch.load(cache, map_location="cpu", weights_only=True)
         if saved["metadata"] != metadata:
@@ -66,14 +161,7 @@ def prepare_eval_batchnorm(model, cfg, loader, image_ids, device):
         print(f"  Loaded BN statistics: {cache}")
         return model
 
-    indices = {key: i for i, key in enumerate(loader.dataset.keys)}
-    subset = Subset(loader.dataset, [indices[key] for key in image_ids])
-    order = torch.randperm(len(subset), generator=torch.Generator().manual_seed(0)).tolist()
-    batches = [order[i:i + batch_size] for i in range(0, len(order), batch_size)]
-    if len(batches[-1]) == 1:
-        batches[-2].extend(batches.pop())
-    calibration = DataLoader(subset, batch_sampler=batches, num_workers=loader.num_workers,
-                             collate_fn=loader.collate_fn, pin_memory=loader.pin_memory)
+    calibration, n_images = make_loader()
     momenta = {name: m.momentum for name, m in norms.items()}
     try:
         for module in norms.values():
@@ -100,5 +188,5 @@ def prepare_eval_batchnorm(model, cfg, loader, image_ids, device):
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
-    print(f"  Calibrated BN on {len(image_ids)} training images: {cache}")
+    print(f"  Calibrated BN on {n_images} {tag} training images: {cache}")
     return model

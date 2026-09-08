@@ -64,6 +64,68 @@ def test_calibration_and_cache(tmp_path):
     assert cfg.bn_calibration != identity
 
 
+def _bn_model():
+    torch.manual_seed(1)
+    return nn.Sequential(nn.Conv2d(3, 2, 1), nn.BatchNorm2d(2), nn.ReLU(),
+                         nn.AdaptiveAvgPool2d(1), nn.Flatten(), nn.Linear(2, 3))
+
+
+def test_checkpoint_source_keeps_running_stats(tmp_path):
+    model = _bn_model()
+    model[1].running_mean.fill_(0.5)
+    cfg = OmegaConf.create(dict(neural_dataset="nsd", bn_cache_dir=str(tmp_path),
+                                bn_calibration_source="checkpoint"))
+    prepare_eval_batchnorm(model, cfg, None, [], "cpu")
+    assert torch.all(model[1].running_mean == 0.5)
+    assert cfg.bn_calibration == "checkpoint"
+    assert not any(m.training for m in model.modules())
+
+
+def test_invalid_source(tmp_path):
+    cfg = OmegaConf.create(dict(neural_dataset="nsd", bn_calibration_source="things"))
+    with pytest.raises(ValueError, match="bn_calibration_source"):
+        prepare_eval_batchnorm(_bn_model(), cfg, None, [], "cpu")
+
+
+def test_imagenet_source_ignores_dataset_images(tmp_path, monkeypatch):
+    """ImageNet calibration uses a fixed ImageNet subset, never the neural stimuli."""
+    import visreps.dataloaders.obj_cls as obj_cls
+    from torch.utils.data import TensorDataset
+
+    torch.manual_seed(0)
+    imagenet = TensorDataset(torch.randn(20, 3, 4, 4) * 5 + 3, torch.zeros(20, dtype=torch.long))
+    calls = []
+
+    def fake_loader(cfg, shuffle=True, **kw):
+        calls.append((dict(cfg), shuffle))
+        return {"train": imagenet, "test": imagenet}, {}
+    monkeypatch.setattr(obj_cls, "get_obj_cls_loader", fake_loader)
+
+    model = _bn_model()
+    original = copy.deepcopy(model)
+    cfg = OmegaConf.create(dict(neural_dataset="things-behavior", bn_cache_dir=str(tmp_path),
+                                bn_calibration_source="imagenet", bn_calibration_images=10,
+                                bn_calibration_batchsize=5, num_workers=0))
+    seen = []
+    model.register_forward_pre_hook(lambda m, inp: seen.append(inp[0].shape[0]))
+    prepare_eval_batchnorm(model, cfg, None, [], "cpu")
+    assert calls and calls[0][1] is False and calls[0][0]["pca_labels"] is False
+    assert seen == [5, 5]  # 10 images in batches of 5
+    for before, after in zip(original.parameters(), model.parameters()):
+        assert torch.equal(before, after)
+    assert not torch.equal(model[1].running_mean, original[1].running_mean)
+    assert cfg.bn_calibration not in ("none", "checkpoint")
+    assert (tmp_path / f"imagenet_{cfg.bn_calibration}.pt").exists()
+
+    # Cache hit: identical buffers, no forward pass, distinct from a dataset-source run.
+    reloaded = copy.deepcopy(original)
+    reloaded.register_forward_pre_hook(lambda m, inp: pytest.fail("Unexpected forward"))
+    cfg2 = OmegaConf.create(dict(cfg))
+    prepare_eval_batchnorm(reloaded, cfg2, None, [], "cpu")
+    assert cfg2.bn_calibration == cfg.bn_calibration
+    torch.testing.assert_close(reloaded[1].running_var, model[1].running_var, rtol=0, atol=0)
+
+
 def test_no_batchnorm_and_empty_training_set(tmp_path):
     cfg = OmegaConf.create(dict(neural_dataset="nsd", bn_cache_dir=str(tmp_path)))
     model = nn.Linear(2, 2)

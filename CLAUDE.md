@@ -149,6 +149,18 @@ the 220 test images would leak. `bn_calibration_source=nsd` instead reuses the N
 statistics the inherited layer was selected with (served from `model_checkpoints/bn_stats/`),
 making selection and evaluation consistent. The two give different numbers; say which one.
 
+**BatchNorm calibration source (all datasets).** `bn_calibration_source` in an eval config is
+`dataset` (default: recalibrate on the neural dataset's training images), `imagenet`
+(recalibrate on a fixed 128,000-image ImageNet subset, cached per checkpoint in
+`model_checkpoints/bn_stats/imagenet_*.pt`) or `checkpoint` (keep the saved statistics).
+**ResNet-50 must be evaluated with `imagenet`**: its checkpoint statistics are a ~320-image EMA
+that misses the heavy-tailed activations of coarse-trained models, and THINGS recalibration only
+half-fixes it (8-class THINGS RSA: 0.41 checkpoint, 0.49 THINGS, 0.57 ImageNet; the 1000-class
+model is unaffected). The calibration identity is part of the `run_id`, so runs with different
+sources coexist in `results.db` — plotters must filter on `bn_calibration_source` via
+`run_configs` (see `manuscript/figures/fig5/figure5.py`) rather than take the best-scoring row.
+Grid: `configs/grids/things_resnet50_imagenet_bn.json`.
+
 **RSA — NSD/TVSD:** Per subject, score every layer on train (subsample 1,000 stimuli, Pearson RDMs, compare via Spearman/Kendall). **One layer per ROI**: the layer with the highest mean selection score across subjects. Re-extract that layer without SRP → per-subject test RDM score → 1,000-iteration bootstrap (resampling stimuli with replacement) for percentile 95% CIs. Per-subject selection scores are still saved in `layer_selection_scores`.
 
 **RSA — TVSD reports on train stimuli, not the 100-stimulus test set.** `_tvsd_train_split()`

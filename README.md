@@ -119,11 +119,16 @@ python runners/eval_runner.py --grid configs/grids/eval_default.json
 
 </details>
 
-Evaluation automatically recalibrates BatchNorm on training images for NSD, TVSD,
-and THINGS behavior before extracting features. THINGS uses its 20% concept-level
-selection split; NSD/TVSD exclude all participating subjects' test images. Learned
-weights stay fixed, dropout stays off, and evaluation uses frozen recalibrated
-statistics. Models without BatchNorm are unchanged.
+Evaluation recalibrates BatchNorm before extracting features, controlled by
+`bn_calibration_source`. The default, `dataset`, calibrates on the neural dataset's
+training images (THINGS: its 20% concept-level selection split; NSD/TVSD: all
+participating subjects' test images excluded). `imagenet` calibrates on a fixed
+random 128,000-image subset of ImageNet training images (`bn_calibration_images`),
+the distribution the weights were trained on; use it for ResNet-50, whose checkpoint
+statistics are unreliable and whose coarse-trained models score very differently under
+the two sources (see `experiments/bn_recalibration/README.md`). `checkpoint` keeps the
+checkpoint's own statistics. Learned weights stay fixed, dropout stays off, and
+evaluation uses frozen recalibrated statistics. Models without BatchNorm are unchanged.
 
 Layer selection always uses post-activation features: `conv1`–`conv5`, `fc1`,
 and `fc2` for CustomCNN (seven candidates, after BatchNorm and ReLU).
