@@ -60,12 +60,15 @@ class EvalRunner(ExperimentRunner):
                        len(as_list(self._get(params, "region")))
 
         epoch = params.get("eval_checkpoint_at_epoch")
+        bn_source = params.get("bn_calibration_source")
         with sqlite3.connect(f"file:{RESULTS_DB}?mode=ro", uri=True) as conn:
             n = conn.execute(
-                "SELECT COUNT(DISTINCT region || '|' || subject_idx) FROM results "
+                "SELECT COUNT(DISTINCT region || '|' || subject_idx) FROM results r "
+                "JOIN run_configs rc ON r.run_id = rc.run_id "
                 "WHERE checkpoint_dir=? AND cfg_id=? AND seed=? AND neural_dataset=? "
                 "AND analysis=? AND compare_method=? AND reconstruct_from_pcs=? "
-                "AND (? IS NULL OR epoch=?)",
+                "AND (? IS NULL OR epoch=?) "
+                "AND (? IS NULL OR json_extract(rc.config_json, '$.bn_calibration_source') = ?)",
                 (
                     self._get(params, "checkpoint_dir", "checkpoint"),
                     self._get(params, "cfg_id"),
@@ -75,6 +78,7 @@ class EvalRunner(ExperimentRunner):
                     self._get(params, "compare_method"),
                     int(bool(self._get(params, "reconstruct_from_pcs"))),
                     epoch, epoch,
+                    bn_source, bn_source,
                 ),
             ).fetchone()[0]
         return n >= expected
