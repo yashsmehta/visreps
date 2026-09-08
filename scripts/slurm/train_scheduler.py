@@ -24,15 +24,18 @@ MODELS = {
 
 # Everything listed here gets submitted. Comment out what you don't want.
 EXPERIMENTS = [
+    # Re-run of the four jobs (30718704-707) killed at epoch 15 on 2026-09-07
+    # when /scratch4/mbonner5/shared/imagenet was removed mid-training. The
+    # other ten seed-2/3 ResNet-50 runs completed and must not be resubmitted.
     {
-        "name": "coarsegrain_seeds23",
+        "name": "coarsegrain_seed3_rerun",
         "models": ["ResNet50"],
-        "seeds": [2, 3],
-        "pca_n_classes": [2, 4, 8, 16, 32, 64],
+        "seeds": [3],
+        "pca_n_classes": [32, 64],
         "pca_labels_folder": "pca_labels_clip",
     },
     {
-        "name": "standard_seeds23",
+        "name": "standard_seeds23_rerun",
         "models": ["ResNet50"],
         "seeds": [2, 3],
     },
